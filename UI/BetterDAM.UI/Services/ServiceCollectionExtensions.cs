@@ -1,6 +1,7 @@
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Services;
 using BetterDAM.Metadata.ExifTool;
+using BetterDAM.Metadata.Xmp;
 using BetterDAM.Preview;
 using BetterDAM.Preview.Cache;
 using BetterDAM.Preview.Images;
@@ -28,7 +29,10 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IThumbnailService, ThumbnailService>();
 
         services.AddSingleton<IExifToolLocator, ExifToolLocator>();
+        // One ExifTool process, shared by the reader and the writer.
+        services.AddSingleton<ExifToolHost>();
         services.AddSingleton<IMetadataProvider, ExifToolMetadataProvider>();
+        services.AddSingleton<IMetadataWriter, ExifToolSidecarWriter>();
         services.AddSingleton<IPendingChangeStore, PendingChangeStore>();
 
         services.AddTransient<MetadataInspectorViewModel>();

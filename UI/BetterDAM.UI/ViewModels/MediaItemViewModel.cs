@@ -43,6 +43,14 @@ public sealed partial class MediaItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasPendingChanges;
 
+    /// <summary>Embedded metadata and the sidecar disagree. Set when the item is inspected.</summary>
+    [ObservableProperty]
+    private bool _hasConflicts;
+
+    /// <summary>An XMP sidecar exists next to this file.</summary>
+    [ObservableProperty]
+    private bool _hasSidecar;
+
     /// <summary>
     /// Requests the thumbnail once. Called when the item's container is realized, so a scan of
     /// 50,000 files only decodes the handful of items actually on screen.

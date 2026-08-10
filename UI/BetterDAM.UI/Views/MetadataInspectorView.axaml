@@ -64,24 +64,83 @@
         </StackPanel>
       </Border>
 
-      <!-- Pending / sidecar status strip -->
+      <!-- Pending / conflict / sidecar status strip -->
       <StackPanel DockPanel.Dock="Top" Margin="8,8,8,0" Spacing="6">
+
+        <!-- Conflicts come first: the user should settle them before committing anything. -->
+        <Border IsVisible="{Binding HasConflicts}"
+                Background="#26FF7043" BorderBrush="#66FF7043" BorderThickness="1"
+                CornerRadius="4" Padding="8,6">
+          <StackPanel Spacing="6">
+            <TextBlock Text="⚠ Embedded metadata and the XMP sidecar disagree"
+                       FontWeight="SemiBold" FontSize="12" TextWrapping="Wrap" />
+
+            <ItemsControl ItemsSource="{Binding Conflicts}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="core:MetadataConflict">
+                  <Grid ColumnDefinitions="72,*" Margin="0,2">
+                    <TextBlock Grid.Column="0" Text="{Binding Field}" FontSize="11" Opacity="0.7"
+                               VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1">
+                      <TextBlock FontSize="11" TextWrapping="Wrap"
+                                 Text="{Binding EmbeddedValue, StringFormat='embedded: {0}'}" />
+                      <TextBlock FontSize="11" TextWrapping="Wrap" Opacity="0.85"
+                                 Text="{Binding SidecarValue, StringFormat='sidecar: {0}'}" />
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Button Content="Keep embedded" FontSize="11" Padding="8,2"
+                      Command="{Binding ResolveConflictsCommand}" CommandParameter="KeepEmbedded" />
+              <Button Content="Keep sidecar" FontSize="11" Padding="8,2"
+                      Command="{Binding ResolveConflictsCommand}" CommandParameter="KeepSidecar" />
+              <Button Content="Merge" FontSize="11" Padding="8,2"
+                      ToolTip.Tip="Union the keywords; the sidecar wins for single-valued fields"
+                      Command="{Binding ResolveConflictsCommand}" CommandParameter="Merge" />
+            </StackPanel>
+            <!-- Writing the sidecar does not change the copy inside the media file, so this warning
+                 legitimately persists after saving. Saying so up front stops that looking like a bug. -->
+            <TextBlock Text="Resolving records a pending change — nothing is written until you save. Saving updates the sidecar only; the copy inside the media file changes during Sync."
+                       FontSize="10" Opacity="0.55" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
         <Border IsVisible="{Binding HasPendingChanges}"
                 Background="#2622A0F2" BorderBrush="#6622A0F2" BorderThickness="1"
                 CornerRadius="4" Padding="8,6">
-          <DockPanel>
-            <Button DockPanel.Dock="Right" Content="Revert" FontSize="11" Padding="8,2"
-                    Command="{Binding RevertChangesCommand}" />
-            <TextBlock Text="● Modified — not yet written to disk" FontSize="12"
-                       VerticalAlignment="Center" />
-          </DockPanel>
+          <StackPanel Spacing="6">
+            <DockPanel>
+              <Button DockPanel.Dock="Right" Content="Revert" FontSize="11" Padding="8,2"
+                      Command="{Binding RevertChangesCommand}" />
+              <TextBlock Text="● Modified — not yet written to disk" FontSize="12"
+                         VerticalAlignment="Center" />
+            </DockPanel>
+            <Button Content="Write XMP sidecar" HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    IsEnabled="{Binding !IsWriting}"
+                    IsVisible="{Binding CanWriteSidecar}"
+                    Command="{Binding WriteSidecarCommand}" />
+            <TextBlock Text="Writes &lt;name&gt;.xmp next to the file. The original media is not modified."
+                       FontSize="10" Opacity="0.55" TextWrapping="Wrap" />
+          </StackPanel>
         </Border>
+
+        <TextBlock FontSize="11" TextWrapping="Wrap"
+                   IsVisible="{Binding WriteStatus, Converter={x:Static ObjectConverters.IsNotNull}}"
+                   Text="{Binding WriteStatus}"
+                   Foreground="{Binding WriteFailed, Converter={StaticResource StatusBrush}}" />
 
         <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                    IsVisible="{Binding HasSidecar}"
                    Text="{Binding SidecarPath, StringFormat='XMP sidecar: {0}'}" />
 
-        <ProgressBar IsIndeterminate="True" Height="3" IsVisible="{Binding IsLoading}" />
+        <ProgressBar IsIndeterminate="True" Height="3"
+                     IsVisible="{Binding IsLoading}" />
+        <ProgressBar IsIndeterminate="True" Height="3"
+                     IsVisible="{Binding IsWriting}" />
       </StackPanel>
 
       <TabControl Margin="4,6,4,4" SelectedIndex="{Binding SelectedTabIndex}">

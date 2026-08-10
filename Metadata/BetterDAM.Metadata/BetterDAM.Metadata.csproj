@@ -15,4 +15,9 @@
     <ProjectReference Include="..\..\Core\BetterDAM.Core\BetterDAM.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The sidecar-target safety guard is internal but worth testing directly. -->
+    <InternalsVisibleTo Include="BetterDAM.Tests" />
+  </ItemGroup>
+
 </Project>

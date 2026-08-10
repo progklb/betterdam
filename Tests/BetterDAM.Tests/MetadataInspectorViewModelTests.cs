@@ -37,15 +37,41 @@ public class MetadataInspectorViewModelTests
         },
         new StubThumbnailService());
 
-    private static (MetadataInspectorViewModel Inspector, PendingChangeStore Store) Create(MediaMetadata? metadata)
+    /// <summary>Records what it was asked to write without touching the filesystem.</summary>
+    private sealed class StubMetadataWriter : IMetadataWriter
+    {
+        public bool IsAvailable { get; set; } = true;
+
+        public bool ShouldSucceed { get; set; } = true;
+
+        public List<(MediaFile File, EditableMetadata Metadata)> Writes { get; } = [];
+
+        public Task<SidecarWriteResult> WriteSidecarAsync(
+            MediaFile file,
+            EditableMetadata metadata,
+            SidecarWriteOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            Writes.Add((file, metadata));
+
+            return Task.FromResult(ShouldSucceed
+                ? new SidecarWriteResult(file.FullPath, true, file.FullPath + ".xmp")
+                : SidecarWriteResult.Failed(file.FullPath, "stub failure"));
+        }
+    }
+
+    private static (MetadataInspectorViewModel Inspector, PendingChangeStore Store, StubMetadataWriter Writer)
+        Create(MediaMetadata? metadata)
     {
         var store = new PendingChangeStore();
+        var writer = new StubMetadataWriter();
         var inspector = new MetadataInspectorViewModel(
             new StubMetadataProvider(metadata),
+            writer,
             store,
             NullLogger<MetadataInspectorViewModel>.Instance);
 
-        return (inspector, store);
+        return (inspector, store, writer);
     }
 
     [Fact]
@@ -61,7 +87,7 @@ public class MetadataInspectorViewModelTests
             }
         };
 
-        var (inspector, store) = Create(metadata);
+        var (inspector, store, _) = Create(metadata);
         await inspector.LoadAsync(Item());
 
         Assert.Equal("Lioness at dawn", inspector.Title);
@@ -76,7 +102,7 @@ public class MetadataInspectorViewModelTests
     [Fact]
     public async Task Setting_a_rating_from_a_string_parameter_works()
     {
-        var (inspector, _) = Create(MediaMetadata.Empty);
+        var (inspector, _, _) = Create(MediaMetadata.Empty);
         await inspector.LoadAsync(Item());
 
         // XAML passes CommandParameter="4" as a string; an int-typed command would silently no-op.
@@ -88,7 +114,7 @@ public class MetadataInspectorViewModelTests
     [Fact]
     public async Task Clicking_the_current_rating_clears_it()
     {
-        var (inspector, _) = Create(MediaMetadata.Empty);
+        var (inspector, _, _) = Create(MediaMetadata.Empty);
         await inspector.LoadAsync(Item());
 
         inspector.SetRatingCommand.Execute("3");
@@ -100,7 +126,7 @@ public class MetadataInspectorViewModelTests
     [Fact]
     public async Task A_non_numeric_rating_parameter_is_ignored()
     {
-        var (inspector, _) = Create(MediaMetadata.Empty);
+        var (inspector, _, _) = Create(MediaMetadata.Empty);
         await inspector.LoadAsync(Item());
 
         inspector.SetRatingCommand.Execute("not a number");
@@ -111,7 +137,7 @@ public class MetadataInspectorViewModelTests
     [Fact]
     public async Task Editing_a_field_records_a_pending_change()
     {
-        var (inspector, store) = Create(MediaMetadata.Empty);
+        var (inspector, store, _) = Create(MediaMetadata.Empty);
         var item = Item();
         await inspector.LoadAsync(item);
 
@@ -127,7 +153,7 @@ public class MetadataInspectorViewModelTests
     public async Task Editing_back_to_the_original_drops_the_pending_change()
     {
         var metadata = new MediaMetadata { Embedded = new EditableMetadata { Title = "Original" } };
-        var (inspector, store) = Create(metadata);
+        var (inspector, store, _) = Create(metadata);
         await inspector.LoadAsync(Item());
 
         inspector.Title = "Changed";
@@ -140,7 +166,7 @@ public class MetadataInspectorViewModelTests
     [Fact]
     public async Task Adding_a_keyword_splits_on_commas()
     {
-        var (inspector, _) = Create(MediaMetadata.Empty);
+        var (inspector, _, _) = Create(MediaMetadata.Empty);
         await inspector.LoadAsync(Item());
 
         inspector.NewKeyword = "wildlife, Namibia, lioness";
@@ -153,7 +179,7 @@ public class MetadataInspectorViewModelTests
     [Fact]
     public async Task Duplicate_keywords_are_ignored_case_insensitively()
     {
-        var (inspector, _) = Create(MediaMetadata.Empty);
+        var (inspector, _, _) = Create(MediaMetadata.Empty);
         await inspector.LoadAsync(Item());
 
         inspector.NewKeyword = "wildlife";
@@ -168,7 +194,7 @@ public class MetadataInspectorViewModelTests
     public async Task Removing_a_keyword_records_a_pending_change()
     {
         var metadata = new MediaMetadata { Embedded = new EditableMetadata { Keywords = ["a", "b"] } };
-        var (inspector, store) = Create(metadata);
+        var (inspector, store, _) = Create(metadata);
         await inspector.LoadAsync(Item());
 
         inspector.RemoveKeywordCommand.Execute("a");
@@ -181,7 +207,7 @@ public class MetadataInspectorViewModelTests
     public async Task Revert_restores_the_values_from_disk()
     {
         var metadata = new MediaMetadata { Embedded = new EditableMetadata { Title = "Original", Rating = 2 } };
-        var (inspector, store) = Create(metadata);
+        var (inspector, store, _) = Create(metadata);
         var item = Item();
         await inspector.LoadAsync(item);
 
@@ -201,7 +227,7 @@ public class MetadataInspectorViewModelTests
     public async Task Reselecting_a_file_shows_its_pending_edit_rather_than_the_value_on_disk()
     {
         var metadata = new MediaMetadata { Embedded = new EditableMetadata { Title = "On disk" } };
-        var (inspector, _) = Create(metadata);
+        var (inspector, _, _) = Create(metadata);
 
         await inspector.LoadAsync(Item());
         inspector.Title = "Edited but unsaved";
@@ -212,6 +238,101 @@ public class MetadataInspectorViewModelTests
 
         Assert.Equal("Edited but unsaved", inspector.Title);
         Assert.True(inspector.HasPendingChanges);
+    }
+
+    [Fact]
+    public async Task Writing_the_sidecar_clears_the_pending_change()
+    {
+        var (inspector, store, writer) = Create(MediaMetadata.Empty);
+        var item = Item();
+        await inspector.LoadAsync(item);
+
+        inspector.Title = "New title";
+        Assert.True(store.HasChanges(FilePath));
+
+        await inspector.WriteSidecarCommand.ExecuteAsync(null);
+
+        Assert.Equal("New title", Assert.Single(writer.Writes).Metadata.Title);
+        Assert.False(store.HasChanges(FilePath));
+        Assert.False(item.HasPendingChanges);
+        Assert.False(inspector.WriteFailed);
+    }
+
+    [Fact]
+    public async Task A_failed_write_keeps_the_pending_change()
+    {
+        var (inspector, store, writer) = Create(MediaMetadata.Empty);
+        writer.ShouldSucceed = false;
+        await inspector.LoadAsync(Item());
+
+        inspector.Title = "New title";
+        await inspector.WriteSidecarCommand.ExecuteAsync(null);
+
+        // Losing the user's edit because a write failed would be the worst possible outcome.
+        Assert.True(store.HasChanges(FilePath));
+        Assert.True(inspector.WriteFailed);
+        Assert.Equal("stub failure", inspector.WriteStatus);
+    }
+
+    [Fact]
+    public async Task Conflicts_are_surfaced_when_the_layers_disagree()
+    {
+        var metadata = new MediaMetadata
+        {
+            Embedded = new EditableMetadata { Title = "Embedded", Rating = 1 },
+            Sidecar = new EditableMetadata { Title = "Sidecar", Rating = 5 },
+            SidecarPath = "/library/IMG001.xmp"
+        };
+
+        var (inspector, _, _) = Create(metadata);
+        var item = Item();
+        await inspector.LoadAsync(item);
+
+        Assert.True(inspector.HasConflicts);
+        Assert.Equal(2, inspector.Conflicts.Count);
+        Assert.True(item.HasConflicts);
+    }
+
+    [Fact]
+    public async Task Resolving_a_conflict_records_a_pending_change_without_writing()
+    {
+        var metadata = new MediaMetadata
+        {
+            Embedded = new EditableMetadata { Title = "Embedded", Rating = 1 },
+            Sidecar = new EditableMetadata { Title = "Sidecar", Rating = 5 },
+            SidecarPath = "/library/IMG001.xmp"
+        };
+
+        var (inspector, store, writer) = Create(metadata);
+        await inspector.LoadAsync(Item());
+
+        inspector.ResolveConflictsCommand.Execute("KeepEmbedded");
+
+        Assert.Equal("Embedded", inspector.Title);
+        Assert.Equal(1, inspector.Rating);
+        Assert.False(inspector.HasConflicts);
+
+        // Resolving is a decision, not a commit.
+        Assert.True(store.HasChanges(FilePath));
+        Assert.Empty(writer.Writes);
+    }
+
+    [Fact]
+    public async Task An_unrecognised_resolution_is_ignored()
+    {
+        var metadata = new MediaMetadata
+        {
+            Embedded = new EditableMetadata { Title = "Embedded" },
+            Sidecar = new EditableMetadata { Title = "Sidecar" },
+            SidecarPath = "/library/IMG001.xmp"
+        };
+
+        var (inspector, _, _) = Create(metadata);
+        await inspector.LoadAsync(Item());
+
+        inspector.ResolveConflictsCommand.Execute("nonsense");
+
+        Assert.True(inspector.HasConflicts);
     }
 
     private static MediaItemViewModel VideoItem() => new(
@@ -229,7 +350,7 @@ public class MetadataInspectorViewModelTests
     [Fact]
     public async Task Selecting_an_image_moves_off_the_hidden_video_tab()
     {
-        var (inspector, _) = Create(MediaMetadata.Empty);
+        var (inspector, _, _) = Create(MediaMetadata.Empty);
 
         await inspector.LoadAsync(VideoItem());
         inspector.SelectedTabIndex = 2; // Video
@@ -244,7 +365,7 @@ public class MetadataInspectorViewModelTests
     [Fact]
     public async Task Selecting_an_image_keeps_a_still_relevant_tab()
     {
-        var (inspector, _) = Create(MediaMetadata.Empty);
+        var (inspector, _, _) = Create(MediaMetadata.Empty);
 
         await inspector.LoadAsync(VideoItem());
         inspector.SelectedTabIndex = 1; // Camera
@@ -258,7 +379,7 @@ public class MetadataInspectorViewModelTests
     public async Task Deselecting_clears_the_panel()
     {
         var metadata = new MediaMetadata { Embedded = new EditableMetadata { Title = "Something" } };
-        var (inspector, _) = Create(metadata);
+        var (inspector, _, _) = Create(metadata);
 
         await inspector.LoadAsync(Item());
         await inspector.LoadAsync(null);

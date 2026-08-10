@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
+using BetterDAM.Core.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -16,12 +17,14 @@ namespace BetterDAM.UI.ViewModels;
 public sealed partial class MetadataInspectorViewModel : ObservableObject
 {
     private readonly IMetadataProvider _metadata;
+    private readonly IMetadataWriter _writer;
     private readonly IPendingChangeStore _pending;
     private readonly ILogger<MetadataInspectorViewModel> _logger;
 
     private CancellationTokenSource? _loadCts;
     private MediaItemViewModel? _item;
     private EditableMetadata _baseline = EditableMetadata.Empty;
+    private MediaMetadata _lastRead = MediaMetadata.Empty;
 
     /// <summary>
     /// Guards the field setters while <see cref="LoadAsync"/> populates them, so filling the form
@@ -31,10 +34,12 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
 
     public MetadataInspectorViewModel(
         IMetadataProvider metadata,
+        IMetadataWriter writer,
         IPendingChangeStore pending,
         ILogger<MetadataInspectorViewModel> logger)
     {
         _metadata = metadata;
+        _writer = writer;
         _pending = pending;
         _logger = logger;
     }
@@ -42,6 +47,8 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     public ObservableCollection<string> Keywords { get; } = [];
 
     public ObservableCollection<RawMetadataTag> RawTags { get; } = [];
+
+    public ObservableCollection<MetadataConflict> Conflicts { get; } = [];
 
     public bool IsMetadataEngineAvailable => _metadata.IsAvailable;
 
@@ -84,6 +91,18 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _hasPendingChanges;
+
+    [ObservableProperty]
+    private bool _hasConflicts;
+
+    [ObservableProperty]
+    private bool _isWriting;
+
+    [ObservableProperty]
+    private string? _writeStatus;
+
+    [ObservableProperty]
+    private bool _writeFailed;
 
     [ObservableProperty]
     private string? _newKeyword;
@@ -161,6 +180,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
             }
 
             var metadata = result ?? MediaMetadata.Empty;
+            _lastRead = metadata;
             _baseline = metadata.Effective;
 
             // A pending edit for this file wins over what is on disk: it is what the user last chose.
@@ -179,6 +199,16 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
             {
                 RawTags.Add(tag);
             }
+
+            Conflicts.Clear();
+            foreach (var conflict in MetadataConflictDetector.Detect(metadata))
+            {
+                Conflicts.Add(conflict);
+            }
+
+            HasConflicts = Conflicts.Count > 0;
+            item.HasConflicts = HasConflicts;
+            item.HasSidecar = metadata.HasSidecar;
         }
         catch (OperationCanceledException)
         {
@@ -258,6 +288,75 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         Apply(_baseline);
         HasPendingChanges = false;
         _item.HasPendingChanges = false;
+        WriteStatus = null;
+    }
+
+    /// <summary>
+    /// Settles the detected conflicts by recording the chosen values as a pending edit. Nothing is
+    /// written to disk here — resolving a conflict is a decision, and committing it is a separate,
+    /// explicit act.
+    /// </summary>
+    [RelayCommand]
+    private void ResolveConflicts(string? resolution)
+    {
+        if (_item is null || !Enum.TryParse<ConflictResolution>(resolution, out var choice))
+        {
+            return;
+        }
+
+        var resolved = MetadataConflictDetector.Resolve(_lastRead, choice);
+        Apply(resolved);
+        RecordEdit();
+
+        Conflicts.Clear();
+        HasConflicts = false;
+        _item.HasConflicts = false;
+    }
+
+    [RelayCommand]
+    private async Task WriteSidecarAsync()
+    {
+        if (_item is null || !_writer.IsAvailable)
+        {
+            return;
+        }
+
+        IsWriting = true;
+        WriteStatus = null;
+        WriteFailed = false;
+
+        try
+        {
+            var toWrite = _pending.GetEdited(_item.File.FullPath) ?? _baseline;
+            var result = await _writer.WriteSidecarAsync(_item.File, toWrite, new SidecarWriteOptions()).ConfigureAwait(true);
+
+            if (result.Success)
+            {
+                // The sidecar now holds these values, so they become the new baseline and the file
+                // is no longer pending.
+                _pending.Discard(_item.File.FullPath);
+                _item.HasPendingChanges = false;
+                HasPendingChanges = false;
+                WriteStatus = $"Saved to {Path.GetFileName(result.SidecarPath)}";
+
+                await LoadAsync(_item).ConfigureAwait(true);
+            }
+            else
+            {
+                WriteFailed = true;
+                WriteStatus = result.Error ?? "The sidecar could not be written.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed writing the sidecar for {File}", _item.File.FullPath);
+            WriteFailed = true;
+            WriteStatus = ex.Message;
+        }
+        finally
+        {
+            IsWriting = false;
+        }
     }
 
     private void Apply(EditableMetadata metadata)
@@ -289,13 +388,20 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     {
         Apply(EditableMetadata.Empty);
         _baseline = EditableMetadata.Empty;
+        _lastRead = MediaMetadata.Empty;
         Camera = CameraInfo.Empty;
         Video = VideoInfo.Empty;
         HasSidecar = false;
         SidecarPath = null;
         HasPendingChanges = false;
+        HasConflicts = false;
+        WriteStatus = null;
+        WriteFailed = false;
         RawTags.Clear();
+        Conflicts.Clear();
     }
+
+    public bool CanWriteSidecar => _writer.IsAvailable;
 
     private void RecordEdit()
     {

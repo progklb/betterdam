@@ -8,25 +8,22 @@ using Microsoft.Extensions.Logging;
 
 namespace BetterDAM.Metadata.ExifTool;
 
-public sealed class ExifToolMetadataProvider : IMetadataProvider, IAsyncDisposable
+public sealed class ExifToolMetadataProvider : IMetadataProvider
 {
-    private readonly IExifToolLocator _locator;
+    private readonly ExifToolHost _host;
     private readonly ILogger<ExifToolMetadataProvider> _logger;
-    private readonly Lazy<ExifToolSession?> _session;
 
-    public ExifToolMetadataProvider(IExifToolLocator locator, ILogger<ExifToolMetadataProvider> logger)
+    public ExifToolMetadataProvider(ExifToolHost host, ILogger<ExifToolMetadataProvider> logger)
     {
-        _locator = locator;
+        _host = host;
         _logger = logger;
-        _session = new Lazy<ExifToolSession?>(() =>
-            locator.ExifToolPath is { } path ? new ExifToolSession(path, logger) : null);
     }
 
-    public bool IsAvailable => _locator.IsAvailable;
+    public bool IsAvailable => _host.IsAvailable;
 
     public async Task<MediaMetadata?> ReadAsync(MediaFile file, CancellationToken cancellationToken = default)
     {
-        if (_session.Value is not { } session)
+        if (_host.Session is not { } session)
         {
             return null;
         }
@@ -331,12 +328,4 @@ public sealed class ExifToolMetadataProvider : IMetadataProvider, IAsyncDisposab
         JsonValueKind.Array => string.Join(", ", value.EnumerateArray().Select(Stringify).Where(s => !string.IsNullOrEmpty(s))),
         _ => value.GetRawText()
     };
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_session.IsValueCreated && _session.Value is { } session)
-        {
-            await session.DisposeAsync().ConfigureAwait(false);
-        }
-    }
 }

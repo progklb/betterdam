@@ -24,6 +24,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly IThumbnailService _thumbnails;
     private readonly IFfmpegLocator _ffmpeg;
     private readonly IPendingChangeStore _pending;
+    private readonly IMetadataWriter _writer;
     private readonly ILogger<MainWindowViewModel> _logger;
 
     private CancellationTokenSource? _scanCts;
@@ -35,6 +36,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IThumbnailService thumbnails,
         IFfmpegLocator ffmpeg,
         IPendingChangeStore pending,
+        IMetadataWriter writer,
         MetadataInspectorViewModel inspector,
         ILogger<MainWindowViewModel> logger)
     {
@@ -43,6 +45,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _thumbnails = thumbnails;
         _ffmpeg = ffmpeg;
         _pending = pending;
+        _writer = writer;
         _logger = logger;
         Inspector = inspector;
 
@@ -109,6 +112,70 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private int _pendingChangeCount;
 
     public bool HasPendingChanges => PendingChangeCount > 0;
+
+    [ObservableProperty]
+    private bool _isWritingAll;
+
+    /// <summary>
+    /// Writes every pending edit to its XMP sidecar. Files are processed one at a time and failures
+    /// are counted rather than aborting the run, so one unwritable file does not strand the rest.
+    /// The media files themselves are never touched.
+    /// </summary>
+    [RelayCommand]
+    private async Task WriteAllPendingSidecarsAsync()
+    {
+        if (!_writer.IsAvailable || _pending.Count == 0)
+        {
+            return;
+        }
+
+        var pending = _pending.GetAll();
+        var byPath = MediaItems.ToDictionary(i => i.File.FullPath, StringComparer.Ordinal);
+
+        IsWritingAll = true;
+        var written = 0;
+        var failed = 0;
+
+        try
+        {
+            foreach (var change in pending)
+            {
+                if (!byPath.TryGetValue(change.FilePath, out var item))
+                {
+                    continue;
+                }
+
+                StatusText = $"Writing sidecars — {written + failed + 1} of {pending.Count}";
+
+                var result = await _writer.WriteSidecarAsync(item.File, change.Edited, new SidecarWriteOptions());
+                if (result.Success)
+                {
+                    _pending.Discard(change.FilePath);
+                    item.HasPendingChanges = false;
+                    item.HasSidecar = true;
+                    written++;
+                }
+                else
+                {
+                    _logger.LogWarning("Sidecar write failed for {File}: {Error}", change.FilePath, result.Error);
+                    failed++;
+                }
+            }
+
+            StatusText = failed == 0
+                ? $"Wrote {written} XMP sidecar(s). Original media untouched."
+                : $"Wrote {written} sidecar(s), {failed} failed — see the log for details.";
+        }
+        finally
+        {
+            IsWritingAll = false;
+
+            if (SelectedItem is { } selected)
+            {
+                await Inspector.LoadAsync(selected);
+            }
+        }
+    }
 
     [RelayCommand]
     private void DiscardAllPendingChanges()

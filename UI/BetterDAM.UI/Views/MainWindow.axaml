@@ -51,6 +51,10 @@
                     IsVisible="{Binding HasPendingChanges}">
           <TextBlock VerticalAlignment="Center" Foreground="#5CB8F5"
                      Text="{Binding PendingChangeCount, StringFormat='● {0} file(s) with pending changes'}" />
+          <Button Content="Write all sidecars" FontSize="11" Padding="8,2"
+                  ToolTip.Tip="Write every pending change to its XMP sidecar. Original media is not modified."
+                  IsEnabled="{Binding !IsWritingAll}"
+                  Command="{Binding WriteAllPendingSidecarsCommand}" />
           <Button Content="Discard all" FontSize="11" Padding="8,2"
                   Command="{Binding DiscardAllPendingChangesCommand}" />
         </StackPanel>
@@ -110,12 +114,25 @@
                             IsVisible="{Binding IsVideo}">
                       <TextBlock Text="VIDEO" FontSize="9" />
                     </Border>
-                    <Border Background="#CC22A0F2" CornerRadius="2"
+                    <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top"
+                                Margin="4" Spacing="2">
+                      <Border Background="#CC22A0F2" CornerRadius="2" Padding="4,1"
+                              ToolTip.Tip="Metadata edited but not yet written to disk"
+                              IsVisible="{Binding HasPendingChanges}">
+                        <TextBlock Text="● MODIFIED" FontSize="9" />
+                      </Border>
+                      <Border Background="#CCFF7043" CornerRadius="2" Padding="4,1"
+                              ToolTip.Tip="Embedded metadata and the XMP sidecar disagree"
+                              IsVisible="{Binding HasConflicts}">
+                        <TextBlock Text="⚠ CONFLICT" FontSize="9" />
+                      </Border>
+                    </StackPanel>
+                    <Border Background="#99000000" CornerRadius="2"
                             Padding="4,1" Margin="4"
-                            HorizontalAlignment="Right" VerticalAlignment="Top"
-                            ToolTip.Tip="Metadata edited but not yet written to disk"
-                            IsVisible="{Binding HasPendingChanges}">
-                      <TextBlock Text="● MODIFIED" FontSize="9" />
+                            HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                            ToolTip.Tip="An XMP sidecar exists for this file"
+                            IsVisible="{Binding HasSidecar}">
+                      <TextBlock Text="XMP" FontSize="9" />
                     </Border>
                   </Panel>
                 </Border>

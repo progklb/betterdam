@@ -1,0 +1,223 @@
+using BetterDAM.Core.Interfaces;
+using BetterDAM.Core.Models;
+using BetterDAM.Metadata.ExifTool;
+using Microsoft.Extensions.Logging;
+
+namespace BetterDAM.Metadata.Xmp;
+
+/// <summary>
+/// Writes editable metadata to an XMP sidecar with ExifTool.
+///
+/// Safety properties this class is responsible for:
+/// <list type="bullet">
+/// <item>The media file is never opened for writing — the target is always a <c>.xmp</c> path, and
+/// that is asserted before any command runs.</item>
+/// <item>Updating an existing sidecar only touches the fields we manage, so vendor or
+/// application-specific XMP written by other tools survives.</item>
+/// <item>Writes are optionally read back and verified.</item>
+/// </list>
+/// </summary>
+public sealed class ExifToolSidecarWriter : IMetadataWriter
+{
+    private readonly ExifToolHost _host;
+    private readonly IMetadataProvider _reader;
+    private readonly ILogger<ExifToolSidecarWriter> _logger;
+
+    public ExifToolSidecarWriter(ExifToolHost host, IMetadataProvider reader, ILogger<ExifToolSidecarWriter> logger)
+    {
+        _host = host;
+        _reader = reader;
+        _logger = logger;
+    }
+
+    public bool IsAvailable => _host.IsAvailable;
+
+    public async Task<SidecarWriteResult> WriteSidecarAsync(
+        MediaFile file,
+        EditableMetadata metadata,
+        SidecarWriteOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        if (_host.Session is not { } session)
+        {
+            return SidecarWriteResult.Failed(file.FullPath, "ExifTool is not available.");
+        }
+
+        // Update the sidecar that already exists (either naming convention), otherwise create the
+        // Adobe-style one.
+        var sidecarPath = XmpSidecar.Find(file.FullPath) ?? XmpSidecar.GetPreferredPath(file.FullPath);
+
+        if (!IsSafeSidecarTarget(file.FullPath, sidecarPath))
+        {
+            // Belt and braces: refuse rather than risk writing into the user's original media.
+            var error = $"Refusing to write metadata to a non-sidecar path: {sidecarPath}";
+            _logger.LogError("{Error}", error);
+            return SidecarWriteResult.Failed(file.FullPath, error);
+        }
+
+        var temporaryValueFiles = new List<string>();
+
+        try
+        {
+            var arguments = BuildArguments(metadata, sidecarPath, temporaryValueFiles);
+            var output = await session.ExecuteAsync(arguments, cancellationToken).ConfigureAwait(false);
+
+            if (!IndicatesSuccess(output))
+            {
+                _logger.LogWarning("ExifTool did not confirm the sidecar write for {File}: {Output}", file.FullPath, output.Trim());
+                return SidecarWriteResult.Failed(file.FullPath, Summarise(output));
+            }
+
+            if (options.ValidateAfterWrite)
+            {
+                var validationError = await ValidateAsync(file, metadata, cancellationToken).ConfigureAwait(false);
+                if (validationError is not null)
+                {
+                    return SidecarWriteResult.Failed(file.FullPath, validationError);
+                }
+            }
+
+            _logger.LogInformation("Wrote XMP sidecar {Sidecar}", sidecarPath);
+            return new SidecarWriteResult(file.FullPath, true, sidecarPath);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed writing the sidecar for {File}", file.FullPath);
+            return SidecarWriteResult.Failed(file.FullPath, ex.Message);
+        }
+        finally
+        {
+            foreach (var path in temporaryValueFiles)
+            {
+                TryDelete(path);
+            }
+        }
+    }
+
+    /// <summary>The target must be a .xmp file and must not be the media file itself.</summary>
+    internal static bool IsSafeSidecarTarget(string mediaPath, string sidecarPath)
+        => Path.GetExtension(sidecarPath).Equals(".xmp", StringComparison.OrdinalIgnoreCase)
+           && !string.Equals(Path.GetFullPath(sidecarPath), Path.GetFullPath(mediaPath), StringComparison.OrdinalIgnoreCase);
+
+    private static List<string> BuildArguments(
+        EditableMetadata metadata,
+        string sidecarPath,
+        List<string> temporaryValueFiles)
+    {
+        // The sidecar is ours to manage, so no _original backup copies are left lying around.
+        var arguments = new List<string> { "-overwrite_original" };
+
+        AddValue(arguments, "XMP:Title", metadata.Title, temporaryValueFiles);
+        AddValue(arguments, "XMP:Description", metadata.Description, temporaryValueFiles);
+        AddValue(arguments, "XMP:Headline", metadata.Headline, temporaryValueFiles);
+        AddValue(arguments, "XMP:Label", metadata.Label, temporaryValueFiles);
+        AddValue(arguments, "XMP:Creator", metadata.Creator, temporaryValueFiles);
+        AddValue(arguments, "XMP:Rights", metadata.Copyright, temporaryValueFiles);
+        AddValue(arguments, "XMP:Rating", metadata.Rating?.ToString(), temporaryValueFiles);
+
+        // Keywords replace the existing list rather than adding to it.
+        //
+        // This must use repeated plain assignment (`-XMP:Subject=a -XMP:Subject=b`), which ExifTool
+        // treats as "set the list to these values". The intuitive `-XMP:Subject=` followed by
+        // `-XMP:Subject+=a` does NOT work: the empty assignment is ignored when append operations
+        // follow in the same command, and the keywords are appended to the old list instead —
+        // so removed keywords would silently survive and duplicates would accumulate.
+        if (metadata.Keywords.IsDefaultOrEmpty)
+        {
+            arguments.Add("-XMP:Subject=");
+        }
+        else
+        {
+            foreach (var keyword in metadata.Keywords)
+            {
+                arguments.Add($"-XMP:Subject={keyword}");
+            }
+        }
+
+        arguments.Add(sidecarPath);
+        return arguments;
+    }
+
+    /// <summary>
+    /// An empty assignment deletes the tag, which is how a cleared field is represented.
+    ///
+    /// ExifTool argument files are line-based, so a value containing a newline — a multi-line
+    /// description, typically — cannot be passed inline. Those are written to a temp file and
+    /// referenced with ExifTool's <c>&lt;=</c> "read value from file" syntax.
+    /// </summary>
+    private static void AddValue(List<string> arguments, string tag, string? value, List<string> temporaryValueFiles)
+    {
+        if (value is null)
+        {
+            arguments.Add($"-{tag}=");
+            return;
+        }
+
+        if (!value.Contains('\n') && !value.Contains('\r'))
+        {
+            arguments.Add($"-{tag}={value}");
+            return;
+        }
+
+        var temporaryPath = Path.Combine(Path.GetTempPath(), $"betterdam-xmp-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(temporaryPath, value);
+        temporaryValueFiles.Add(temporaryPath);
+        arguments.Add($"-{tag}<={temporaryPath}");
+    }
+
+    private static bool IndicatesSuccess(string output)
+    {
+        // ExifTool reports "1 image files created" or "1 image files updated" on success, and
+        // anything containing "Error" or "0 image files" is a failure.
+        var text = output.Trim();
+        return text.Contains("files created", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("files updated", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Summarise(string output)
+    {
+        var lines = output.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return lines.FirstOrDefault(l => l.Contains("Error", StringComparison.OrdinalIgnoreCase))
+               ?? (lines.Length > 0 ? lines[^1] : "ExifTool reported no changes.");
+    }
+
+    /// <summary>Reads the sidecar back and confirms the values we asked for are the values present.</summary>
+    private async Task<string?> ValidateAsync(MediaFile file, EditableMetadata expected, CancellationToken cancellationToken)
+    {
+        var reread = await _reader.ReadAsync(file, cancellationToken).ConfigureAwait(false);
+        if (reread?.Sidecar is not { } actual)
+        {
+            return "The sidecar could not be read back after writing.";
+        }
+
+        if (!actual.ValueEquals(expected))
+        {
+            _logger.LogWarning(
+                "Sidecar validation mismatch for {File}. Expected title={ExpectedTitle} rating={ExpectedRating}, found title={ActualTitle} rating={ActualRating}",
+                file.FullPath, expected.Title, expected.Rating, actual.Title, actual.Rating);
+
+            return "The sidecar was written but does not match what was requested.";
+        }
+
+        return null;
+    }
+
+    private void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException ex)
+        {
+            _logger.LogDebug(ex, "Could not remove the temporary value file {Path}", path);
+        }
+    }
+}

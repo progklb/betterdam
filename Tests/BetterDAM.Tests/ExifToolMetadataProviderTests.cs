@@ -15,8 +15,11 @@ public class ExifToolMetadataProviderTests
         public bool IsAvailable => ExifToolPath is not null;
     }
 
-    private static ExifToolMetadataProvider CreateProvider(FakeExifTool fake)
-        => new(new StubLocator(fake.Path_), NullLogger<ExifToolMetadataProvider>.Instance);
+    private static ExifToolHost CreateHost(FakeExifTool fake)
+        => new(new StubLocator(fake.Path_), NullLogger<ExifToolHost>.Instance);
+
+    private static ExifToolMetadataProvider CreateProvider(ExifToolHost host)
+        => new(host, NullLogger<ExifToolMetadataProvider>.Instance);
 
     private static MediaFile MediaFileFor(string path) => MediaFile.FromFileInfo(new FileInfo(path));
 
@@ -32,7 +35,8 @@ public class ExifToolMetadataProviderTests
         var imagePath = temp.CreateFile("IMG001.jpg");
 
         using var fake = new FakeExifTool(FakeExifTool.SampleJson(imagePath));
-        await using var provider = CreateProvider(fake);
+        await using var host = CreateHost(fake);
+        var provider = CreateProvider(host);
 
         var metadata = await provider.ReadAsync(MediaFileFor(imagePath));
 
@@ -74,7 +78,8 @@ public class ExifToolMetadataProviderTests
             """;
 
         using var fake = new FakeExifTool(json);
-        await using var provider = CreateProvider(fake);
+        await using var host = CreateHost(fake);
+        var provider = CreateProvider(host);
 
         var metadata = await provider.ReadAsync(MediaFileFor(imagePath));
 
@@ -97,7 +102,8 @@ public class ExifToolMetadataProviderTests
             """;
 
         using var fake = new FakeExifTool(json);
-        await using var provider = CreateProvider(fake);
+        await using var host = CreateHost(fake);
+        var provider = CreateProvider(host);
 
         var metadata = await provider.ReadAsync(MediaFileFor(imagePath));
 
@@ -125,7 +131,8 @@ public class ExifToolMetadataProviderTests
             """;
 
         using var fake = new FakeExifTool(json);
-        await using var provider = CreateProvider(fake);
+        await using var host = CreateHost(fake);
+        var provider = CreateProvider(host);
 
         var metadata = await provider.ReadAsync(MediaFileFor(imagePath));
 
@@ -154,7 +161,8 @@ public class ExifToolMetadataProviderTests
         var imagePath = temp.CreateFile("IMG005.jpg");
 
         using var fake = new FakeExifTool(FakeExifTool.SampleJson(imagePath));
-        await using var provider = CreateProvider(fake);
+        await using var host = CreateHost(fake);
+        var provider = CreateProvider(host);
 
         var metadata = await provider.ReadAsync(MediaFileFor(imagePath));
 
@@ -186,7 +194,8 @@ public class ExifToolMetadataProviderTests
             """;
 
         using var fake = new FakeExifTool(json);
-        await using var provider = CreateProvider(fake);
+        await using var host = CreateHost(fake);
+        var provider = CreateProvider(host);
 
         var metadata = await provider.ReadAsync(MediaFileFor(videoPath));
 
@@ -213,7 +222,8 @@ public class ExifToolMetadataProviderTests
             """;
 
         using var fake = new FakeExifTool(json);
-        await using var provider = CreateProvider(fake);
+        await using var host = CreateHost(fake);
+        var provider = CreateProvider(host);
 
         var metadata = await provider.ReadAsync(MediaFileFor(imagePath));
 
@@ -237,7 +247,8 @@ public class ExifToolMetadataProviderTests
             """;
 
         using var fake = new FakeExifTool(json);
-        await using var provider = CreateProvider(fake);
+        await using var host = CreateHost(fake);
+        var provider = CreateProvider(host);
 
         var metadata = await provider.ReadAsync(MediaFileFor(imagePath));
 
@@ -256,7 +267,8 @@ public class ExifToolMetadataProviderTests
         var imagePath = temp.CreateFile("IMG008.jpg");
 
         using var fake = new FakeExifTool("this is not json");
-        await using var provider = CreateProvider(fake);
+        await using var host = CreateHost(fake);
+        var provider = CreateProvider(host);
 
         Assert.Null(await provider.ReadAsync(MediaFileFor(imagePath)));
     }
@@ -267,9 +279,8 @@ public class ExifToolMetadataProviderTests
         using var temp = new TempFolder();
         var imagePath = temp.CreateFile("IMG009.jpg");
 
-        await using var provider = new ExifToolMetadataProvider(
-            new StubLocator(null),
-            NullLogger<ExifToolMetadataProvider>.Instance);
+        await using var host = new ExifToolHost(new StubLocator(null), NullLogger<ExifToolHost>.Instance);
+        var provider = new ExifToolMetadataProvider(host, NullLogger<ExifToolMetadataProvider>.Instance);
 
         Assert.False(provider.IsAvailable);
         Assert.Null(await provider.ReadAsync(MediaFileFor(imagePath)));

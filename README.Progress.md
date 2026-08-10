@@ -257,6 +257,107 @@ BETTERDAM_EXIFTOOL_DIR=/nonexistent dotnet run --project UI/BetterDAM.UI -- /pat
 
 ---
 
-## Phase 3 — XMP ⏳ Not started
+## Phase 3 — XMP ✅
 
-Create, read and update XMP sidecars, preserve unknown metadata, detect XMP/media conflicts.
+**Goal (from the README):** create XMP sidecars, read XMP sidecars, update XMP sidecars, preserve
+unknown metadata, detect XMP/media conflicts.
+
+This is the first phase that **writes to disk**, so the safety principles drive the design.
+
+### The promise, and how it is enforced
+
+> Ordinary metadata editing never modifies the original media.
+
+`ExifToolSidecarWriter` only ever targets a `.xmp` path. `IsSafeSidecarTarget` asserts the target
+has a `.xmp` extension *and* is not the media file, and refuses the write otherwise — belt and
+braces, because getting this wrong means damaging someone's originals. It is covered by a theory
+test, and by an integration test that hashes the media file before and after a write and asserts
+the bytes **and the modification time** are unchanged.
+
+### Preserving metadata we do not understand
+
+Updating an existing sidecar only assigns the fields BetterDAM manages, so anything another
+application wrote survives. Verified end to end: a sidecar carrying `XMP-photoshop:City=Windhoek`
+still had it afterwards, alongside the newly written values.
+
+### Conflict detection
+
+A conflict requires **both** layers to carry a value **and** for them to differ. A field the sidecar
+simply does not mention is not a conflict — that is the normal case for a sidecar holding only a
+rating, and reporting it would make the warning meaningless. Keyword conflicts compare membership,
+not order.
+
+The inspector lists each conflicting field with both values and offers:
+
+| Choice | Meaning |
+| ------ | ------- |
+| Keep embedded | Take the media file's value — but fields only the sidecar has are kept |
+| Keep sidecar | Take the sidecar's value |
+| Merge | Union the keywords; the sidecar wins for single-valued fields |
+
+Resolving records a **pending change**; it writes nothing. Committing is a separate, explicit act.
+
+**Worth knowing:** the conflict warning legitimately persists after saving, because writing the
+sidecar does not change the copy inside the media file — the two layers still differ, and will until
+Sync embeds the metadata in Phase 6. The strip says so up front, since otherwise it looks like the
+resolution failed.
+
+### What was built
+
+- `MetadataConflict` / `MetadataConflictDetector` (Core) — detection and resolution, no I/O.
+- `IMetadataWriter` / `SidecarWriteOptions` / `SidecarWriteResult` (Core).
+- `ExifToolSidecarWriter` (Metadata) — creates or updates the sidecar, clears fields that were
+  emptied, replaces the keyword list, and reads the result back to validate it.
+- `ExifToolHost` — the single `-stay_open` process is now **shared by the reader and the writer**
+  rather than each owning one.
+- UI: conflict strip with the three resolutions; `Write XMP sidecar` per file; `Write all sidecars`
+  in the status bar; `⚠ CONFLICT` and `XMP` badges in the grid; success/failure feedback.
+
+### Verified
+
+- `dotnet test` — **110/110 passing** (was 81).
+- Integration tests run against **real ExifTool**, and skip cleanly when it is absent.
+- Driven through the real UI against files with a deliberate conflict:
+  - All three conflicts (title, rating, keywords) listed with both sides.
+  - **Merge** unioned `alpha, beta` + `gamma` → `alpha, beta, gamma` and kept the sidecar title.
+  - Writing produced `Saved to CONFLICT.xmp`; on disk the sidecar had the merged keywords **and
+    still had `XMP:City = Windhoek`**.
+  - Creating a sidecar from scratch for a file that had none.
+  - **Both media files byte-identical before and after** (SHA-256), modification times unchanged.
+
+### Bug found and fixed during verification
+
+**Removing a keyword silently did nothing.** The intuitive ExifTool incantation —
+`-XMP:Subject=` to clear, then `-XMP:Subject+=kw` to add — does *not* replace the list. The empty
+assignment is ignored when append operations follow in the same command, so keywords were appended
+to the old list: removing `a` and `c` from `[a,b,c]` left `[a,b,c,b]`. The correct form is repeated
+plain assignment (`-XMP:Subject=a -XMP:Subject=b`), which ExifTool treats as "set the list to
+these". Found because a test asserted the read-back rather than trusting the exit status; the
+tests now assert `Success` on every write so a validation failure cannot pass unnoticed.
+
+### Things to know
+
+**Grid badges populate on inspection.** `⚠ CONFLICT` and `XMP` appear once a file has been selected,
+because detecting them means reading its metadata. Eagerly reading every file in a folder is a job
+for the SQLite catalog, not a synchronous scan.
+
+**Sidecar naming.** New sidecars use the Adobe convention (`IMG001.xmp`). An existing
+`IMG001.CR3.xmp` is detected and updated in place rather than a second file being created.
+
+**Multi-line descriptions** travel via a temp file, because ExifTool argument files are line-based.
+
+### Deliberately deferred
+
+- **No embedding into media files** — that is Phase 6 Sync, along with backups, timestamp
+  preservation, a summary/preview dialog, resumability and per-file error reporting.
+- `Write all sidecars` is a simple sequential loop with a status-bar count. The reviewed,
+  cancellable, resumable batch operation is Phase 6.
+- Pending changes are still **in-memory only** — quitting before saving discards them.
+- The raw XMP tab is still read-only.
+
+---
+
+## Phase 4 — Video ⏳ Not started
+
+FFmpeg integration, video playback, proxy generation, playback quality selection, video metadata
+display.

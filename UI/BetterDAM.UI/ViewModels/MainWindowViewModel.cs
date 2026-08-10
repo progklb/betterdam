@@ -88,6 +88,19 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string? _currentFolderPath;
 
+    /// <summary>
+    /// Shown in the preview pane only while a video is selected, so a missing FFmpeg stays out of
+    /// the way during metadata work but is unmissable the moment someone wants to watch something.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showFfmpegNotice;
+
+    public static string FfmpegInstallHint => OperatingSystem.IsMacOS()
+        ? "Install it with:  brew install ffmpeg"
+        : OperatingSystem.IsWindows()
+            ? "Install it with:  winget install Gyan.FFmpeg"
+            : "Install it with your package manager, e.g.  sudo apt install ffmpeg";
+
     partial void OnSelectedFolderChanged(FolderNodeViewModel? value)
     {
         if (value is null || value.IsPlaceholder)
@@ -98,7 +111,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _ = ScanFolderAsync(value.FullPath);
     }
 
-    partial void OnSelectedItemChanged(MediaItemViewModel? value) => _ = LoadPreviewAsync(value);
+    partial void OnSelectedItemChanged(MediaItemViewModel? value)
+    {
+        ShowFfmpegNotice = value is { IsVideo: true } && !_ffmpeg.IsAvailable;
+        _ = LoadPreviewAsync(value);
+    }
 
     partial void OnRecursiveChanged(bool value)
     {

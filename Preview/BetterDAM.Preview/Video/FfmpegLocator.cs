@@ -38,16 +38,17 @@ public sealed class FfmpegLocator : IFfmpegLocator
     {
         var executable = OperatingSystem.IsWindows() ? toolName + ".exe" : toolName;
 
+        // An explicit override is authoritative: if it is set and the tool is not there, FFmpeg is
+        // treated as unavailable rather than silently falling back to some other copy on the system.
         var configured = Environment.GetEnvironmentVariable("BETTERDAM_FFMPEG_DIR");
         if (!string.IsNullOrWhiteSpace(configured))
         {
             var candidate = Path.Combine(configured, executable);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
+            return File.Exists(candidate) ? candidate : null;
         }
 
+        // A GUI-launched app on macOS inherits a minimal PATH that usually excludes Homebrew, so
+        // the common install directories are checked as well as PATH.
         var pathVariable = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
         var searchDirectories = pathVariable
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)

@@ -78,31 +78,42 @@ Phase 1. Nothing in the code is coupled to 11.x specifics beyond standard XAML.
   time, which is the difference between a grid that fills smoothly and one that crawls.
 - Starting a new scan cancels the in-flight one; likewise for preview loads.
 - Optional command-line folder argument: `BetterDAM /path/to/media` opens and scans it on startup.
+- **Missing-FFmpeg notice** in the preview pane, shown *only while a video is selected*. It stays
+  out of the way during metadata work but is unmissable the moment someone wants to watch something.
+  Carries a platform-appropriate install command (`brew` / `winget` / `apt`).
 
 ### Verified
 
 - `dotnet build BetterDAM.sln` — clean, 0 warnings.
-- `dotnet test` — **27/27 passing** (scanner recursion/filtering/cancellation/progress, media-type
-  classification, cache key invalidation and round-trip, image thumbnail sizing and orientation).
+- `dotnet test` — **29/29 passing** (scanner recursion/filtering/cancellation/progress, media-type
+  classification, cache key invalidation and round-trip, image thumbnail sizing and orientation,
+  FFmpeg locator override).
 - **Ran the real app** against a generated test folder (12 PNGs + 5 in a subfolder + 1 MP4 + 1 .txt):
-  found 18 media files recursively, ignored the `.txt`, rendered thumbnails, and correctly showed
-  the MP4 with a `VIDEO` badge and "No preview" (FFmpeg absent on this machine).
-
-**Not verified interactively:** clicking a thumbnail to drive selection → inspector → preview. macOS
-blocked synthetic clicks (accessibility permission), so that path is code-complete and compiles but
-has not been exercised by hand. **Worth clicking through first when you review.**
+  found 18 media files recursively, ignored the `.txt`, rendered thumbnails.
+- Clicked through selection → inspector → preview for both an image and a video, with FFmpeg both
+  present (real frame thumbnail and preview) and forced absent (notice shown, see below).
 
 ### Things to know
 
-**FFmpeg is optional.** It is not installed on this machine, so video thumbnails are unavailable and
-the status bar says so on startup. Everything else works. To enable them:
+**FFmpeg is optional.** Without it, video thumbnails, previews and playback are unavailable;
+everything else — including all metadata work — behaves normally.
 
 ```sh
-brew install ffmpeg
+brew install ffmpeg     # macOS
 ```
 
-The locator checks `$BETTERDAM_FFMPEG_DIR`, then `PATH`, then common install directories. Bundling
-FFmpeg is a Phase 4 decision.
+The locator checks `$BETTERDAM_FFMPEG_DIR` first, then `PATH`, then common install directories
+(`/opt/homebrew/bin`, `/usr/local/bin`, …). That last fallback matters: a GUI-launched app on macOS
+inherits a minimal `PATH` that usually excludes Homebrew, so PATH alone would fail to find a
+perfectly good install. Bundling FFmpeg is a Phase 4 decision.
+
+`BETTERDAM_FFMPEG_DIR` is **authoritative**: if it is set and the tool is not there, FFmpeg is
+treated as unavailable rather than quietly falling back to another copy on the system. That makes
+the "not installed" state reproducible for testing:
+
+```sh
+BETTERDAM_FFMPEG_DIR=/nonexistent dotnet run --project UI/BetterDAM.UI -- /path/to/media
+```
 
 **RAW files get no thumbnail yet.** Skia cannot decode CR3/NEF/ARW. They are scanned, listed, and
 selectable, but show "No preview". The fix is to pull the embedded JPEG preview out of the RAW with

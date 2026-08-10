@@ -23,6 +23,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly IFolderBrowser _folderBrowser;
     private readonly IThumbnailService _thumbnails;
     private readonly IFfmpegLocator _ffmpeg;
+    private readonly IPendingChangeStore _pending;
     private readonly ILogger<MainWindowViewModel> _logger;
 
     private CancellationTokenSource? _scanCts;
@@ -33,13 +34,19 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IFolderBrowser folderBrowser,
         IThumbnailService thumbnails,
         IFfmpegLocator ffmpeg,
+        IPendingChangeStore pending,
+        MetadataInspectorViewModel inspector,
         ILogger<MainWindowViewModel> logger)
     {
         _scanner = scanner;
         _folderBrowser = folderBrowser;
         _thumbnails = thumbnails;
         _ffmpeg = ffmpeg;
+        _pending = pending;
         _logger = logger;
+        Inspector = inspector;
+
+        _pending.Changed += (_, _) => PendingChangeCount = _pending.Count;
 
         foreach (var root in _folderBrowser.GetRoots())
         {
@@ -50,6 +57,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
             ? "Ready. Choose a folder to begin."
             : "Ready. FFmpeg was not found — video thumbnails are unavailable.";
     }
+
+    public MetadataInspectorViewModel Inspector { get; }
 
     public ObservableCollection<FolderNodeViewModel> FolderRoots { get; } = [];
 
@@ -95,6 +104,25 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _showFfmpegNotice;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPendingChanges))]
+    private int _pendingChangeCount;
+
+    public bool HasPendingChanges => PendingChangeCount > 0;
+
+    [RelayCommand]
+    private void DiscardAllPendingChanges()
+    {
+        _pending.DiscardAll();
+
+        foreach (var item in MediaItems)
+        {
+            item.HasPendingChanges = false;
+        }
+
+        _ = Inspector.LoadAsync(SelectedItem);
+    }
+
     public static string FfmpegInstallHint => OperatingSystem.IsMacOS()
         ? "Install it with:  brew install ffmpeg"
         : OperatingSystem.IsWindows()
@@ -115,6 +143,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         ShowFfmpegNotice = value is { IsVideo: true } && !_ffmpeg.IsAvailable;
         _ = LoadPreviewAsync(value);
+        _ = Inspector.LoadAsync(value);
     }
 
     partial void OnRecursiveChanged(bool value)
@@ -192,7 +221,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
             await foreach (var file in _scanner.ScanAsync(path, options, cancellationToken: cts.Token))
             {
-                batch.Add(new MediaItemViewModel(file, _thumbnails));
+                // Re-scanning a folder must not lose the "modified" markers for edits already made.
+                batch.Add(new MediaItemViewModel(file, _thumbnails)
+                {
+                    HasPendingChanges = _pending.HasChanges(file.FullPath)
+                });
                 count++;
 
                 if (batch.Count >= BatchSize || stopwatch.Elapsed - lastFlush >= BatchInterval)

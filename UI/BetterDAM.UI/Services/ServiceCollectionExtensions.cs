@@ -1,5 +1,6 @@
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Services;
+using BetterDAM.Metadata.ExifTool;
 using BetterDAM.Preview;
 using BetterDAM.Preview.Cache;
 using BetterDAM.Preview.Images;
@@ -26,6 +27,11 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IThumbnailGenerator, FfmpegVideoThumbnailGenerator>();
         services.AddSingleton<IThumbnailService, ThumbnailService>();
 
+        services.AddSingleton<IExifToolLocator, ExifToolLocator>();
+        services.AddSingleton<IMetadataProvider, ExifToolMetadataProvider>();
+        services.AddSingleton<IPendingChangeStore, PendingChangeStore>();
+
+        services.AddTransient<MetadataInspectorViewModel>();
         services.AddTransient<MainWindowViewModel>();
 
         return services;

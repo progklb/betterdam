@@ -17,7 +17,7 @@ BetterDAM.sln
     Core/BetterDAM.Core          Models, interfaces, scanning services. No UI, no ExifTool, no FFmpeg.
     Preview/BetterDAM.Preview    Thumbnail generation (Skia for images, FFmpeg for video) + disk cache.
     UI/BetterDAM.UI              Avalonia desktop app (MVVM). Assembly name: BetterDAM.
-    Tests/BetterDAM.Tests        xUnit tests. 27 passing.
+    Tests/BetterDAM.Tests        xUnit tests.
 ```
 
 The dependency direction is one-way: `UI → Preview → Core`. `Core` references nothing but
@@ -130,7 +130,7 @@ disposable — delete it and the app rebuilds from the originals.
 ```sh
 dotnet run --project UI/BetterDAM.UI                    # opens with the folder tree
 dotnet run --project UI/BetterDAM.UI -- /path/to/media  # opens and scans that folder
-dotnet test                                             # 27 tests
+dotnet test                                             # all tests
 ```
 
 ### Deliberately deferred
@@ -142,7 +142,121 @@ Core in the same way.
 
 ---
 
-## Phase 2 — Metadata ⏳ Not started
+## Phase 2 — Metadata ✅
 
-Read embedded metadata, read XMP, display camera and video metadata, edit basic metadata, keywords,
-and ratings.
+**Goal (from the README):** read embedded metadata, read XMP, display camera metadata, display video
+metadata, edit basic metadata, edit keywords, edit ratings.
+
+### New project
+
+```text
+Metadata/BetterDAM.Metadata    ExifTool integration + XMP sidecar resolution.
+```
+
+Dependency direction stays one-way: `UI → Metadata → Core`. `Core` gained the metadata *models and
+interfaces* but knows nothing about ExifTool.
+
+### The virtual metadata layer
+
+This is the heart of the phase, and the part worth understanding before reviewing:
+
+```text
+Embedded metadata  ─┐
+XMP sidecar        ─┼─→  Effective  ─→  + pending edit  ─→  what the inspector shows
+                    │
+User edits ─────────┘  (kept in PendingChangeStore, never on disk)
+```
+
+- `MediaMetadata` keeps the **embedded and sidecar layers separate** rather than pre-merging them.
+  Phase 2 only displays `Effective`, but keeping both is exactly what Phase 3 conflict detection
+  needs — no redesign required.
+- Merging is **per field**, not wholesale: a sidecar carrying only a rating overrides the rating and
+  leaves the embedded title alone. Verified against real files (see below).
+- **Nothing is written to disk.** Editing a field records a `PendingChange` in memory. Editing a
+  value back to its original silently drops the entry, so a field changed and un-changed by hand
+  leaves nothing pending.
+
+### ExifTool integration
+
+`ExifToolSession` drives one long-lived process through ExifTool's `-stay_open` protocol. ExifTool
+is a Perl script costing a few hundred milliseconds to start; paying that per file would make batch
+operations unusable. Each request ends with `-execute{n}` and is matched to its `{ready{n}}` reply.
+Requests are serialised — one process has one stdin.
+
+The session survives a bad response: a timeout or broken pipe leaves the stream out of step with the
+sequence numbers, so the process is discarded and restarted rather than reused.
+
+`ExifToolMetadataProvider` reads the media file **and its sidecar in a single round trip** and maps
+ExifTool's `-G`-prefixed JSON onto the models, taking the first non-empty of a candidate list per
+field (`XMP:Title` → `IPTC:ObjectName` → `QuickTime:Title` → …). It also dedupes the camera name so
+a Canon body reads "Canon EOS R5" rather than "Canon Canon EOS R5".
+
+### UI
+
+- Inspector rebuilt as tabs: **General** (editable) / **Camera** / **Video** / **XMP**. The Video tab
+  only appears for videos.
+- General: 5-star rating (clicking the current rating clears it, as Bridge and Photo Mechanic do),
+  Title, Headline, Description, keyword chips with ✕ removal, Label, Creator, Copyright.
+  Pasting `a, b, c` into the keyword box adds three keywords.
+- **XMP** tab lists every tag ExifTool reported, sidecar tags included and marked, for power users.
+- A `● MODIFIED` badge on the thumbnail, a "Modified — not yet written to disk" strip with **Revert**,
+  and a pending-file count plus **Discard all** in the status bar.
+- Missing-ExifTool notice at the top of the inspector, matching the FFmpeg pattern.
+
+### Verified
+
+- `dotnet test` — **81/81 passing** (was 29).
+- **ExifTool 13.55 installed and verified against real files** (created with ExifTool/FFmpeg):
+  - Editable fields, camera fields (`Canon EOS R5`, `RF100-500mm`, ISO 800, 1/1250, f/7.1, 500.0 mm,
+    capture date, GPS, orientation) and video fields (1920×1080, 25 fps, 4.00 s, 252 kbps, mp4a,
+    1 channel, 44100) all read correctly.
+  - **Sidecar precedence confirmed end to end**: a JPEG with embedded `Rating=1, Title="Embedded
+    title", Label="Green"` plus a sidecar carrying `Rating=5, Label="Red"` displays rating 5 and
+    label Red from the sidecar, while keeping the embedded title and keywords the sidecar is silent
+    about.
+  - Every mapped tag key was checked against real `exiftool -json -G` output.
+- Editing, keyword chips, star rating, MODIFIED badge, Revert and the status-bar count all exercised
+  by driving the real UI.
+- Incidentally stress-tested: a stray click started a recursive scan of `/`; the UI stayed responsive
+  and Cancel Scan stopped it cleanly.
+
+### Bugs found and fixed during verification
+
+Worth recording because two were silent:
+
+1. **Star rating did nothing.** `[RelayCommand] void SetRating(int)` generates `RelayCommand<int>`,
+   whose `CanExecute` rejects the *string* a XAML `CommandParameter="4"` literal produces — so the
+   button no-opped with no exception. Now takes a string and parses it. Regression test added.
+2. **Hidden Video tab stayed selected.** Selecting an image after a video left the panel showing
+   empty video fields with no tab highlighted. `SelectedIndex` is now bound and coerced off the
+   video tab for stills. Regression test added.
+3. **`{ready}` marker sharing a line with the payload** hung the session until the 60s timeout when
+   output did not end in a newline. Now matched at end-of-line rather than as a whole line.
+4. **Empty metadata rows left blank gaps** — the label was hidden but the value row still occupied
+   space. Fields are now hidden as a unit.
+5. Four inspector tabs wrapped to two rows in the 360px column; tab font size reduced.
+
+### Testing without ExifTool
+
+`FakeExifTool` is a shell script speaking enough of the `-stay_open` protocol to exercise the session
+and provider without ExifTool installed. It verifies argument framing, response matching and process
+reuse (five reads → one process). Like FFmpeg, `BETTERDAM_EXIFTOOL_DIR` is an authoritative override:
+
+```sh
+BETTERDAM_EXIFTOOL_DIR=/nonexistent dotnet run --project UI/BetterDAM.UI -- /path/to/media
+```
+
+### Deliberately deferred
+
+- **No writing.** `IMetadataProvider` is read-only on purpose; there is no `WriteAsync` yet. Sidecar
+  writing is Phase 3, embedding is Phase 6.
+- **No conflict detection or resolution UI** — Phase 3. The data it needs is already being collected.
+- **Pending changes are in-memory only.** Quitting discards them. Persisting the working tree belongs
+  with the SQLite catalog.
+- **No batch editing** (Phase 5) and **no History tab** yet.
+
+---
+
+## Phase 3 — XMP ⏳ Not started
+
+Create, read and update XMP sidecars, preserve unknown metadata, detect XMP/media conflicts.

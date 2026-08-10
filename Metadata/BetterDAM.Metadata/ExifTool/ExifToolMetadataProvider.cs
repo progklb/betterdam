@@ -1,0 +1,342 @@
+using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
+using BetterDAM.Core.Interfaces;
+using BetterDAM.Core.Models;
+using BetterDAM.Metadata.Xmp;
+using Microsoft.Extensions.Logging;
+
+namespace BetterDAM.Metadata.ExifTool;
+
+public sealed class ExifToolMetadataProvider : IMetadataProvider, IAsyncDisposable
+{
+    private readonly IExifToolLocator _locator;
+    private readonly ILogger<ExifToolMetadataProvider> _logger;
+    private readonly Lazy<ExifToolSession?> _session;
+
+    public ExifToolMetadataProvider(IExifToolLocator locator, ILogger<ExifToolMetadataProvider> logger)
+    {
+        _locator = locator;
+        _logger = logger;
+        _session = new Lazy<ExifToolSession?>(() =>
+            locator.ExifToolPath is { } path ? new ExifToolSession(path, logger) : null);
+    }
+
+    public bool IsAvailable => _locator.IsAvailable;
+
+    public async Task<MediaMetadata?> ReadAsync(MediaFile file, CancellationToken cancellationToken = default)
+    {
+        if (_session.Value is not { } session)
+        {
+            return null;
+        }
+
+        var sidecarPath = XmpSidecar.Find(file.FullPath);
+
+        // Media file and sidecar are read in one round trip rather than two.
+        var arguments = new List<string> { "-json", "-G" };
+        arguments.Add(file.FullPath);
+        if (sidecarPath is not null)
+        {
+            arguments.Add(sidecarPath);
+        }
+
+        string json;
+        try
+        {
+            json = await session.ExecuteAsync(arguments, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ExifTool failed reading {File}", file.FullPath);
+            return null;
+        }
+
+        var documents = ParseDocuments(json, file.FullPath);
+        if (documents.Count == 0)
+        {
+            return null;
+        }
+
+        var media = FindDocument(documents, file.FullPath) ?? documents[0];
+        var sidecar = sidecarPath is null ? null : FindDocument(documents, sidecarPath);
+
+        return new MediaMetadata
+        {
+            Embedded = ReadEditable(media),
+            Sidecar = sidecar is null ? null : ReadEditable(sidecar),
+            Camera = ReadCamera(media),
+            Video = file.MediaType == MediaType.Video ? ReadVideo(media) : VideoInfo.Empty,
+            RawTags = ReadRawTags(media, sidecar),
+            SidecarPath = sidecar is null ? null : sidecarPath
+        };
+    }
+
+    private List<Dictionary<string, JsonElement>> ParseDocuments(string json, string context)
+    {
+        var documents = new List<Dictionary<string, JsonElement>>();
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return documents;
+        }
+
+        try
+        {
+            using var parsed = JsonDocument.Parse(json);
+            if (parsed.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return documents;
+            }
+
+            foreach (var element in parsed.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var map = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+                foreach (var property in element.EnumerateObject())
+                {
+                    map[property.Name] = property.Value.Clone();
+                }
+
+                documents.Add(map);
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Could not parse ExifTool output for {File}", context);
+        }
+
+        return documents;
+    }
+
+    private static Dictionary<string, JsonElement>? FindDocument(
+        List<Dictionary<string, JsonElement>> documents,
+        string path)
+    {
+        foreach (var document in documents)
+        {
+            if (document.TryGetValue("SourceFile", out var source) &&
+                source.ValueKind == JsonValueKind.String &&
+                string.Equals(source.GetString(), path, StringComparison.OrdinalIgnoreCase))
+            {
+                return document;
+            }
+        }
+
+        return null;
+    }
+
+    private static EditableMetadata ReadEditable(Dictionary<string, JsonElement> document) => new()
+    {
+        Title = First(document, "XMP:Title", "IPTC:ObjectName", "QuickTime:Title", "XMP:Headline"),
+        Description = First(document, "XMP:Description", "IPTC:Caption-Abstract", "EXIF:ImageDescription", "QuickTime:Description"),
+        Keywords = ReadKeywords(document),
+        Rating = ReadRating(document),
+        Label = First(document, "XMP:Label"),
+        Creator = First(document, "XMP:Creator", "IPTC:By-line", "EXIF:Artist", "QuickTime:Artist"),
+        Copyright = First(document, "XMP:Rights", "IPTC:CopyrightNotice", "EXIF:Copyright"),
+        Headline = First(document, "XMP:Headline", "IPTC:Headline")
+    };
+
+    private static CameraInfo ReadCamera(Dictionary<string, JsonElement> document)
+    {
+        var make = First(document, "EXIF:Make", "QuickTime:Make");
+        var model = First(document, "EXIF:Model", "QuickTime:Model");
+
+        return new CameraInfo
+        {
+            Camera = CombineMakeAndModel(make, model),
+            Lens = First(document, "EXIF:LensModel", "Composite:LensID", "XMP:Lens", "MakerNotes:LensType"),
+            Iso = First(document, "EXIF:ISO", "Composite:ISO", "MakerNotes:ISO"),
+            ShutterSpeed = First(document, "Composite:ShutterSpeed", "EXIF:ExposureTime"),
+            Aperture = FormatAperture(First(document, "Composite:Aperture", "EXIF:FNumber")),
+            FocalLength = First(document, "EXIF:FocalLength", "Composite:FocalLength35efl"),
+            CaptureDate = First(document, "EXIF:DateTimeOriginal", "EXIF:CreateDate", "XMP:DateCreated", "QuickTime:CreateDate"),
+            Gps = First(document, "Composite:GPSPosition", "EXIF:GPSPosition"),
+            Orientation = First(document, "EXIF:Orientation")
+        };
+    }
+
+    private static VideoInfo ReadVideo(Dictionary<string, JsonElement> document)
+    {
+        var width = First(document, "QuickTime:ImageWidth", "File:ImageWidth", "RIFF:ImageWidth");
+        var height = First(document, "QuickTime:ImageHeight", "File:ImageHeight", "RIFF:ImageHeight");
+
+        return new VideoInfo
+        {
+            Codec = First(document, "QuickTime:CompressorName", "QuickTime:CompressorID", "RIFF:VideoCodec", "Track1:CompressorName"),
+            Resolution = width is not null && height is not null ? $"{width} × {height}" : null,
+            FrameRate = First(document, "QuickTime:VideoFrameRate", "Composite:VideoFrameRate", "RIFF:VideoFrameRate"),
+            Duration = First(document, "QuickTime:Duration", "Composite:Duration", "RIFF:Duration"),
+            Bitrate = First(document, "QuickTime:AvgBitrate", "Composite:AvgBitrate", "RIFF:AvgBytesPerSec"),
+            ColourSpace = First(document, "QuickTime:ColorRepresentation", "QuickTime:ColorPrimaries", "QuickTime:ColorProfiles"),
+            HdrInfo = First(document, "QuickTime:TransferCharacteristics", "QuickTime:HDRVividFlag", "QuickTime:MasteringDisplayMetadata"),
+            AudioCodec = First(document, "QuickTime:AudioFormat", "RIFF:Encoding", "QuickTime:AudioCodecID"),
+            AudioChannels = First(document, "QuickTime:AudioChannels", "RIFF:NumChannels"),
+            AudioSampleRate = First(document, "QuickTime:AudioSampleRate", "RIFF:SampleRate")
+        };
+    }
+
+    /// <summary>
+    /// Every tag, for the advanced raw view. Sidecar tags are included and marked so a power user
+    /// can see which layer a value actually came from.
+    /// </summary>
+    private static ImmutableArray<RawMetadataTag> ReadRawTags(
+        Dictionary<string, JsonElement> media,
+        Dictionary<string, JsonElement>? sidecar)
+    {
+        var tags = new List<RawMetadataTag>();
+        Collect(media, null);
+        Collect(sidecar, "Sidecar");
+
+        return tags
+            .OrderBy(t => t.Group, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+
+        void Collect(Dictionary<string, JsonElement>? document, string? prefix)
+        {
+            if (document is null)
+            {
+                return;
+            }
+
+            foreach (var (key, value) in document)
+            {
+                if (key is "SourceFile")
+                {
+                    continue;
+                }
+
+                var separator = key.IndexOf(':');
+                var group = separator > 0 ? key[..separator] : "Other";
+                var name = separator > 0 ? key[(separator + 1)..] : key;
+
+                if (prefix is not null)
+                {
+                    group = $"{prefix}:{group}";
+                }
+
+                var text = Stringify(value);
+                if (!string.IsNullOrEmpty(text))
+                {
+                    tags.Add(new RawMetadataTag(group, name, text));
+                }
+            }
+        }
+    }
+
+    private static ImmutableArray<string> ReadKeywords(Dictionary<string, JsonElement> document)
+    {
+        foreach (var key in (string[])["XMP:Subject", "IPTC:Keywords", "XMP:HierarchicalSubject"])
+        {
+            if (!document.TryGetValue(key, out var value))
+            {
+                continue;
+            }
+
+            var keywords = value.ValueKind switch
+            {
+                JsonValueKind.Array => value.EnumerateArray().Select(Stringify),
+                _ => Stringify(value).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).AsEnumerable()
+            };
+
+            var result = keywords
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToImmutableArray();
+
+            if (result.Length > 0)
+            {
+                return result;
+            }
+        }
+
+        return [];
+    }
+
+    private static int? ReadRating(Dictionary<string, JsonElement> document)
+    {
+        var raw = First(document, "XMP:Rating", "XMP:RatingPercent");
+        if (raw is null)
+        {
+            return null;
+        }
+
+        if (!double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
+        {
+            return null;
+        }
+
+        return Math.Clamp((int)Math.Round(value), 0, 5);
+    }
+
+    private static string? CombineMakeAndModel(string? make, string? model)
+    {
+        if (make is null)
+        {
+            return model;
+        }
+
+        if (model is null)
+        {
+            return make;
+        }
+
+        // Most cameras repeat the manufacturer in the model ("Canon EOS R5"); avoid "Canon Canon EOS R5".
+        return model.StartsWith(make, StringComparison.OrdinalIgnoreCase) ? model : $"{make} {model}";
+    }
+
+    private static string? FormatAperture(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        return value.StartsWith("f/", StringComparison.OrdinalIgnoreCase) ? value : $"f/{value}";
+    }
+
+    private static string? First(Dictionary<string, JsonElement> document, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (document.TryGetValue(key, out var value))
+            {
+                var text = Stringify(value);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string Stringify(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString() ?? string.Empty,
+        JsonValueKind.Number => value.GetRawText(),
+        JsonValueKind.True => "true",
+        JsonValueKind.False => "false",
+        JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+        JsonValueKind.Array => string.Join(", ", value.EnumerateArray().Select(Stringify).Where(s => !string.IsNullOrEmpty(s))),
+        _ => value.GetRawText()
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_session.IsValueCreated && _session.Value is { } session)
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+}

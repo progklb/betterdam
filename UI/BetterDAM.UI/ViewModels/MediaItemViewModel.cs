@@ -39,6 +39,10 @@ public sealed partial class MediaItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _thumbnailUnavailable;
 
+    /// <summary>Drives the "modified" badge in the grid. Kept in sync with the pending-change store.</summary>
+    [ObservableProperty]
+    private bool _hasPendingChanges;
+
     /// <summary>
     /// Requests the thumbnail once. Called when the item's container is realized, so a scan of
     /// 50,000 files only decodes the handful of items actually on screen.

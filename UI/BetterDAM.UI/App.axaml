@@ -6,6 +6,7 @@
 
   <Application.Resources>
     <conv:MediaTypeGlyphConverter x:Key="MediaTypeGlyph" />
+    <conv:StarGlyphConverter x:Key="StarGlyph" />
   </Application.Resources>
 
   <Application.Styles>

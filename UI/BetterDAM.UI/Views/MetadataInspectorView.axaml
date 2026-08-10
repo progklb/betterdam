@@ -1,0 +1,300 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:BetterDAM.UI.ViewModels"
+             xmlns:core="using:BetterDAM.Core.Models"
+             mc:Ignorable="d"
+             x:Class="BetterDAM.UI.Views.MetadataInspectorView"
+             x:DataType="vm:MetadataInspectorViewModel">
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.label">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Opacity" Value="0.55" />
+      <Setter Property="Margin" Value="0,10,0,3" />
+    </Style>
+    <Style Selector="TextBlock.value">
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
+    <Style Selector="Button.star">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="2,0" />
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <!-- Fluent's default tab headers are large enough that four of them wrap in this column. -->
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <!-- A field is hidden entirely when it has no value, so no empty row is left behind. -->
+    <Style Selector="StackPanel.field">
+      <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+
+    <!-- Nothing selected -->
+    <TextBlock Text="No item selected" Opacity="0.4"
+               HorizontalAlignment="Center" Margin="0,24,0,0"
+               IsVisible="{Binding !HasItem}" />
+
+    <DockPanel IsVisible="{Binding HasItem}">
+
+      <!-- ExifTool missing: metadata cannot be read at all, so it belongs at the top of the panel. -->
+      <Border DockPanel.Dock="Top"
+              IsVisible="{Binding !IsMetadataEngineAvailable}"
+              Background="#26FFC107" BorderBrush="#66FFC107" BorderThickness="1"
+              CornerRadius="6" Padding="12,10" Margin="8,8,8,0">
+        <StackPanel Spacing="5">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="⚠" FontSize="14" Foreground="#FFC107" VerticalAlignment="Center" />
+            <TextBlock Text="ExifTool is not installed" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </StackPanel>
+          <TextBlock Text="Metadata cannot be read or edited until ExifTool is installed. Browsing and thumbnails work as normal."
+                     TextWrapping="Wrap" Opacity="0.75" FontSize="12" />
+          <TextBlock Text="{x:Static vm:MetadataInspectorViewModel.ExifToolInstallHint}"
+                     FontFamily="monospace" FontSize="12" Opacity="0.9" TextWrapping="Wrap" />
+          <TextBlock Text="Restart BetterDAM after installing." FontSize="11" Opacity="0.55" />
+        </StackPanel>
+      </Border>
+
+      <!-- Pending / sidecar status strip -->
+      <StackPanel DockPanel.Dock="Top" Margin="8,8,8,0" Spacing="6">
+        <Border IsVisible="{Binding HasPendingChanges}"
+                Background="#2622A0F2" BorderBrush="#6622A0F2" BorderThickness="1"
+                CornerRadius="4" Padding="8,6">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Revert" FontSize="11" Padding="8,2"
+                    Command="{Binding RevertChangesCommand}" />
+            <TextBlock Text="● Modified — not yet written to disk" FontSize="12"
+                       VerticalAlignment="Center" />
+          </DockPanel>
+        </Border>
+
+        <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                   IsVisible="{Binding HasSidecar}"
+                   Text="{Binding SidecarPath, StringFormat='XMP sidecar: {0}'}" />
+
+        <ProgressBar IsIndeterminate="True" Height="3" IsVisible="{Binding IsLoading}" />
+      </StackPanel>
+
+      <TabControl Margin="4,6,4,4" SelectedIndex="{Binding SelectedTabIndex}">
+
+        <!-- ============ General (editable) ============ -->
+        <TabItem Header="General">
+          <ScrollViewer>
+            <StackPanel Margin="8,4">
+
+              <TextBlock Text="Rating" Classes="label" />
+              <StackPanel Orientation="Horizontal">
+                <Button Classes="star" Content="{Binding Rating, Converter={StaticResource StarGlyph}, ConverterParameter=1}"
+                        Command="{Binding SetRatingCommand}" CommandParameter="1" />
+                <Button Classes="star" Content="{Binding Rating, Converter={StaticResource StarGlyph}, ConverterParameter=2}"
+                        Command="{Binding SetRatingCommand}" CommandParameter="2" />
+                <Button Classes="star" Content="{Binding Rating, Converter={StaticResource StarGlyph}, ConverterParameter=3}"
+                        Command="{Binding SetRatingCommand}" CommandParameter="3" />
+                <Button Classes="star" Content="{Binding Rating, Converter={StaticResource StarGlyph}, ConverterParameter=4}"
+                        Command="{Binding SetRatingCommand}" CommandParameter="4" />
+                <Button Classes="star" Content="{Binding Rating, Converter={StaticResource StarGlyph}, ConverterParameter=5}"
+                        Command="{Binding SetRatingCommand}" CommandParameter="5" />
+              </StackPanel>
+
+              <TextBlock Text="Title" Classes="label" />
+              <TextBox Text="{Binding Title}" />
+
+              <TextBlock Text="Headline" Classes="label" />
+              <TextBox Text="{Binding Headline}" />
+
+              <TextBlock Text="Description" Classes="label" />
+              <TextBox Text="{Binding Description}" AcceptsReturn="True"
+                       TextWrapping="Wrap" MinHeight="70" MaxHeight="140" />
+
+              <TextBlock Text="Keywords" Classes="label" />
+              <ItemsControl ItemsSource="{Binding Keywords}" Margin="0,0,0,4">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Border Background="#28FFFFFF" CornerRadius="10" Padding="8,3" Margin="0,0,4,4">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{Binding}" FontSize="12" VerticalAlignment="Center" />
+                        <Button Content="✕" FontSize="9" Padding="2,0" MinWidth="0"
+                                Background="Transparent" BorderThickness="0"
+                                VerticalAlignment="Center"
+                                Command="{Binding $parent[ItemsControl].((vm:MetadataInspectorViewModel)DataContext).RemoveKeywordCommand}"
+                                CommandParameter="{Binding}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Add" Margin="4,0,0,0"
+                        Command="{Binding AddKeywordCommand}" />
+                <TextBox Text="{Binding NewKeyword}" Watermark="Add keyword…">
+                  <TextBox.KeyBindings>
+                    <KeyBinding Gesture="Enter" Command="{Binding AddKeywordCommand}" />
+                  </TextBox.KeyBindings>
+                </TextBox>
+              </DockPanel>
+
+              <TextBlock Text="Label" Classes="label" />
+              <TextBox Text="{Binding Label}" />
+
+              <TextBlock Text="Creator" Classes="label" />
+              <TextBox Text="{Binding Creator}" />
+
+              <TextBlock Text="Copyright" Classes="label" />
+              <TextBox Text="{Binding Copyright}" />
+
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <!-- ============ Camera (read-only) ============ -->
+        <TabItem Header="Camera">
+          <ScrollViewer>
+            <StackPanel Margin="8,4" DataContext="{Binding Camera}" x:DataType="core:CameraInfo">
+              <TextBlock Text="No camera metadata" Opacity="0.4" Margin="0,12,0,0"
+                         IsVisible="{Binding IsEmpty}" />
+
+              <StackPanel Classes="field" IsVisible="{Binding Camera, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Camera" Classes="label" />
+                <TextBlock Text="{Binding Camera}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding Lens, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Lens" Classes="label" />
+                <TextBlock Text="{Binding Lens}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding Iso, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="ISO" Classes="label" />
+                <TextBlock Text="{Binding Iso}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding ShutterSpeed, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Shutter speed" Classes="label" />
+                <TextBlock Text="{Binding ShutterSpeed}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding Aperture, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Aperture" Classes="label" />
+                <TextBlock Text="{Binding Aperture}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding FocalLength, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Focal length" Classes="label" />
+                <TextBlock Text="{Binding FocalLength}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding CaptureDate, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Capture date" Classes="label" />
+                <TextBlock Text="{Binding CaptureDate}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding Gps, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="GPS" Classes="label" />
+                <TextBlock Text="{Binding Gps}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding Orientation, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Orientation" Classes="label" />
+                <TextBlock Text="{Binding Orientation}" Classes="value" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <!-- ============ Video (read-only) ============ -->
+        <TabItem Header="Video" IsVisible="{Binding IsVideo}">
+          <ScrollViewer>
+            <StackPanel Margin="8,4" DataContext="{Binding Video}" x:DataType="core:VideoInfo">
+              <TextBlock Text="No video metadata" Opacity="0.4" Margin="0,12,0,0"
+                         IsVisible="{Binding IsEmpty}" />
+
+              <StackPanel Classes="field" IsVisible="{Binding Codec, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Codec" Classes="label" />
+                <TextBlock Text="{Binding Codec}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding Resolution, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Resolution" Classes="label" />
+                <TextBlock Text="{Binding Resolution}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding FrameRate, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Frame rate" Classes="label" />
+                <TextBlock Text="{Binding FrameRate}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding Duration, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Duration" Classes="label" />
+                <TextBlock Text="{Binding Duration}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding Bitrate, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Bitrate" Classes="label" />
+                <TextBlock Text="{Binding Bitrate}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding ColourSpace, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Colour space" Classes="label" />
+                <TextBlock Text="{Binding ColourSpace}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding HdrInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="HDR" Classes="label" />
+                <TextBlock Text="{Binding HdrInfo}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding AudioCodec, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Audio codec" Classes="label" />
+                <TextBlock Text="{Binding AudioCodec}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding AudioChannels, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Audio channels" Classes="label" />
+                <TextBlock Text="{Binding AudioChannels}" Classes="value" />
+              </StackPanel>
+
+              <StackPanel Classes="field" IsVisible="{Binding AudioSampleRate, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="Audio sample rate" Classes="label" />
+                <TextBlock Text="{Binding AudioSampleRate}" Classes="value" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <!-- ============ Raw XMP / all tags ============ -->
+        <TabItem Header="XMP">
+          <DockPanel Margin="8,4">
+            <TextBlock DockPanel.Dock="Top" FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                       Margin="0,0,0,6"
+                       Text="Every tag reported by ExifTool. Advanced view — read-only in this phase." />
+            <ListBox ItemsSource="{Binding RawTags}">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="core:RawMetadataTag">
+                  <StackPanel Margin="0,2">
+                    <TextBlock Text="{Binding QualifiedName}" FontSize="11" Opacity="0.6" />
+                    <TextBlock Text="{Binding Value}" FontSize="12" TextWrapping="Wrap" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+        </TabItem>
+
+      </TabControl>
+    </DockPanel>
+  </Panel>
+</UserControl>

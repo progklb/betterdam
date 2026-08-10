@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Core\BetterDAM.Core\BetterDAM.Core.csproj" />
+    <ProjectReference Include="..\..\Metadata\BetterDAM.Metadata\BetterDAM.Metadata.csproj" />
     <ProjectReference Include="..\..\Preview\BetterDAM.Preview\BetterDAM.Preview.csproj" />
   </ItemGroup>
 

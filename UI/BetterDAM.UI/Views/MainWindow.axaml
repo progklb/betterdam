@@ -4,6 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:BetterDAM.UI.ViewModels"
         xmlns:controls="using:BetterDAM.UI.Controls"
+        xmlns:views="using:BetterDAM.UI.Views"
         mc:Ignorable="d"
         x:Class="BetterDAM.UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -44,14 +45,24 @@
 
     <!-- Status bar -->
     <Border DockPanel.Dock="Bottom" Padding="8,4" BorderThickness="0,1,0,0" BorderBrush="#22FFFFFF">
-      <StackPanel Orientation="Horizontal" Spacing="10">
-        <ProgressBar IsIndeterminate="True" Width="90" Height="4"
-                     VerticalAlignment="Center" IsVisible="{Binding IsScanning}" />
-        <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
-      </StackPanel>
+      <DockPanel>
+        <!-- Pending changes are the heart of the workflow, so the count is always in view. -->
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8"
+                    IsVisible="{Binding HasPendingChanges}">
+          <TextBlock VerticalAlignment="Center" Foreground="#5CB8F5"
+                     Text="{Binding PendingChangeCount, StringFormat='● {0} file(s) with pending changes'}" />
+          <Button Content="Discard all" FontSize="11" Padding="8,2"
+                  Command="{Binding DiscardAllPendingChangesCommand}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <ProgressBar IsIndeterminate="True" Width="90" Height="4"
+                       VerticalAlignment="Center" IsVisible="{Binding IsScanning}" />
+          <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
+        </StackPanel>
+      </DockPanel>
     </Border>
 
-    <Grid ColumnDefinitions="240,4,*,4,300">
+    <Grid ColumnDefinitions="240,4,*,4,360">
 
       <!-- Folder tree -->
       <TreeView Grid.Column="0"
@@ -98,6 +109,13 @@
                             HorizontalAlignment="Left" VerticalAlignment="Top"
                             IsVisible="{Binding IsVideo}">
                       <TextBlock Text="VIDEO" FontSize="9" />
+                    </Border>
+                    <Border Background="#CC22A0F2" CornerRadius="2"
+                            Padding="4,1" Margin="4"
+                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                            ToolTip.Tip="Metadata edited but not yet written to disk"
+                            IsVisible="{Binding HasPendingChanges}">
+                      <TextBlock Text="● MODIFIED" FontSize="9" />
                     </Border>
                   </Panel>
                 </Border>
@@ -147,35 +165,27 @@
 
       <GridSplitter Grid.Column="3" ResizeDirection="Columns" Background="#22FFFFFF" />
 
-      <!-- File information (metadata inspector arrives in Phase 2) -->
-      <ScrollViewer Grid.Column="4" Padding="12">
-        <Panel>
-          <TextBlock Text="No item selected"
-                     Opacity="0.4" HorizontalAlignment="Center" Margin="0,20,0,0"
-                     IsVisible="{Binding SelectedItem, Converter={x:Static ObjectConverters.IsNull}}" />
-          <StackPanel DataContext="{Binding SelectedItem}" x:DataType="vm:MediaItemViewModel"
-                      IsVisible="{Binding $parent[ScrollViewer].((vm:MainWindowViewModel)DataContext).SelectedItem,
-                                          Converter={x:Static ObjectConverters.IsNotNull}}">
-          <TextBlock Text="File" Classes="section" />
-          <TextBlock Text="{Binding FileName}" TextWrapping="Wrap" FontWeight="SemiBold" />
-
-          <TextBlock Text="Path" Classes="section" />
-          <TextBlock Text="{Binding File.FullPath}" TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
-
-          <TextBlock Text="Type" Classes="section" />
-          <TextBlock Text="{Binding File.MediaType}" />
-
-          <TextBlock Text="Size" Classes="section" />
-          <TextBlock Text="{Binding SizeDisplay}" />
-
-          <TextBlock Text="Modified" Classes="section" />
-          <TextBlock Text="{Binding ModifiedDisplay}" />
-
-          <TextBlock Text="Metadata inspector arrives in Phase 2."
-                     Classes="section" TextWrapping="Wrap" Margin="0,24,0,0" />
+      <!-- File header + metadata inspector -->
+      <DockPanel Grid.Column="4">
+        <Border DockPanel.Dock="Top" Padding="12,10" BorderThickness="0,0,0,1" BorderBrush="#18FFFFFF"
+                IsVisible="{Binding SelectedItem, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel DataContext="{Binding SelectedItem}" x:DataType="vm:MediaItemViewModel" Spacing="2">
+            <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap">
+              <TextBlock.Text>
+                <MultiBinding StringFormat="{}{0} · {1} · {2}">
+                  <Binding Path="File.MediaType" />
+                  <Binding Path="SizeDisplay" />
+                  <Binding Path="ModifiedDisplay" />
+                </MultiBinding>
+              </TextBlock.Text>
+            </TextBlock>
+            <TextBlock Text="{Binding File.FullPath}" FontSize="10" Opacity="0.4" TextWrapping="Wrap" />
           </StackPanel>
-        </Panel>
-      </ScrollViewer>
+        </Border>
+
+        <views:MetadataInspectorView DataContext="{Binding Inspector}" />
+      </DockPanel>
 
     </Grid>
   </DockPanel>

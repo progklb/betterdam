@@ -115,9 +115,9 @@ the "not installed" state reproducible for testing:
 BETTERDAM_FFMPEG_DIR=/nonexistent dotnet run --project UI/BetterDAM.UI -- /path/to/media
 ```
 
-**RAW files get no thumbnail yet.** Skia cannot decode CR3/NEF/ARW. They are scanned, listed, and
-selectable, but show "No preview". The fix is to pull the embedded JPEG preview out of the RAW with
-ExifTool, which is Phase 2/3 work.
+**RAW files got no thumbnail in Phase 1** — Skia cannot decode CR3/NEF/ARW, so they were scanned and
+selectable but showed "No preview". Resolved after Phase 3 by extracting the embedded JPEG preview
+with ExifTool; see the "Interlude — RAW thumbnails" section below.
 
 **The preview pane is a large cached thumbnail** (1600px), not the original file. Real zoom/pan on
 full-resolution originals is a later refinement.
@@ -354,6 +354,67 @@ for the SQLite catalog, not a synchronous scan.
   cancellable, resumable batch operation is Phase 6.
 - Pending changes are still **in-memory only** — quitting before saving discards them.
 - The raw XMP tab is still read-only.
+
+---
+
+## Interlude — RAW thumbnails ✅
+
+Closing the gap left open in Phase 1: CR3/NEF/ARW/RAF and friends showed "No preview" because Skia
+cannot decode them. Now possible cheaply because the ExifTool plumbing already exists.
+
+### How it works
+
+Every camera embeds a ready-made JPEG inside the RAW — the same one Bridge and Photo Mechanic
+display. Extracting it is both the only practical way to show a RAW thumbnail and far faster than
+developing the RAW. **Nothing here develops the RAW.**
+
+```text
+RAW file → ExifTool -b -PreviewImage → JPEG bytes → Skia decode/orient/resize → cached thumbnail
+```
+
+- `IEmbeddedPreviewExtractor` (Core) — the abstraction, so `Preview` needs no reference to
+  `Metadata`; DI wires the two together.
+- `ExifToolPreviewExtractor` (Metadata) — tries `PreviewImage` → `JpgFromRaw` → `OtherImage` →
+  `ThumbnailImage`, largest and most useful first. Validates the JPEG magic bytes so an ExifTool
+  diagnostic on stdout cannot be mistaken for image data.
+- `RawThumbnailGenerator` (Preview) — renders the extracted preview.
+- `SkiaThumbnailRenderer` — the decode/orient/resize logic, **extracted from the still-image
+  generator and now shared**, so RAW and ordinary images cannot drift apart on orientation handling.
+
+**Why a separate ExifTool process.** The shared `-stay_open` session reads stdout as *text*, line by
+line, hunting for `{ready}`. Pushing JPEG bytes through it would corrupt them. A one-shot process
+gives clean binary output, and the cost is paid once per file because the result is cached.
+
+**Orientation comes for free.** The embedded preview carries the same EXIF orientation tag as the
+RAW, so the shared renderer rotates it correctly with no extra ExifTool round trip. Confirmed
+against real files before writing the code.
+
+**Format coverage is defined as the complement** — "an image Skia cannot decode" — rather than a RAW
+extension list. New formats are attempted rather than silently unsupported, and a file with no
+embedded preview simply yields null, exactly as before.
+
+### Verified
+
+- `dotnet test` — **126/126 passing** (was 110).
+- Against **four real Fujifilm RAF files** (~25MB each) from a real library, deliberately chosen to
+  cover both orientations:
+  - Two `Horizontal` RAFs → **320 × 213** thumbnails.
+  - Two `Rotate 90 CW` / `Rotate 270 CW` RAFs → **213 × 320** thumbnails.
+  - All four sensors are 4416 × 2944 landscape, so the portrait results prove the rotation is being
+    applied — and inspecting the images confirms they are upright, not sideways.
+
+### Bug found and fixed
+
+**Thumbnails were coming out smaller and softer than requested.** The JPEG codec only offers
+discrete scales (eighths) and rounds *down*: asking for 320px of a 2400px image decoded at 300px,
+and since the renderer never upscales, that is what got cached. The decode now steps back up to the
+next supported scale so it is at least the target size, then resizes down precisely. This affected
+ordinary JPEGs too, so **all thumbnails are now slightly sharper**.
+
+### Note
+
+RAW files still have no *metadata* limitations — they were always readable. This was purely about
+pixels.
 
 ---
 

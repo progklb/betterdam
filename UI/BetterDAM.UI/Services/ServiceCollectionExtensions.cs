@@ -24,11 +24,15 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IFfmpegLocator, FfmpegLocator>();
 
         services.AddSingleton<ThumbnailCache>();
+        // Order matters: the first generator that can handle a file wins. Skia is tried first
+        // because it decodes ordinary images without spawning a process.
         services.AddSingleton<IThumbnailGenerator, SkiaImageThumbnailGenerator>();
+        services.AddSingleton<IThumbnailGenerator, RawThumbnailGenerator>();
         services.AddSingleton<IThumbnailGenerator, FfmpegVideoThumbnailGenerator>();
         services.AddSingleton<IThumbnailService, ThumbnailService>();
 
         services.AddSingleton<IExifToolLocator, ExifToolLocator>();
+        services.AddSingleton<IEmbeddedPreviewExtractor, ExifToolPreviewExtractor>();
         // One ExifTool process, shared by the reader and the writer.
         services.AddSingleton<ExifToolHost>();
         services.AddSingleton<IMetadataProvider, ExifToolMetadataProvider>();

@@ -1,0 +1,20 @@
+## .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+
+## IDE
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+## macOS
+.DS_Store
+
+## Logs / local caches
+*.log

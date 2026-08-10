@@ -1,0 +1,91 @@
+using System.Security.Cryptography;
+using System.Text;
+using BetterDAM.Core.Interfaces;
+using BetterDAM.Core.Models;
+
+namespace BetterDAM.Preview.Cache;
+
+/// <summary>
+/// Content-addressed thumbnail store on disk. The cache key includes the source file's size and
+/// modification time, so a file edited externally naturally misses the cache instead of serving a
+/// stale image.
+/// </summary>
+public sealed class ThumbnailCache
+{
+    private readonly IAppPaths _paths;
+
+    public ThumbnailCache(IAppPaths paths)
+    {
+        _paths = paths;
+    }
+
+    public string GetCacheKey(MediaFile file, int maxEdgePixels)
+    {
+        var raw = $"{file.FullPath}|{file.SizeBytes}|{file.ModifiedUtc.UtcTicks}|{maxEdgePixels}";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
+        return Convert.ToHexStringLower(hash);
+    }
+
+    public string GetCachePath(string key)
+    {
+        // Shard by the first two hex characters to keep directory sizes manageable on large libraries.
+        var folder = Path.Combine(_paths.ThumbnailCacheRoot, key[..2]);
+        return Path.Combine(folder, key + ".jpg");
+    }
+
+    public async Task<byte[]?> TryReadAsync(string key, CancellationToken cancellationToken)
+    {
+        var path = GetCachePath(key);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    public async Task WriteAsync(string key, byte[] data, CancellationToken cancellationToken)
+    {
+        var path = GetCachePath(key);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+        // Write to a temp file then move, so a cancelled or crashed write never leaves a truncated
+        // thumbnail that would be served as a cache hit later.
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllBytesAsync(temp, data, cancellationToken).ConfigureAwait(false);
+            File.Move(temp, path, overwrite: true);
+        }
+        catch (IOException)
+        {
+            TryDelete(temp);
+        }
+        catch (OperationCanceledException)
+        {
+            TryDelete(temp);
+            throw;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+        }
+    }
+}

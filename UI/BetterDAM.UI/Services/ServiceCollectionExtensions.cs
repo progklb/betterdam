@@ -14,10 +14,16 @@ namespace BetterDAM.UI.Services;
 
 internal static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddBetterDam(this IServiceCollection services, IAppPaths paths)
+    public static IServiceCollection AddBetterDam(
+        this IServiceCollection services,
+        IAppPaths paths,
+        ISettingsService settings)
     {
         services.AddSingleton(paths);
         services.AddLogging(builder => builder.AddSerilog(Log.Logger, dispose: false));
+
+        services.AddSingleton<ISettingsService>(settings);
+        services.AddSingleton<ICacheMaintenance, ThumbnailCacheMaintenance>();
 
         services.AddSingleton<IMediaScanner, MediaScanner>();
         services.AddSingleton<IFolderBrowser, FolderBrowser>();
@@ -40,6 +46,7 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IPendingChangeStore, PendingChangeStore>();
 
         services.AddTransient<MetadataInspectorViewModel>();
+        services.AddTransient<SettingsViewModel>();
         services.AddTransient<MainWindowViewModel>();
 
         return services;

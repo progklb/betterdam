@@ -1,5 +1,6 @@
 using Avalonia;
 using BetterDAM.Core.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using Serilog;
 
 namespace BetterDAM.UI;
@@ -9,7 +10,10 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
-        var paths = new AppPaths();
+        // Settings are read before anything else so the cache location is known from the start.
+        // The settings service deliberately does not depend on AppPaths, which would be circular.
+        var settings = new JsonSettingsService(NullLogger<JsonSettingsService>.Instance);
+        var paths = new AppPaths(settings);
 
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
@@ -23,6 +27,7 @@ internal static class Program
         try
         {
             App.Paths = paths;
+            App.Settings = settings;
             App.StartupFolder = args.FirstOrDefault(a => !a.StartsWith('-'));
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
             return 0;

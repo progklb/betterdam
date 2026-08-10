@@ -7,22 +7,6 @@ namespace BetterDAM.Tests;
 
 public class ThumbnailCacheTests
 {
-    private sealed class TestPaths : IAppPaths
-    {
-        public TestPaths(string root)
-        {
-            CacheRoot = root;
-            ThumbnailCacheRoot = Path.Combine(root, "Thumbnails");
-            LogRoot = Path.Combine(root, "Logs");
-            Directory.CreateDirectory(ThumbnailCacheRoot);
-        }
-
-        public string CacheRoot { get; }
-
-        public string ThumbnailCacheRoot { get; }
-
-        public string LogRoot { get; }
-    }
 
     private static MediaFile Sample(string path = "/library/IMG001.jpg", long size = 1234, long ticks = 5_000_000)
         => new()

@@ -125,8 +125,9 @@ with ExifTool; see the "Interlude — RAW thumbnails" section below.
 **The preview pane is a large cached thumbnail** (1600px), not the original file. Real zoom/pan on
 full-resolution originals is a later refinement.
 
-**Cache location:** `~/Library/Application Support/BetterDAM/Cache` (Thumbnails, Logs). It is fully
-disposable — delete it and the app rebuilds from the originals.
+**Cache location:** `~/Library/Application Support/BetterDAM/Cache`. It is fully disposable —
+delete it and the app rebuilds from the originals. Logs later moved out of it; see
+"Interlude — Settings and cache management".
 
 ### How to run
 
@@ -486,3 +487,71 @@ free of queueing delay.
 - `ScrollIntoView` calls `UpdateLayout()` to materialize the container it must return. That is
   correct but synchronous; if it ever shows up in a profile, returning null and letting the caller
   retry after layout would avoid it.
+
+---
+
+## Interlude — Settings and cache management ✅
+
+The cache had no ceiling, no way to see its size, and no way to clear it from inside the app.
+
+### Layout change
+
+Settings and logs moved **out** of the cache directory, so clearing or relocating the cache can
+never take them with it:
+
+```text
+<LocalAppData>/BetterDAM/
+    settings.json          preferences
+    Logs/                  diagnostics  (was Cache/Logs)
+    Cache/Thumbnails/      disposable derived data, relocatable
+```
+
+On macOS that is `~/Library/Application Support/BetterDAM`; `%LOCALAPPDATA%` on Windows and
+`~/.local/share` on Linux, all via `LocalApplicationData` with no per-OS branching.
+
+*Upgrade note:* an empty `Cache/Logs` directory is left behind from the old layout. Harmless.
+
+### Settings window
+
+Reached from **⚙ Settings** in the toolbar, pinned right so a long folder path cannot push it off.
+A `TabControl` with a single **Cache** tab for now — the shape is there for future tabs.
+
+| Control | Behaviour |
+| ------- | --------- |
+| Location | Shows the current path; **Change…** picks a new one, **Use default** reverts. Takes effect immediately — `AppPaths.CacheRoot` reads the setting live rather than caching it at construction. |
+| Current size | Logical bytes and file count, with **Refresh**. |
+| Rolling cache | Optional ceiling from 50 MB to 50 GB. Applying a limit trims straight away rather than waiting for the next write. |
+| Clear cache | Two-step inline confirmation, then reports the bytes freed. |
+
+### Rolling eviction
+
+`ThumbnailCacheMaintenance` evicts least-recently-used entries until the cache fits, targeting 90%
+of the limit so the next few writes do not immediately trigger another pass. Eviction can be blunt
+because entries are content-addressed and independent — discarding one only costs regenerating it.
+
+It runs on startup, when a limit is applied, and on its own once **32 MB** has been written since
+the last pass. That threshold exists because trimming enumerates the whole cache directory, so doing
+it after every thumbnail would cost more than it saves. Only one trim runs at a time, never on the
+caller's thread.
+
+Ordering uses last-write rather than last-access time: access times are unreliable on volumes
+mounted `noatime`, and for an immutable cache the two only differ for entries read but never
+rewritten.
+
+### Verified
+
+- `dotnet test` — **145/145 passing** (was 129). Covers settings round-trip, corrupt-settings
+  fallback, statistics, clear, eviction *order*, staying within the limit, shard tidy-up, and that
+  `LogRoot` is not inside `CacheRoot`.
+- Driven through the real UI: opened Settings, saw **83.3 MB in 14,707 files**, cleared it, and got
+  **"Cleared 83,3 MB"** — on disk 14,707 files → **0**, empty shard directories removed, and the log
+  file still present.
+
+### Worth knowing
+
+**Reported size is logical bytes, not disk usage.** `du` reports ~123 MB for what this calls 83 MB,
+because ~15,000 small files each round up to a 4 KB block. Logical bytes is the right thing for the
+limit to control, but the on-disk footprint of a cache full of tiny thumbnails is larger.
+
+**Changing the location does not move existing thumbnails.** They stay at the old path and are
+regenerated at the new one; the UI says so. Clearing before switching reclaims the space.

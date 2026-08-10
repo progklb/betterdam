@@ -30,7 +30,7 @@ public sealed partial class MediaItemViewModel : ObservableObject
 
     public bool IsVideo => File.MediaType == MediaType.Video;
 
-    public string SizeDisplay => FormatSize(File.SizeBytes);
+    public string SizeDisplay => ByteSize.Format(File.SizeBytes);
 
     public string ModifiedDisplay => File.ModifiedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
@@ -129,18 +129,4 @@ public sealed partial class MediaItemViewModel : ObservableObject
         Interlocked.Exchange(ref _thumbnailRequested, 0);
     }
 
-    private static string FormatSize(long bytes)
-    {
-        string[] units = ["B", "KB", "MB", "GB", "TB"];
-        double value = bytes;
-        var unit = 0;
-
-        while (value >= 1024 && unit < units.Length - 1)
-        {
-            value /= 1024;
-            unit++;
-        }
-
-        return unit == 0 ? $"{bytes} B" : $"{value:0.#} {units[unit]}";
-    }
 }

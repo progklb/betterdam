@@ -1,0 +1,141 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:BetterDAM.UI.ViewModels"
+        mc:Ignorable="d"
+        x:Class="BetterDAM.UI.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="BetterDAM Settings"
+        Width="660" Height="660"
+        MinWidth="560" MinHeight="520"
+        WindowStartupLocation="CenterOwner">
+
+  <Window.Styles>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
+    <Style Selector="TextBlock.hint">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Opacity" Value="0.55" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.value">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="#12FFFFFF" />
+      <Setter Property="BorderBrush" Value="#1AFFFFFF" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="14" />
+    </Style>
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+
+    <!-- Footer -->
+    <Border DockPanel.Dock="Bottom" Padding="14,10" BorderThickness="0,1,0,0" BorderBrush="#1AFFFFFF">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Content="Close" MinWidth="88" IsCancel="True" Click="OnClose" />
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <ProgressBar IsIndeterminate="True" Width="70" Height="3"
+                       VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
+          <TextBlock Text="{Binding StatusMessage}" Classes="hint" VerticalAlignment="Center" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <TabControl Margin="10,8,10,0">
+
+      <TabItem Header="Cache">
+        <ScrollViewer>
+          <StackPanel Margin="4,10" Spacing="12">
+
+            <TextBlock Classes="hint"
+                       Text="Thumbnails and previews are derived data. Everything here can be deleted safely — BetterDAM regenerates it from your original media. Your metadata edits are never stored in the cache." />
+
+            <!-- Location -->
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Location" Classes="section" />
+                <SelectableTextBlock Text="{Binding CachePath}" Classes="value" FontFamily="monospace" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Content="Change…" Command="{Binding ChooseCacheFolderCommand}" />
+                  <Button Content="Use default"
+                          Command="{Binding UseDefaultCacheFolderCommand}"
+                          IsEnabled="{Binding !IsUsingDefaultCachePath}" />
+                </StackPanel>
+
+                <TextBlock Classes="hint"
+                           Text="Useful when your media is on an external drive and the boot disk is small. Thumbnails already written stay where they are; clear the old cache if you want the space back." />
+              </StackPanel>
+            </Border>
+
+            <!-- Size -->
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Current size" Classes="section" />
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshCommand}" />
+                  <TextBlock Text="{Binding CacheSizeDisplay}" Classes="value" FontSize="15"
+                             VerticalAlignment="Center" />
+                </DockPanel>
+              </StackPanel>
+            </Border>
+
+            <!-- Rolling limit -->
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Rolling cache" Classes="section" />
+                <CheckBox Content="Limit the cache size" IsChecked="{Binding IsCacheLimited}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8"
+                            IsEnabled="{Binding IsCacheLimited}">
+                  <TextBlock Text="Maximum" VerticalAlignment="Center" Opacity="0.7" />
+                  <ComboBox ItemsSource="{Binding LimitChoices}"
+                            SelectedIndex="{Binding SelectedLimitIndex}"
+                            MinWidth="110" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding LimitSummary}" Classes="hint" />
+              </StackPanel>
+            </Border>
+
+            <!-- Clear -->
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Clear cache" Classes="section" />
+                <TextBlock Classes="hint"
+                           Text="Removes every cached thumbnail. Browsing will be slower until they are regenerated. Metadata, pending changes and XMP sidecars are unaffected." />
+
+                <Button Content="Clear cache…"
+                        Command="{Binding BeginClearCacheCommand}"
+                        IsVisible="{Binding !IsConfirmingClear}"
+                        IsEnabled="{Binding !IsBusy}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsConfirmingClear}">
+                  <TextBlock Text="Delete all cached thumbnails?" VerticalAlignment="Center" />
+                  <Button Content="Clear" Command="{Binding ConfirmClearCacheCommand}"
+                          Background="#33FF6B6B" BorderBrush="#66FF6B6B" />
+                  <Button Content="Cancel" Command="{Binding CancelClearCacheCommand}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+    </TabControl>
+  </DockPanel>
+</Window>

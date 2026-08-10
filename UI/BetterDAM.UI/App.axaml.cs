@@ -17,6 +17,8 @@ public partial class App : Application
     /// </summary>
     internal static IAppPaths? Paths { get; set; }
 
+    internal static ISettingsService? Settings { get; set; }
+
     /// <summary>Optional folder passed on the command line, opened once the window is up.</summary>
     internal static string? StartupFolder { get; set; }
 
@@ -26,12 +28,23 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            var settings = Settings ?? new Core.Services.JsonSettingsService(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<Core.Services.JsonSettingsService>.Instance);
+
             var services = new ServiceCollection()
-                .AddBetterDam(Paths ?? new Core.Services.AppPaths())
+                .AddBetterDam(Paths ?? new Core.Services.AppPaths(settings), settings)
                 .BuildServiceProvider();
 
+            // Apply any rolling-cache limit from a previous session before browsing adds more.
+            var maintenance = services.GetRequiredService<ICacheMaintenance>();
+            _ = Task.Run(() => maintenance.TrimAsync());
+
             var viewModel = services.GetRequiredService<MainWindowViewModel>();
-            desktop.MainWindow = new MainWindow { DataContext = viewModel };
+            desktop.MainWindow = new MainWindow
+            {
+                DataContext = viewModel,
+                SettingsViewModelFactory = services.GetRequiredService<SettingsViewModel>
+            };
 
             if (StartupFolder is { } folder)
             {

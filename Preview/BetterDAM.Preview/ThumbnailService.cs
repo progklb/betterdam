@@ -24,14 +24,18 @@ public sealed class ThumbnailService : IThumbnailService, IDisposable
     /// </summary>
     private readonly SemaphoreSlim _interactive;
 
+    private readonly ICacheMaintenance? _maintenance;
+
     public ThumbnailService(
         ThumbnailCache cache,
         IEnumerable<IThumbnailGenerator> generators,
-        ILogger<ThumbnailService> logger)
+        ILogger<ThumbnailService> logger,
+        ICacheMaintenance? maintenance = null)
     {
         _cache = cache;
         _generators = generators.ToList();
         _logger = logger;
+        _maintenance = maintenance;
 
         // Leave headroom for interactive work and the UI thread rather than handing every core to
         // background generation.
@@ -80,6 +84,10 @@ public sealed class ThumbnailService : IThumbnailService, IDisposable
             }
 
             await _cache.WriteAsync(key, generated, cancellationToken).ConfigureAwait(false);
+
+            // Lets the rolling cache decide for itself when enough has accumulated to trim.
+            _maintenance?.NotifyBytesWritten(generated.Length);
+
             return generated;
         }
         finally

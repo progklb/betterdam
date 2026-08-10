@@ -10,22 +10,6 @@ namespace BetterDAM.Tests;
 
 public class ThumbnailServicePriorityTests
 {
-    private sealed class TestPaths : IAppPaths
-    {
-        public TestPaths(string root)
-        {
-            CacheRoot = root;
-            ThumbnailCacheRoot = Path.Combine(root, "Thumbnails");
-            LogRoot = Path.Combine(root, "Logs");
-            Directory.CreateDirectory(ThumbnailCacheRoot);
-        }
-
-        public string CacheRoot { get; }
-
-        public string ThumbnailCacheRoot { get; }
-
-        public string LogRoot { get; }
-    }
 
     /// <summary>A generator that blocks until released, so queueing behaviour can be observed.</summary>
     private sealed class BlockingGenerator : IThumbnailGenerator

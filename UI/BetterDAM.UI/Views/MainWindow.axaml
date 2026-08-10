@@ -27,20 +27,28 @@
 
     <!-- Toolbar -->
     <Border DockPanel.Dock="Top" Padding="8" BorderThickness="0,0,0,1" BorderBrush="#22FFFFFF">
-      <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-        <Button Content="Open Folder…" Command="{Binding OpenFolderCommand}" />
-        <CheckBox Content="Recursive" IsChecked="{Binding Recursive}" VerticalAlignment="Center" />
-        <Button Content="Cancel Scan"
-                Command="{Binding CancelScanCommand}"
-                IsVisible="{Binding IsScanning}" />
-        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" />
-          <Slider Minimum="90" Maximum="320" Width="160"
-                  Value="{Binding ThumbnailSize}" VerticalAlignment="Center" />
+      <DockPanel LastChildFill="True">
+        <!-- Settings stays pinned right so a long folder path never pushes it off the toolbar. -->
+        <Button DockPanel.Dock="Right" Content="⚙ Settings" Margin="12,0,0,0"
+                Click="OnOpenSettings"
+                ToolTip.Tip="Cache location, size and clearing" />
+
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <Button Content="Open Folder…" Command="{Binding OpenFolderCommand}" />
+          <CheckBox Content="Recursive" IsChecked="{Binding Recursive}" VerticalAlignment="Center" />
+          <Button Content="Cancel Scan"
+                  Command="{Binding CancelScanCommand}"
+                  IsVisible="{Binding IsScanning}" />
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" />
+            <Slider Minimum="90" Maximum="320" Width="160"
+                    Value="{Binding ThumbnailSize}" VerticalAlignment="Center" />
+          </StackPanel>
         </StackPanel>
+
         <TextBlock Text="{Binding CurrentFolderPath}" VerticalAlignment="Center" Opacity="0.6"
-                   TextTrimming="CharacterEllipsis" />
-      </StackPanel>
+                   Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
+      </DockPanel>
     </Border>
 
     <!-- Status bar -->

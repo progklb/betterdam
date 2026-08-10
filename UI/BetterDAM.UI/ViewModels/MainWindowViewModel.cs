@@ -372,7 +372,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         try
         {
-            var bytes = await _thumbnails.GetThumbnailAsync(item.File, PreviewEdgePixels, cts.Token);
+            // Interactive: the user selected this file and is waiting, so it must not queue behind
+            // the grid's background tile work.
+            var bytes = await _thumbnails.GetThumbnailAsync(
+                item.File, PreviewEdgePixels, ThumbnailPriority.Interactive, cts.Token);
             if (cts.IsCancellationRequested)
             {
                 return;

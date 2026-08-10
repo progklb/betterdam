@@ -91,7 +91,9 @@
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
           <ListBox.ItemsPanel>
             <ItemsPanelTemplate>
-              <WrapPanel Orientation="Horizontal" />
+              <!-- Virtualizing: only tiles in view are realized, so opening a folder of 50,000
+                   files does not queue 50,000 thumbnail jobs. -->
+              <controls:VirtualizingWrapPanel />
             </ItemsPanelTemplate>
           </ListBox.ItemsPanel>
           <ListBox.ItemTemplate>

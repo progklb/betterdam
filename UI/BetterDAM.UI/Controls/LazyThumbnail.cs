@@ -11,15 +11,31 @@ namespace BetterDAM.UI.Controls;
 /// </summary>
 public sealed class LazyThumbnail : Image
 {
+    /// <summary>The item this control last asked for, so its work can be cancelled on recycle.</summary>
+    private MediaItemViewModel? _requested;
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
         RequestThumbnail();
     }
 
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        // The tile scrolled out of view or its container was recycled; stop generating for it.
+        CancelOutstanding();
+        base.OnDetachedFromVisualTree(e);
+    }
+
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
+
+        // A recycled container is reused for a different file: abandon the old one's work first.
+        if (!ReferenceEquals(_requested, DataContext))
+        {
+            CancelOutstanding();
+        }
 
         if (this.GetVisualRoot() is not null)
         {
@@ -31,7 +47,14 @@ public sealed class LazyThumbnail : Image
     {
         if (DataContext is MediaItemViewModel item)
         {
+            _requested = item;
             _ = item.EnsureThumbnailAsync();
         }
+    }
+
+    private void CancelOutstanding()
+    {
+        _requested?.CancelPendingThumbnail();
+        _requested = null;
     }
 }

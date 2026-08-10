@@ -72,8 +72,11 @@ Phase 1. Nothing in the code is coupled to 11.x specifics beyond standard XAML.
 
 **UI**
 - Bridge-style layout: toolbar / folder tree / thumbnail grid / inspector / preview / status bar.
-- `LazyThumbnail` (an `Image` subclass) requests its thumbnail only when the virtualizing panel
-  realizes its container — opening a folder of 50,000 files only decodes what is on screen.
+- `LazyThumbnail` (an `Image` subclass) requests its thumbnail when its container is realized.
+  > **Correction (measured after Phase 3):** this was written believing the grid virtualized. It did
+  > not — `ListBox` was given a `WrapPanel`, which is not a virtualizing panel, so every item was
+  > realized and every thumbnail generated on open. Fixed afterwards with a purpose-built
+  > `VirtualizingWrapPanel`; see "Performance — first preview latency" at the end of this document.
 - Scan results are added to the UI collection in **batches** (64 items or 80ms) rather than one at a
   time, which is the difference between a grid that fills smoothly and one that crawls.
 - Starting a new scan cancels the in-flight one; likewise for preview loads.
@@ -422,3 +425,64 @@ pixels.
 
 FFmpeg integration, video playback, proxy generation, playback quality selection, video metadata
 display.
+
+---
+
+## Performance — first preview latency ✅ Fixed
+
+**Symptom:** open a folder, click a file, and the preview took a long time. Once the first preview
+appeared, every subsequent one was near-instant.
+
+**Diagnosis.** The preview never became slow — it *waited*. Three compounding causes:
+
+1. **The grid did not virtualize.** `ListBox` was given a `WrapPanel`, which is not a virtualizing
+   panel, so *every* item in the folder was realized on open and *every* thumbnail requested
+   immediately. Measured: 60 files in a window showing ~12 produced 60 thumbnails within 2s.
+2. **One shared concurrency gate.** Grid tiles and previews both passed through the same
+   `SemaphoreSlim(cores - 1)`, roughly FIFO, so a preview joined the back of a queue of N.
+3. **The preview is a separate cache entry** (1600px vs 320px tiles), so the first view of a file
+   always generates. Cache hits short-circuit *before* the gate, which is why a second visit was
+   always instant.
+
+### The fixes
+
+- **`VirtualizingWrapPanel`** (`UI/Controls`) — Avalonia ships `VirtualizingStackPanel` but no
+  wrapping equivalent, so the grid got its own. It realizes only the rows intersecting the viewport
+  plus one row of buffer, recycles containers through the `ItemContainerGenerator`, and implements
+  keyboard navigation and `ScrollIntoView`. It assumes **uniformly sized items**, which is true here
+  and is what makes the layout arithmetic exact and cheap.
+- **Two priority lanes** in `ThumbnailService` — `ThumbnailPriority.Interactive` for what the user
+  selected, `Background` for grid tiles, each with its own semaphore. Background also dropped to
+  `cores - 2` to leave headroom.
+- **Cancellation on recycle** — `LazyThumbnail` cancels its item's in-flight work when the tile
+  leaves the viewport or its container is recycled for another file, and the item can request again
+  if it scrolls back. An already-decoded thumbnail is kept, so scrolling back is instant.
+
+### Measured
+
+400 × 26MP JPEGs, 8-core machine, cold cache, UI removed so the numbers are unambiguous:
+
+| | Time to first preview | Grid work |
+| --- | --- | --- |
+| Original (shared gate, no virtualization) | **1889 ms** | 1960 ms (400 thumbnails) |
+| Priority lanes only | **107 ms** | 1669 ms (400 thumbnails) |
+| Priority lanes + virtualization | **71 ms** | 122 ms (24 thumbnails) |
+
+For reference, that same preview on a completely idle queue costs 67 ms — so it is now essentially
+free of queueing delay.
+
+**End to end in the real app**, 400-file folder:
+
+- **20 thumbnails generated on open, not 400** — and it stays at 20 indefinitely without scrolling.
+- Scrolling realized 12 more on demand; a fast scroll through the whole folder and back generated
+  165 rather than 400, the rest being cancelled as they left the viewport.
+- Selection, preview, inspector, keyboard navigation and scroll-back-to-cached all verified working.
+
+### Still worth doing later
+
+- The 320px tile and 1600px preview are generated independently. For RAW that means extracting the
+  same embedded preview twice. Generating the preview from the already-decoded larger image, or
+  caching one intermediate size, would remove that.
+- `ScrollIntoView` calls `UpdateLayout()` to materialize the container it must return. That is
+  correct but synchronous; if it ever shows up in a profile, returning null and letting the caller
+  retry after layout would avoid it.

@@ -19,7 +19,11 @@ public class MetadataInspectorViewModelTests
 
     private sealed class StubThumbnailService : IThumbnailService
     {
-        public Task<byte[]?> GetThumbnailAsync(MediaFile file, int maxEdgePixels, CancellationToken cancellationToken = default)
+        public Task<byte[]?> GetThumbnailAsync(
+            MediaFile file,
+            int maxEdgePixels,
+            ThumbnailPriority priority = ThumbnailPriority.Background,
+            CancellationToken cancellationToken = default)
             => Task.FromResult<byte[]?>(null);
     }
 

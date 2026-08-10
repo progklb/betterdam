@@ -16,6 +16,7 @@ public sealed partial class MediaItemViewModel : ObservableObject
 
     private readonly IThumbnailService _thumbnails;
     private int _thumbnailRequested;
+    private CancellationTokenSource? _loadCts;
 
     public MediaItemViewModel(MediaFile file, IThumbnailService thumbnails)
     {
@@ -52,19 +53,26 @@ public sealed partial class MediaItemViewModel : ObservableObject
     private bool _hasSidecar;
 
     /// <summary>
-    /// Requests the thumbnail once. Called when the item's container is realized, so a scan of
-    /// 50,000 files only decodes the handful of items actually on screen.
+    /// Requests the thumbnail once. Called when the item's container is realized, so opening a
+    /// folder of 50,000 files only decodes the handful of tiles actually on screen.
     /// </summary>
-    public async Task EnsureThumbnailAsync(CancellationToken cancellationToken = default)
+    public async Task EnsureThumbnailAsync()
     {
-        if (Interlocked.Exchange(ref _thumbnailRequested, 1) == 1)
+        if (Thumbnail is not null || Interlocked.Exchange(ref _thumbnailRequested, 1) == 1)
         {
             return;
         }
 
+        var cts = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _loadCts, cts);
+        previous?.Dispose();
+
         try
         {
-            var bytes = await _thumbnails.GetThumbnailAsync(File, ThumbnailEdgePixels, cancellationToken).ConfigureAwait(false);
+            var bytes = await _thumbnails
+                .GetThumbnailAsync(File, ThumbnailEdgePixels, ThumbnailPriority.Background, cts.Token)
+                .ConfigureAwait(false);
+
             if (bytes is null)
             {
                 await Dispatcher.UIThread.InvokeAsync(() => ThumbnailUnavailable = true);
@@ -77,12 +85,48 @@ public sealed partial class MediaItemViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
+            // Scrolled out of view before it finished — allow a fresh attempt if it comes back.
             Interlocked.Exchange(ref _thumbnailRequested, 0);
         }
         catch (Exception)
         {
             await Dispatcher.UIThread.InvokeAsync(() => ThumbnailUnavailable = true);
         }
+    }
+
+    /// <summary>
+    /// Abandons in-flight thumbnail work because the tile scrolled out of view. Without this, a fast
+    /// scroll through a large folder leaves every tile it passed still queued and competing for the
+    /// generator, which is exactly the work the user no longer cares about.
+    ///
+    /// A thumbnail that already arrived is kept — it costs nothing and makes scrolling back instant.
+    /// </summary>
+    public void CancelPendingThumbnail()
+    {
+        if (Thumbnail is not null)
+        {
+            return;
+        }
+
+        var cts = Interlocked.Exchange(ref _loadCts, null);
+        if (cts is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            cts.Dispose();
+        }
+
+        Interlocked.Exchange(ref _thumbnailRequested, 0);
     }
 
     private static string FormatSize(long bytes)

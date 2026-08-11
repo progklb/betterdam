@@ -11,6 +11,7 @@ namespace BetterDAM.Core.Services;
 ///     settings.json          preferences — never inside Cache
 ///     Logs/                  diagnostics — never inside Cache
 ///     Cache/Thumbnails/      disposable derived data (relocatable)
+///     Cache/VideoProxy/      generated low-resolution video
 /// </code>
 ///
 /// Logs and settings sit <b>outside</b> Cache so that clearing or relocating the cache cannot take
@@ -33,6 +34,7 @@ public sealed class AppPaths : IAppPaths
 
         Directory.CreateDirectory(LogRoot);
         Directory.CreateDirectory(ThumbnailCacheRoot);
+        Directory.CreateDirectory(VideoProxyCacheRoot);
     }
 
     public string AppDataRoot { get; }
@@ -52,6 +54,8 @@ public sealed class AppPaths : IAppPaths
     public string DefaultCacheRoot => Path.Combine(AppDataRoot, "Cache");
 
     public string ThumbnailCacheRoot => Path.Combine(CacheRoot, "Thumbnails");
+
+    public string VideoProxyCacheRoot => Path.Combine(CacheRoot, "VideoProxy");
 
     public static string GetAppDataRoot()
     {

@@ -422,10 +422,89 @@ pixels.
 
 ---
 
-## Phase 4 — Video ⏳ Not started
+## Phase 4 — Video ✅
 
-FFmpeg integration, video playback, proxy generation, playback quality selection, video metadata
-display.
+**Goal (from the README):** FFmpeg integration, video playback, proxy generation, playback quality
+selection, video metadata display (the last of which landed in Phase 2).
+
+### The playback decision
+
+The obvious .NET route — LibVLCSharp — turned out to be unusable here: `VideoLAN.LibVLC.Mac` ships
+an **Intel-only native binary built in 2018**, and an arm64 .NET process cannot load an x64 dylib.
+It would have needed a separate VLC.app install, on top of LibVLCSharp's Avalonia video control
+being least proven on macOS.
+
+The chosen approach is **FFmpeg-only**: decode to raw frames and render them, no new dependencies.
+That trades audio for zero risk and delivers the browsing workflow the project exists for. Proxies
+are generated **with** their audio, so playback with sound can be added later without regenerating
+a single file.
+
+### Spike before building
+
+The pipeline was measured before any UI was written, on a 4K/12s/58 MB clip:
+
+| | Result |
+| --- | --- |
+| 720p proxy generation | **2.3 s**, 4.8 MB (8.3% of source) |
+| Scrub seek off proxy | **64 ms**/frame |
+| Scrub seek off the 4K original | 183 ms/frame |
+| Sustained decode off proxy | **515 fps** — 17× realtime headroom at 30fps |
+
+### What was built
+
+- `FfprobeVideoInfoProvider` — duration, dimensions and frame rate as values a timeline can do
+  arithmetic with. ExifTool already showed these in the inspector, but a timeline cannot be laid out
+  from the string "0:00:12". Handles NTSC rationals (`30000/1001` → 29.97).
+- `FfmpegVideoProxyService` — generates and caches proxies keyed like the thumbnail cache
+  (path + size + mtime + quality). Uses **`h264_videotoolbox`** on macOS, so encoding is hardware
+  accelerated and leaves the CPU free for browsing. Real progress from ffmpeg's `-progress` stream
+  rather than a spinner. Concurrent requests for the same proxy share one job.
+- `FfmpegFrameSource` — one long-lived ffmpeg process writing raw BGRA to stdout, read at a fixed
+  frame size. Buffers come from `ArrayPool` because a 720p frame is 3.5 MB and 25 of them a second
+  would otherwise be ~90 MB/s of garbage. Decode is capped at 720p regardless of source.
+- `VideoSurface` — a control that blits frames into one reused `WriteableBitmap`. Frames are
+  **pushed** rather than bound, because a binding would mean a bitmap allocation per frame.
+- `VideoPlayerViewModel` — transport, scrubbing, frame stepping, quality selection. Playback paces
+  itself against a wall clock using each frame's timestamp, so it runs at the right speed without a
+  timer and degrades gracefully if decoding ever falls behind.
+- Video proxies are included in cache size, clearing and rolling eviction alongside thumbnails.
+
+### Verified in the real app
+
+Against a 4K/12s clip and an HD clip:
+
+- Player loads with the first frame, correct `0:12` duration, and **"Playing the original at
+  3840×2160"**.
+- **Playback runs at true realtime**: position advanced 0:03 → 0:06 across exactly 3 seconds of wall
+  clock, decoding a 4K source live. Frame captures confirm the picture genuinely advances rather
+  than freezing on frame one.
+- Switching to 720p showed **"Generating 720p proxy…"** with a live progress bar, then
+  **"Playing a 1280×720 proxy — the original is untouched"**. On disk: one 4.8 MB proxy from a
+  58 MB source.
+- Scrubbing jumps to the clicked position; frame stepping changes the displayed frame.
+- **The source file is byte-identical** (SHA-256) before and after playback, proxy generation,
+  scrubbing and stepping.
+
+### Things to know
+
+**There is no audio yet.** This plays video frames only. It is a deliberate scope choice, not an
+oversight — see the playback decision above.
+
+**Original quality writes nothing to disk.** Choosing Original decodes the source directly, so the
+"proxies are entirely optional; if disabled no cache is written" requirement is satisfied by the
+quality selector itself rather than a separate toggle.
+
+**A source smaller than the requested proxy is not upscaled** — asking for 720p of a 360p clip
+returns the original rather than encoding a larger file for no benefit.
+
+### Deliberately deferred
+
+- **Audio, and true A/V sync.** The natural next step, and the reason proxies already carry audio.
+- **Waveforms** — listed in the README's cache layout but not needed until audio exists.
+- Proxy generation is on demand when a quality is selected; batch/background pre-generation for a
+  whole folder belongs with the Phase 5 job system.
+- Seeks use fast container-index seeking, which lands on the nearest keyframe. Frame-exact stepping
+  would need decode-accurate seeking, noticeably slower and not worth it for a preview.
 
 ---
 

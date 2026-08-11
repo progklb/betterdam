@@ -157,7 +157,66 @@
 
         <Border Grid.Row="2" Background="#10FFFFFF">
           <Panel>
-            <Image Source="{Binding Preview}" Stretch="Uniform" Margin="8" />
+
+            <!-- ============ Video player ============ -->
+            <!-- IsVisible lives on the wrapper: setting DataContext on the same element would make
+                 compiled bindings resolve IsVisible against the player rather than this window. -->
+            <Panel IsVisible="{Binding IsVideoSelected}">
+            <DockPanel DataContext="{Binding Player}">
+
+              <Border DockPanel.Dock="Bottom" Padding="10,6" Background="#22000000">
+                <StackPanel Spacing="6">
+
+                  <!-- Transport -->
+                  <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
+                    <Button Grid.Column="0" Content="⏮" ToolTip.Tip="Previous frame" FontSize="13"
+                            Padding="8,2" Command="{Binding StepBackCommand}" />
+                    <Button Grid.Column="1" Margin="4,0"
+                            Content="{Binding IsPlaying, Converter={StaticResource PlayGlyph}}"
+                            ToolTip.Tip="Play / pause" FontSize="13" Padding="10,2"
+                            Command="{Binding TogglePlayCommand}" />
+                    <Button Grid.Column="2" Content="⏭" ToolTip.Tip="Next frame" FontSize="13"
+                            Padding="8,2" Command="{Binding StepForwardCommand}" />
+
+                    <TextBlock Grid.Column="3" VerticalAlignment="Center" Margin="12,0,8,0"
+                               FontSize="12" FontFamily="monospace"
+                               Text="{Binding PositionDisplay}" />
+
+                    <Slider Grid.Column="4" VerticalAlignment="Center"
+                            Minimum="0" Maximum="{Binding DurationSeconds}"
+                            Value="{Binding PositionSeconds}" />
+
+                    <TextBlock Grid.Column="5" VerticalAlignment="Center" Margin="8,0,12,0"
+                               FontSize="12" FontFamily="monospace" Opacity="0.7"
+                               Text="{Binding DurationDisplay}" />
+
+                    <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                      <TextBlock Text="Quality" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+                      <ComboBox ItemsSource="{Binding QualityChoices}"
+                                SelectedIndex="{Binding SelectedQualityIndex}"
+                                MinWidth="98"
+                                ToolTip.Tip="Lower qualities play from a cached proxy. The original file is never modified." />
+                    </StackPanel>
+                  </Grid>
+
+                  <!-- Proxy generation / status -->
+                  <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" FontSize="11" Opacity="0.6"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <ProgressBar Grid.Column="1" Width="120" Height="3" VerticalAlignment="Center"
+                                 Minimum="0" Maximum="1" Value="{Binding ProxyProgress}"
+                                 IsVisible="{Binding IsPreparing}" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+
+              <controls:VideoSurface x:Name="VideoSurface" Margin="8" />
+            </DockPanel>
+            </Panel>
+
+            <!-- ============ Still preview ============ -->
+            <Image Source="{Binding Preview}" Stretch="Uniform" Margin="8"
+                   IsVisible="{Binding !IsVideoSelected}" />
             <TextBlock Text="Select an item to preview"
                        Opacity="0.4" HorizontalAlignment="Center" VerticalAlignment="Center"
                        IsVisible="{Binding SelectedItem, Converter={x:Static ObjectConverters.IsNull}}" />

@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace BetterDAM.Preview.Cache;
 
 /// <summary>
-/// Statistics, clearing, and rolling size-cap eviction for the thumbnail cache.
+/// Statistics, clearing, and rolling size-cap eviction for the derived-data cache — both thumbnails
+/// and video proxies, since both are disposable and both compete for the same disk budget.
 ///
 /// Eviction is safe to do bluntly: entries are content-addressed and independent, so deleting any
 /// of them only costs regenerating it if it is wanted again.
@@ -59,7 +60,7 @@ public sealed class ThumbnailCacheMaintenance : ICacheMaintenance
             RemoveEmptyShards(cancellationToken);
             Interlocked.Exchange(ref _bytesSinceTrim, 0);
 
-            _logger.LogInformation("Cleared the thumbnail cache, freeing {Bytes}", ByteSize.Format(freed));
+            _logger.LogInformation("Cleared the cache, freeing {Bytes}", ByteSize.Format(freed));
             return freed;
         }, cancellationToken);
 
@@ -102,7 +103,7 @@ public sealed class ThumbnailCacheMaintenance : ICacheMaintenance
             if (freed > 0)
             {
                 _logger.LogInformation(
-                    "Trimmed the thumbnail cache to its {Limit} limit, freeing {Freed}",
+                    "Trimmed the cache to its {Limit} limit, freeing {Freed}",
                     ByteSize.Format(limit), ByteSize.Format(freed));
             }
 
@@ -146,35 +147,41 @@ public sealed class ThumbnailCacheMaintenance : ICacheMaintenance
         });
     }
 
+    /// <summary>Cache directories whose contents are disposable, newest concern first.</summary>
+    private IEnumerable<string> CacheDirectories =>
+        [_paths.ThumbnailCacheRoot, _paths.VideoProxyCacheRoot];
+
     private List<FileInfo> EnumerateEntries(CancellationToken cancellationToken)
     {
-        var root = _paths.ThumbnailCacheRoot;
-        if (!Directory.Exists(root))
-        {
-            return [];
-        }
+        var entries = new List<FileInfo>();
 
-        try
+        foreach (var root in CacheDirectories)
         {
-            var entries = new List<FileInfo>();
-            foreach (var path in Directory.EnumerateFiles(root, "*.jpg", SearchOption.AllDirectories))
+            if (!Directory.Exists(root))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var info = new FileInfo(path);
-                if (info.Exists)
-                {
-                    entries.Add(info);
-                }
+                continue;
             }
 
-            return entries;
+            try
+            {
+                foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var info = new FileInfo(path);
+                    if (info.Exists)
+                    {
+                        entries.Add(info);
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "Could not enumerate the cache at {Root}", root);
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _logger.LogWarning(ex, "Could not enumerate the thumbnail cache at {Root}", root);
-            return [];
-        }
+
+        return entries;
     }
 
     private long TryDelete(FileInfo entry)
@@ -194,27 +201,29 @@ public sealed class ThumbnailCacheMaintenance : ICacheMaintenance
 
     private void RemoveEmptyShards(CancellationToken cancellationToken)
     {
-        var root = _paths.ThumbnailCacheRoot;
-        if (!Directory.Exists(root))
+        foreach (var root in CacheDirectories)
         {
-            return;
-        }
-
-        try
-        {
-            foreach (var shard in Directory.EnumerateDirectories(root))
+            if (!Directory.Exists(root))
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                continue;
+            }
 
-                if (!Directory.EnumerateFileSystemEntries(shard).Any())
+            try
+            {
+                foreach (var shard in Directory.EnumerateDirectories(root))
                 {
-                    Directory.Delete(shard);
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (!Directory.EnumerateFileSystemEntries(shard).Any())
+                    {
+                        Directory.Delete(shard);
+                    }
                 }
             }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _logger.LogDebug(ex, "Could not tidy empty cache shards");
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogDebug(ex, "Could not tidy empty cache shards under {Root}", root);
+            }
         }
     }
 }

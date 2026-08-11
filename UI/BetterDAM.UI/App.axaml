@@ -8,6 +8,7 @@
     <conv:MediaTypeGlyphConverter x:Key="MediaTypeGlyph" />
     <conv:StarGlyphConverter x:Key="StarGlyph" />
     <conv:StatusBrushConverter x:Key="StatusBrush" />
+    <conv:PlayGlyphConverter x:Key="PlayGlyph" />
   </Application.Resources>
 
   <Application.Styles>

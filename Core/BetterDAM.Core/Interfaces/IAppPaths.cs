@@ -17,5 +17,8 @@ public interface IAppPaths
 
     string ThumbnailCacheRoot { get; }
 
+    /// <summary>Generated low-resolution video stand-ins. Disposable like everything under the cache.</summary>
+    string VideoProxyCacheRoot { get; }
+
     string LogRoot { get; }
 }

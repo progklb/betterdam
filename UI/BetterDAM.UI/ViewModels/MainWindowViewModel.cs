@@ -38,6 +38,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IPendingChangeStore pending,
         IMetadataWriter writer,
         MetadataInspectorViewModel inspector,
+        VideoPlayerViewModel player,
         ILogger<MainWindowViewModel> logger)
     {
         _scanner = scanner;
@@ -48,6 +49,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _writer = writer;
         _logger = logger;
         Inspector = inspector;
+        Player = player;
 
         _pending.Changed += (_, _) => PendingChangeCount = _pending.Count;
 
@@ -62,6 +64,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     public MetadataInspectorViewModel Inspector { get; }
+
+    public VideoPlayerViewModel Player { get; }
 
     public ObservableCollection<FolderNodeViewModel> FolderRoots { get; } = [];
 
@@ -209,9 +213,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnSelectedItemChanged(MediaItemViewModel? value)
     {
         ShowFfmpegNotice = value is { IsVideo: true } && !_ffmpeg.IsAvailable;
-        _ = LoadPreviewAsync(value);
+        IsVideoSelected = value is { IsVideo: true } && _ffmpeg.IsAvailable;
+
+        // A video is handed to the player; only stills use the static image preview, so the two
+        // never fight over the same pane.
+        _ = Player.LoadAsync(IsVideoSelected ? value!.File : null);
+        _ = LoadPreviewAsync(IsVideoSelected ? null : value);
         _ = Inspector.LoadAsync(value);
     }
+
+    [ObservableProperty]
+    private bool _isVideoSelected;
 
     partial void OnRecursiveChanged(bool value)
     {

@@ -37,6 +37,10 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IThumbnailGenerator, FfmpegVideoThumbnailGenerator>();
         services.AddSingleton<IThumbnailService, ThumbnailService>();
 
+        services.AddSingleton<IVideoInfoProvider, FfprobeVideoInfoProvider>();
+        services.AddSingleton<IVideoProxyService, FfmpegVideoProxyService>();
+        services.AddSingleton<IVideoFrameSource, FfmpegFrameSource>();
+
         services.AddSingleton<IExifToolLocator, ExifToolLocator>();
         services.AddSingleton<IEmbeddedPreviewExtractor, ExifToolPreviewExtractor>();
         // One ExifTool process, shared by the reader and the writer.
@@ -47,6 +51,7 @@ internal static class ServiceCollectionExtensions
 
         services.AddTransient<MetadataInspectorViewModel>();
         services.AddTransient<SettingsViewModel>();
+        services.AddTransient<VideoPlayerViewModel>();
         services.AddTransient<MainWindowViewModel>();
 
         return services;

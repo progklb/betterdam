@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using BetterDAM.Core.Models;
 using BetterDAM.UI.ViewModels;
 
 namespace BetterDAM.UI.Views;
@@ -15,12 +16,25 @@ public partial class MainWindow : Window
 
         DataContextChanged += (_, _) =>
         {
-            if (DataContext is MainWindowViewModel viewModel)
+            if (DataContext is not MainWindowViewModel viewModel)
             {
-                viewModel.StorageProvider = StorageProvider;
+                return;
             }
+
+            viewModel.StorageProvider = StorageProvider;
+
+            // Frames are pushed rather than bound: a binding would mean allocating a bitmap per
+            // frame, where the surface reuses one and blits into it.
+            viewModel.Player.FrameReady -= OnFrameReady;
+            viewModel.Player.FrameReady += OnFrameReady;
+            viewModel.Player.SurfaceCleared -= OnSurfaceCleared;
+            viewModel.Player.SurfaceCleared += OnSurfaceCleared;
         };
     }
+
+    private void OnFrameReady(VideoFrame frame) => VideoSurface.Present(frame);
+
+    private void OnSurfaceCleared() => VideoSurface.Clear();
 
     private async void OnOpenSettings(object? sender, RoutedEventArgs e)
     {

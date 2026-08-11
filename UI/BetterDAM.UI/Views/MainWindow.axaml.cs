@@ -32,6 +32,14 @@ public partial class MainWindow : Window
         };
     }
 
+    private void OnGridSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox list && DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.UpdateSelection(list.SelectedItems?.OfType<MediaItemViewModel>().ToList() ?? []);
+        }
+    }
+
     private void OnFrameReady(VideoFrame frame) => VideoSurface.Present(frame);
 
     private void OnSurfaceCleared() => VideoSurface.Clear();

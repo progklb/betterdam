@@ -508,6 +508,80 @@ returns the original rather than encoding a larger file for no benefit.
 
 ---
 
+## Phase 5 — Batch operations ✅
+
+**Goal (from the README):** multi-selection, batch keywords, batch ratings, batch metadata,
+background processing.
+
+### The design decision that shaped it
+
+The batch panel is an **"apply these changes" form**, not a merged view of the selection's existing
+values. Showing common values would mean reading every selected file before the user has decided
+anything — 1,000 ExifTool reads to render a panel nobody may use.
+
+Every field is **opt-in**. A blank box can never mean "clear this on 500 files"; only an explicitly
+ticked field is touched. Keywords default to **add/remove** rather than replace, because a single
+shared keyword list across a mixed selection is rarely what anyone means. Replace is available, but
+it is a deliberate tick.
+
+### What was built
+
+- `BatchMetadataEdit` (Core) — the edit itself, with a **pure** `ApplyTo`. No I/O, no shared state,
+  so the semantics are exhaustively testable without touching a disk.
+- `BatchMetadataService` (Core) — reads baselines, computes each file's edit, records pending
+  changes. Reports progress, is cancellable, and collects per-file failures rather than aborting.
+- `IMetadataProvider.ReadManyAsync` — batched ExifTool reads, **100 files per invocation**. This is
+  what makes a large selection viable: the expensive part of a batch edit is not the edit, it is
+  fetching each file's current metadata to use as a baseline.
+- Multi-selection in the grid (`Ctrl`/`Cmd`-click, shift-click, `Cmd+A`), which swaps the right
+  panel from the single-file inspector to the batch editor.
+- Progress bar with a cancel button, and a per-file failure list.
+
+### Two properties worth stating plainly
+
+**Batch edits are still pending changes.** They go through the same store as single-file edits, so
+they show the same `● MODIFIED` badges and are committed by the same explicit *Write all sidecars*.
+Batch editing is not a back door around the non-destructive workflow.
+
+**Successive batches compose.** A second run builds on the first run's pending edit, not on disk
+alone — so adding "wildlife" then "Namibia" gives you both, rather than the second undoing the first.
+
+### Verified in the real app
+
+30 files, two of them seeded with existing metadata to exercise the interesting cases:
+
+- `Cmd+A` selected all 30; the panel switched to batch mode showing "30 files selected".
+- Added keywords `wildlife, Namibia` and rating ★★★★, then applied:
+  **"30 file(s) modified. Nothing is written until you save."**
+- After *Write all sidecars*, on disk:
+
+| File | Before | After |
+| --- | --- | --- |
+| B05 (plain) | — | `Rating 4`, `wildlife, Namibia` |
+| B01 | `Rating 5`, keyword `existing` | `Rating 4`, **`existing, wildlife, Namibia`** |
+| B02 | keyword `wildlife` | `Rating 4`, **`wildlife, Namibia`** — not duplicated |
+
+All 30 sidecars written, all with rating 4, and **the 30 originals byte-identical** (SHA-256).
+
+### Bug found and fixed during verification
+
+**The rating stars were unreachable.** They were disabled until "Set rating" was ticked — but
+clicking a star was the only thing that ticked it. A perfect chicken-and-egg: the field could not be
+used at all. Now interacting with any field opts it in (and never opts it *out*, so deliberately
+ticking then blanking a field to clear it across a selection still works). Regression tests added
+for the stars, the text fields, and the clear-after-ticking case.
+
+### Deliberately deferred
+
+- **No retry or resumability yet.** Failures are reported per file but there is no "retry failed"
+  action, and a cancelled run does not resume. Both belong with Phase 6 Sync, which the README
+  already scopes them to.
+- The job UI is inline in the batch panel rather than a general queue; multiple concurrent jobs and
+  a job history are not needed until Sync.
+- Batch editing writes to sidecars only, like everything else so far — embedding is Phase 6.
+
+---
+
 ## Performance — first preview latency ✅ Fixed
 
 **Symptom:** open a folder, click a file, and the preview took a long time. Once the first preview

@@ -48,10 +48,12 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IMetadataProvider, ExifToolMetadataProvider>();
         services.AddSingleton<IMetadataWriter, ExifToolSidecarWriter>();
         services.AddSingleton<IPendingChangeStore, PendingChangeStore>();
+        services.AddSingleton<IBatchMetadataService, BatchMetadataService>();
 
         services.AddTransient<MetadataInspectorViewModel>();
         services.AddTransient<SettingsViewModel>();
         services.AddTransient<VideoPlayerViewModel>();
+        services.AddTransient<BatchEditViewModel>();
         services.AddTransient<MainWindowViewModel>();
 
         return services;

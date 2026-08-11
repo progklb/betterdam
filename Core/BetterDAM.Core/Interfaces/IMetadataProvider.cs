@@ -15,6 +15,18 @@ public interface IMetadataProvider
     bool IsAvailable { get; }
 
     Task<MediaMetadata?> ReadAsync(MediaFile file, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads many files, keyed by full path. Files that could not be read are simply absent.
+    ///
+    /// This exists because batch editing needs each file's current metadata as the baseline for its
+    /// pending change, and doing that one file at a time does not scale to a thousand-file
+    /// selection — a metadata engine can answer for many files in a single round trip.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, MediaMetadata>> ReadManyAsync(
+        IReadOnlyList<MediaFile> files,
+        IProgress<int>? progress = null,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Resolves the external ExifTool executable.</summary>

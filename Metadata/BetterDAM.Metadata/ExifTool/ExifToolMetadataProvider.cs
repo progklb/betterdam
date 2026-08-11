@@ -10,6 +10,9 @@ namespace BetterDAM.Metadata.ExifTool;
 
 public sealed class ExifToolMetadataProvider : IMetadataProvider
 {
+    /// <summary>Files per ExifTool invocation during a batch read.</summary>
+    private const int ReadChunkSize = 100;
+
     private readonly ExifToolHost _host;
     private readonly ILogger<ExifToolMetadataProvider> _logger;
 
@@ -62,7 +65,91 @@ public sealed class ExifToolMetadataProvider : IMetadataProvider
         var media = FindDocument(documents, file.FullPath) ?? documents[0];
         var sidecar = sidecarPath is null ? null : FindDocument(documents, sidecarPath);
 
-        return new MediaMetadata
+        return Build(file, media, sidecar, sidecarPath);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, MediaMetadata>> ReadManyAsync(
+        IReadOnlyList<MediaFile> files,
+        IProgress<int>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var results = new Dictionary<string, MediaMetadata>(StringComparer.Ordinal);
+
+        if (_host.Session is not { } session || files.Count == 0)
+        {
+            return results;
+        }
+
+        var processed = 0;
+
+        // Chunked rather than one giant invocation: a chunk bounds how much is lost to a single
+        // failure, and keeps the JSON response a sane size for a thousand-file selection.
+        foreach (var chunk in files.Chunk(ReadChunkSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var arguments = new List<string> { "-json", "-G" };
+            var sidecars = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var file in chunk)
+            {
+                arguments.Add(file.FullPath);
+
+                if (XmpSidecar.Find(file.FullPath) is { } sidecarPath)
+                {
+                    sidecars[file.FullPath] = sidecarPath;
+                    arguments.Add(sidecarPath);
+                }
+            }
+
+            string json;
+            try
+            {
+                json = await session.ExecuteAsync(arguments, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "ExifTool failed reading a chunk of {Count} files", chunk.Length);
+                processed += chunk.Length;
+                progress?.Report(processed);
+                continue;
+            }
+
+            var documents = ParseDocuments(json, "batch read");
+
+            foreach (var file in chunk)
+            {
+                var media = FindDocument(documents, file.FullPath);
+                if (media is null)
+                {
+                    continue;
+                }
+
+                sidecars.TryGetValue(file.FullPath, out var sidecarPath);
+                var sidecar = sidecarPath is null ? null : FindDocument(documents, sidecarPath);
+
+                results[file.FullPath] = Build(file, media, sidecar, sidecarPath);
+            }
+
+            processed += chunk.Length;
+            progress?.Report(processed);
+        }
+
+        return results;
+    }
+
+    /// <summary>Shared by both read paths so single and batch results cannot drift apart.</summary>
+    private static MediaMetadata Build(
+        MediaFile file,
+        Dictionary<string, JsonElement> media,
+        Dictionary<string, JsonElement>? sidecar,
+        string? sidecarPath)
+        => new()
         {
             Embedded = ReadEditable(media),
             Sidecar = sidecar is null ? null : ReadEditable(sidecar),
@@ -71,7 +158,6 @@ public sealed class ExifToolMetadataProvider : IMetadataProvider
             RawTags = ReadRawTags(media, sidecar),
             SidecarPath = sidecar is null ? null : sidecarPath
         };
-    }
 
     private List<Dictionary<string, JsonElement>> ParseDocuments(string json, string context)
     {

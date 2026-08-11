@@ -15,6 +15,13 @@ public class MetadataInspectorViewModelTests
 
         public Task<MediaMetadata?> ReadAsync(MediaFile file, CancellationToken cancellationToken = default)
             => Task.FromResult(result);
+
+        public Task<IReadOnlyDictionary<string, MediaMetadata>> ReadManyAsync(
+            IReadOnlyList<MediaFile> files,
+            IProgress<int>? progress = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<string, MediaMetadata>>(
+                files.ToDictionary(f => f.FullPath, _ => result ?? MediaMetadata.Empty));
     }
 
     private sealed class StubThumbnailService : IThumbnailService

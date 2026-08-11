@@ -39,6 +39,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IMetadataWriter writer,
         MetadataInspectorViewModel inspector,
         VideoPlayerViewModel player,
+        BatchEditViewModel batch,
         ILogger<MainWindowViewModel> logger)
     {
         _scanner = scanner;
@@ -50,6 +51,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _logger = logger;
         Inspector = inspector;
         Player = player;
+        Batch = batch;
+
+        // A batch run marks many files at once; refresh whatever is on screen afterwards.
+        Batch.Applied += () => PendingChangeCount = _pending.Count;
 
         _pending.Changed += (_, _) => PendingChangeCount = _pending.Count;
 
@@ -66,6 +71,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public MetadataInspectorViewModel Inspector { get; }
 
     public VideoPlayerViewModel Player { get; }
+
+    public BatchEditViewModel Batch { get; }
 
     public ObservableCollection<FolderNodeViewModel> FolderRoots { get; } = [];
 
@@ -224,6 +231,20 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isVideoSelected;
+
+    /// <summary>True once more than one file is selected, which swaps the inspector for batch mode.</summary>
+    [ObservableProperty]
+    private bool _isMultiSelection;
+
+    /// <summary>
+    /// Called by the view when the grid selection changes. Multi-selection lives here rather than
+    /// in a two-way SelectedItems binding, which Avalonia does not make reliable.
+    /// </summary>
+    public void UpdateSelection(IReadOnlyList<MediaItemViewModel> items)
+    {
+        Batch.SetSelection(items);
+        IsMultiSelection = items.Count > 1;
+    }
 
     partial void OnRecursiveChanged(bool value)
     {

@@ -95,7 +95,8 @@
         <ListBox Grid.Row="0"
                  ItemsSource="{Binding MediaItems}"
                  SelectedItem="{Binding SelectedItem}"
-                 SelectionMode="Single"
+                 SelectionMode="Multiple"
+                 SelectionChanged="OnGridSelectionChanged"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
           <ListBox.ItemsPanel>
             <ItemsPanelTemplate>
@@ -251,8 +252,16 @@
 
       <GridSplitter Grid.Column="3" ResizeDirection="Columns" Background="#22FFFFFF" />
 
-      <!-- File header + metadata inspector -->
-      <DockPanel Grid.Column="4">
+      <!-- Right panel: batch editor for a multi-selection, otherwise the single-file inspector -->
+      <Panel Grid.Column="4">
+
+      <!-- IsVisible on the wrapper: on the same element as DataContext it would resolve against
+           the batch ViewModel rather than this window. -->
+      <Panel IsVisible="{Binding IsMultiSelection}">
+        <views:BatchEditView DataContext="{Binding Batch}" />
+      </Panel>
+
+      <DockPanel IsVisible="{Binding !IsMultiSelection}">
         <Border DockPanel.Dock="Top" Padding="12,10" BorderThickness="0,0,0,1" BorderBrush="#18FFFFFF"
                 IsVisible="{Binding SelectedItem, Converter={x:Static ObjectConverters.IsNotNull}}">
           <StackPanel DataContext="{Binding SelectedItem}" x:DataType="vm:MediaItemViewModel" Spacing="2">
@@ -272,6 +281,7 @@
 
         <views:MetadataInspectorView DataContext="{Binding Inspector}" />
       </DockPanel>
+      </Panel>
 
     </Grid>
   </DockPanel>

@@ -13,6 +13,7 @@ internal sealed class TestPaths : IAppPaths
         ThumbnailCacheRoot = Path.Combine(CacheRoot, "Thumbnails");
         VideoProxyCacheRoot = Path.Combine(CacheRoot, "VideoProxy");
         LogRoot = Path.Combine(root, "Logs");
+        CatalogPath = Path.Combine(root, "catalog.db");
 
         Directory.CreateDirectory(ThumbnailCacheRoot);
         Directory.CreateDirectory(VideoProxyCacheRoot);
@@ -30,4 +31,6 @@ internal sealed class TestPaths : IAppPaths
     public string VideoProxyCacheRoot { get; }
 
     public string LogRoot { get; }
+
+    public string CatalogPath { get; }
 }

@@ -9,6 +9,7 @@ namespace BetterDAM.Core.Services;
 /// <code>
 /// &lt;LocalAppData&gt;/BetterDAM/
 ///     settings.json          preferences — never inside Cache
+///     catalog.db             SQLite search catalog — never inside Cache
 ///     Logs/                  diagnostics — never inside Cache
 ///     Cache/Thumbnails/      disposable derived data (relocatable)
 ///     Cache/VideoProxy/      generated low-resolution video
@@ -52,6 +53,8 @@ public sealed class AppPaths : IAppPaths
     }
 
     public string DefaultCacheRoot => Path.Combine(AppDataRoot, "Cache");
+
+    public string CatalogPath => Path.Combine(AppDataRoot, "catalog.db");
 
     public string ThumbnailCacheRoot => Path.Combine(CacheRoot, "Thumbnails");
 

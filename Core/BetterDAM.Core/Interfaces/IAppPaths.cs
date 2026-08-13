@@ -21,4 +21,10 @@ public interface IAppPaths
     string VideoProxyCacheRoot { get; }
 
     string LogRoot { get; }
+
+    /// <summary>
+    /// The SQLite catalog. Kept <b>outside</b> the cache: it is derived data, but rebuilding it means
+    /// re-reading metadata for the whole library, so it is not something to throw away casually.
+    /// </summary>
+    string CatalogPath { get; }
 }

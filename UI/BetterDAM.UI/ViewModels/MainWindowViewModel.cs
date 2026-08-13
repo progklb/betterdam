@@ -4,6 +4,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
+using BetterDAM.Core.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -25,10 +26,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly IFfmpegLocator _ffmpeg;
     private readonly IPendingChangeStore _pending;
     private readonly IMetadataWriter _writer;
+    private readonly ICatalog _catalog;
+    private readonly ICatalogIndexer _indexer;
     private readonly ILogger<MainWindowViewModel> _logger;
 
     private CancellationTokenSource? _scanCts;
     private CancellationTokenSource? _previewCts;
+    private CancellationTokenSource? _indexCts;
+    private CancellationTokenSource? _searchCts;
 
     public MainWindowViewModel(
         IMediaScanner scanner,
@@ -37,6 +42,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IFfmpegLocator ffmpeg,
         IPendingChangeStore pending,
         IMetadataWriter writer,
+        ICatalog catalog,
+        ICatalogIndexer indexer,
         MetadataInspectorViewModel inspector,
         VideoPlayerViewModel player,
         BatchEditViewModel batch,
@@ -48,6 +55,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _ffmpeg = ffmpeg;
         _pending = pending;
         _writer = writer;
+        _catalog = catalog;
+        _indexer = indexer;
         _logger = logger;
         Inspector = inspector;
         Player = player;
@@ -248,6 +257,161 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _isVideoSelected;
 
+    [ObservableProperty]
+    private string? _searchText;
+
+    /// <summary>True while showing search results rather than a folder's contents.</summary>
+    [ObservableProperty]
+    private bool _isShowingSearchResults;
+
+    [ObservableProperty]
+    private bool _isIndexing;
+
+    [ObservableProperty]
+    private double _indexProgress;
+
+    [ObservableProperty]
+    private string? _indexStatus;
+
+    [ObservableProperty]
+    private string? _searchWarning;
+
+    /// <summary>
+    /// Runs the search. Results come from the catalog, so this searches everything ever indexed
+    /// rather than only the folder on screen — which is the entire point of having a catalog.
+    /// </summary>
+    [RelayCommand]
+    private async Task SearchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SearchText))
+        {
+            ClearSearch();
+            return;
+        }
+
+        if (_searchCts is { } previous)
+        {
+            await previous.CancelAsync();
+            previous.Dispose();
+        }
+
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+
+        var query = SearchQueryParser.Parse(SearchText);
+        SearchWarning = query.UnrecognisedTerms.IsDefaultOrEmpty
+            ? null
+            : $"Ignored: {string.Join(", ", query.UnrecognisedTerms)}";
+
+        if (query.IsEmpty)
+        {
+            StatusText = "Enter something to search for.";
+            return;
+        }
+
+        try
+        {
+            var hits = await _catalog.SearchAsync(query, cancellationToken: cts.Token);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await CancelActiveScanAsync();
+
+            MediaItems.Clear();
+            SelectedItem = null;
+            IsShowingSearchResults = true;
+
+            foreach (var hit in hits)
+            {
+                MediaItems.Add(new MediaItemViewModel(hit.ToMediaFile(), _thumbnails)
+                {
+                    HasPendingChanges = _pending.HasChanges(hit.FullPath)
+                });
+            }
+
+            CurrentFolderPath = $"Search: {SearchText}";
+            StatusText = hits.Count == 0
+                ? "No matches. Files must be indexed before they can be found."
+                : $"{hits.Count:N0} match(es)";
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Search failed for {Query}", SearchText);
+            StatusText = $"Search failed: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void ClearSearch()
+    {
+        SearchText = null;
+        SearchWarning = null;
+        IsShowingSearchResults = false;
+
+        if (SelectedFolder is { IsPlaceholder: false } folder)
+        {
+            _ = ScanFolderAsync(folder.FullPath);
+        }
+    }
+
+    [RelayCommand]
+    private void CancelIndexing() => _indexCts?.Cancel();
+
+    /// <summary>
+    /// Indexes the files just scanned, in the background. Indexing reads metadata for every file,
+    /// so it must never hold up browsing.
+    /// </summary>
+    private async Task IndexScannedAsync(IReadOnlyList<MediaItemViewModel> items)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        if (_indexCts is { } previous)
+        {
+            await previous.CancelAsync();
+            previous.Dispose();
+        }
+
+        var cts = new CancellationTokenSource();
+        _indexCts = cts;
+
+        IsIndexing = true;
+        IndexProgress = 0;
+
+        try
+        {
+            var files = items.Select(i => i.File).ToList();
+            var progress = new Progress<JobProgress>(p =>
+            {
+                IndexProgress = p.Fraction;
+                IndexStatus = $"Indexing {p.Completed:N0} of {p.Total:N0}";
+            });
+
+            var indexed = await _indexer.IndexAsync(files, progress, cts.Token);
+            IndexStatus = $"Indexed {indexed:N0} file(s)";
+        }
+        catch (OperationCanceledException)
+        {
+            IndexStatus = "Indexing cancelled";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Indexing failed");
+            IndexStatus = null;
+        }
+        finally
+        {
+            IsIndexing = false;
+        }
+    }
+
     /// <summary>True once more than one file is selected, which swaps the inspector for batch mode.</summary>
     [ObservableProperty]
     private bool _isMultiSelection;
@@ -354,6 +518,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
             Flush(batch);
             StatusText = $"{count} media files in {path} ({stopwatch.Elapsed.TotalSeconds:0.0}s)";
+
+            // Indexing happens after the grid is populated so browsing is never blocked by it.
+            _ = IndexScannedAsync(MediaItems.ToList());
         }
         catch (OperationCanceledException)
         {

@@ -46,8 +46,22 @@
           </StackPanel>
         </StackPanel>
 
-        <TextBlock Text="{Binding CurrentFolderPath}" VerticalAlignment="Center" Opacity="0.6"
-                   Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
+        <!-- Search sits centre-right: it queries the catalog, not just the current folder. -->
+        <DockPanel Margin="12,0,0,0">
+          <Button DockPanel.Dock="Right" Content="✕" Margin="4,0,0,0" Padding="8,2"
+                  ToolTip.Tip="Clear the search and go back to the folder"
+                  IsVisible="{Binding IsShowingSearchResults}"
+                  Command="{Binding ClearSearchCommand}" />
+          <Button DockPanel.Dock="Right" Content="Search" Margin="4,0,0,0"
+                  Command="{Binding SearchCommand}" />
+          <TextBox Text="{Binding SearchText}" MinWidth="240"
+                   Watermark="keyword:motorcycle rating:&gt;=4 type:video"
+                   ToolTip.Tip="Words search titles, descriptions, keywords and creators. Filters: keyword: rating: camera: lens: type: date:">
+            <TextBox.KeyBindings>
+              <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
+            </TextBox.KeyBindings>
+          </TextBox>
+        </DockPanel>
       </DockPanel>
     </Border>
 
@@ -72,6 +86,19 @@
           <ProgressBar IsIndeterminate="True" Width="90" Height="4"
                        VerticalAlignment="Center" IsVisible="{Binding IsScanning}" />
           <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
+
+          <!-- Indexing runs behind browsing, so it reports quietly rather than blocking. -->
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                      IsVisible="{Binding IsIndexing}">
+            <ProgressBar Minimum="0" Maximum="1" Value="{Binding IndexProgress}"
+                         Width="80" Height="4" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding IndexStatus}" FontSize="11" Opacity="0.6" VerticalAlignment="Center" />
+            <Button Content="Stop" FontSize="10" Padding="6,1" Command="{Binding CancelIndexingCommand}" />
+          </StackPanel>
+
+          <TextBlock Text="{Binding SearchWarning}" FontSize="11" Foreground="#FFC107"
+                     VerticalAlignment="Center"
+                     IsVisible="{Binding SearchWarning, Converter={x:Static ObjectConverters.IsNotNull}}" />
         </StackPanel>
       </DockPanel>
     </Border>

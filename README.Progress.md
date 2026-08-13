@@ -3,6 +3,20 @@
 A running log of what has been built, phase by phase. Each entry records what changed, the
 decisions worth remembering, and what is deliberately left for later.
 
+**All seven MVP phases are complete.** The solution is:
+
+```text
+Core/        models, interfaces, scanning, pending changes, batch, sync   (no UI, no external tools)
+Metadata/    ExifTool: reading, XMP sidecars, embedding, preview extraction
+Preview/     thumbnails, RAW previews, video proxies, frame decoding, cache
+Database/    SQLite catalog, FTS5 search
+UI/          Avalonia desktop app
+Tests/       267 tests
+```
+
+External tools: **ExifTool** (metadata) and **FFmpeg** (video). Both optional — the app degrades
+with a clear notice rather than failing.
+
 ---
 
 ## Phase 1 — Browser ✅
@@ -670,6 +684,114 @@ automatically — that is the point, but a large embed run doubles disk usage fo
 - Retry is "retry everything still outstanding" rather than per-file selection.
 - Conflict resolution still happens in the inspector; the sync dialog reports conflicts and skips
   them rather than offering to resolve them inline.
+
+---
+
+## Phase 7 — Search ✅
+
+**Goal (from the README):** keyword search, description search, rating filtering, camera/lens
+filtering, media type filtering, date filtering, basic query syntax, SQLite FTS5.
+
+This is the phase that finally introduces the **local catalog** — the SQLite database the README's
+architecture has been pointing at since Phase 1.
+
+### New project
+
+```text
+Database/BetterDAM.Database    SQLite catalog: schema, migrations, FTS5, Dapper repository
+```
+
+Dependency direction still one-way: `UI → Database → Core`.
+
+### FTS5 checked before building on it
+
+`Microsoft.Data.Sqlite` bundles its own SQLite, and FTS5 is a compile-time option — so rather than
+assume, a throwaway program confirmed it first: **SQLite 3.46.1 with FTS5 and prefix matching
+working**. Worth the two minutes; the whole design depends on it.
+
+### Schema
+
+Versioned from the start, so later phases can add columns without asking anyone to delete their
+catalog:
+
+| Table | Purpose |
+| ----- | ------- |
+| `Media` | One row per file, with the searchable metadata denormalised onto it |
+| `Keyword` / `MediaKeyword` | Normalised keywords, so `keyword:x` is an indexed lookup rather than a text scan |
+| `MediaSearch` | FTS5 over title, description, headline, keywords and creator |
+
+`MediaSearch` shares `Media.Id` as its rowid, so refreshing a file's index entry is a delete by
+rowid rather than a scan. WAL is on, so indexing can write while the UI reads.
+
+**The catalog lives outside the cache** (`<AppData>/catalog.db`), alongside settings. It is derived
+data, but rebuilding it means re-reading metadata for the whole library — not something to lose to a
+"Clear cache".
+
+### Query syntax
+
+Exactly the syntax the README specified, plus dates:
+
+```text
+keyword:motorcycle      camera:Sony        type:video
+rating:>=4              lens:"RF 100-500"  date:>=2024-01-01
+lioness dawn            (bare words → full text, prefix-matched)
+```
+
+Terms combine with implicit AND; a literal `AND` is accepted. The parser is pure and separate from
+the SQL, so its behaviour is testable without a database.
+
+Two decisions worth noting:
+
+- **Unrecognised filters are reported, not dropped.** `rating:9` does not silently return everything;
+  the status bar says what was ignored. Quietly discarding a filter is how a search tool lies to you.
+- **Every value is parameterised.** A search box is user input, and a test asserts none of it appears
+  in the generated SQL.
+
+### Indexing
+
+Runs in the background **after** a scan populates the grid, so browsing is never blocked, with
+progress and a Stop button in the status bar. Work is chunked (100 files per ExifTool round trip,
+reusing Phase 5's batched reads) so a cancelled index of a large library keeps what it already did.
+
+### Verified in the real app
+
+An 8-file library with distinct metadata, auto-indexed on scan (`Indexed 8 of 8 file(s)`):
+
+| Query | Result |
+| ----- | ------ |
+| `keyword:motorcycle` | The 2 tagged files, image and video |
+| `rating:>=4 AND keyword:motorcycle AND type:video` | **CLIP01.mp4 only** — correctly excluding the motorcycle *image* |
+| `camera:Sony` | The 2 Sony files |
+| `sunset` | IMG04.jpg — the only file with that word in its **description** |
+| `date:>=2024-01-01` | IMG01.jpg — the only 2024 capture date |
+
+Plus 50 tests covering the parser, the SQL builder, and the catalog against a real SQLite file —
+including that re-indexing updates rather than duplicating, that removed keywords stop matching, and
+that the catalog survives being reopened.
+
+### Bug found during verification
+
+Dapper could not materialise the result rows: SQLite returns every integer as `Int64`, so a record
+declaring `int MediaType` had **no matching constructor** and every catalog query threw. The row
+type now reads them as `long` and narrows on the way out.
+
+### Things to know
+
+**Search covers what has been indexed, not what is on disk.** Open a folder once and it is
+searchable from then on; a folder never visited is invisible to search. A "index this whole library"
+action would be the natural next step.
+
+**Re-indexing is not automatic on external change.** A file edited by another application keeps its
+old catalog entry until that folder is scanned again. This is what the README's file-watching
+section is for.
+
+### Deliberately deferred
+
+- **No saved searches or smart collections** — the README lists them under future features.
+- No `OR` or `NOT`; the syntax is AND-only, as specified.
+- `RemoveMissingAsync` exists and is tested but is not yet wired to a UI action or run automatically.
+- Search results are a flat list ordered by filename; relevance ranking (FTS5 offers `bm25()`) is not
+  used yet.
 
 ---
 

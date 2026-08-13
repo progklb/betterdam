@@ -1,19 +1,23 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>BetterDAM.Core</RootNamespace>
+    <RootNamespace>BetterDAM.Database</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.66" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.18" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.18" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\BetterDAM.Core\BetterDAM.Core.csproj" />
+  </ItemGroup>
 
   <ItemGroup>
-    <!-- The query tokenizer is internal but worth testing directly. -->
     <InternalsVisibleTo Include="BetterDAM.Tests" />
   </ItemGroup>
 

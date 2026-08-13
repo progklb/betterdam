@@ -1,5 +1,6 @@
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Services;
+using BetterDAM.Database;
 using BetterDAM.Metadata.ExifTool;
 using BetterDAM.Metadata.Xmp;
 using BetterDAM.Preview;
@@ -50,6 +51,8 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IPendingChangeStore, PendingChangeStore>();
         services.AddSingleton<IBatchMetadataService, BatchMetadataService>();
         services.AddSingleton<ISyncService, SyncService>();
+        services.AddSingleton<ICatalog, SqliteCatalog>();
+        services.AddSingleton<ICatalogIndexer, CatalogIndexer>();
 
         services.AddTransient<MetadataInspectorViewModel>();
         services.AddTransient<SettingsViewModel>();

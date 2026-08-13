@@ -188,6 +188,22 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    /// <summary>Called after the sync dialog closes: it clears whatever it committed.</summary>
+    public void RefreshAfterSync()
+    {
+        PendingChangeCount = _pending.Count;
+
+        foreach (var item in MediaItems)
+        {
+            item.HasPendingChanges = _pending.HasChanges(item.File.FullPath);
+        }
+
+        if (SelectedItem is { } selected)
+        {
+            _ = Inspector.LoadAsync(selected);
+        }
+    }
+
     [RelayCommand]
     private void DiscardAllPendingChanges()
     {

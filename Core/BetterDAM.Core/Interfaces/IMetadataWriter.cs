@@ -21,6 +21,29 @@ public sealed record SidecarWriteResult(
         => new(filePath, false, Error: error);
 }
 
+public sealed record EmbedWriteOptions
+{
+    /// <summary>Keep a copy of the original alongside it before modifying.</summary>
+    public bool BackupOriginal { get; init; } = true;
+
+    /// <summary>
+    /// Leave the filesystem modification time alone. Bridge changing timestamps on every keyword
+    /// edit is the complaint this whole project started from.
+    /// </summary>
+    public bool PreserveTimestamps { get; init; } = true;
+
+    public bool ValidateAfterWrite { get; init; } = true;
+}
+
+public sealed record EmbedWriteResult(
+    string FilePath,
+    bool Success,
+    string? BackupPath = null,
+    string? Error = null)
+{
+    public static EmbedWriteResult Failed(string filePath, string error) => new(filePath, false, Error: error);
+}
+
 /// <summary>
 /// Writes user-editable metadata to an XMP sidecar.
 ///
@@ -39,5 +62,18 @@ public interface IMetadataWriter
         MediaFile file,
         EditableMetadata metadata,
         SidecarWriteOptions options,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Writes metadata <b>into the media file itself</b>.
+    ///
+    /// This is the only operation in the application that modifies a user's original media, and it
+    /// exists solely to serve Sync. Everything else writes sidecars. Callers are expected to have
+    /// obtained explicit consent before calling it.
+    /// </summary>
+    Task<EmbedWriteResult> WriteEmbeddedAsync(
+        MediaFile file,
+        EditableMetadata metadata,
+        EmbedWriteOptions options,
         CancellationToken cancellationToken = default);
 }

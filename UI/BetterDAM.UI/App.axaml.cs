@@ -43,7 +43,8 @@ public partial class App : Application
             desktop.MainWindow = new MainWindow
             {
                 DataContext = viewModel,
-                SettingsViewModelFactory = services.GetRequiredService<SettingsViewModel>
+                SettingsViewModelFactory = services.GetRequiredService<SettingsViewModel>,
+                SyncViewModelFactory = services.GetRequiredService<SyncViewModel>
             };
 
             if (StartupFolder is { } folder)

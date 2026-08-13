@@ -63,6 +63,8 @@
                   ToolTip.Tip="Write every pending change to its XMP sidecar. Original media is not modified."
                   IsEnabled="{Binding !IsWritingAll}"
                   Command="{Binding WriteAllPendingSidecarsCommand}" />
+          <Button Content="Sync…" FontSize="11" Padding="8,2" Click="OnOpenSync"
+                  ToolTip.Tip="Review and commit pending changes, optionally embedding them into the originals" />
           <Button Content="Discard all" FontSize="11" Padding="8,2"
                   Command="{Binding DiscardAllPendingChangesCommand}" />
         </StackPanel>

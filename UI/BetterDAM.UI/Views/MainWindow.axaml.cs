@@ -10,6 +10,9 @@ public partial class MainWindow : Window
     /// <summary>Creates the settings ViewModel on demand, so its state is fresh each time.</summary>
     public Func<SettingsViewModel>? SettingsViewModelFactory { get; set; }
 
+    /// <summary>Likewise for sync: each dialog re-plans against the current pending changes.</summary>
+    public Func<SyncViewModel>? SyncViewModelFactory { get; set; }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -43,6 +46,23 @@ public partial class MainWindow : Window
     private void OnFrameReady(VideoFrame frame) => VideoSurface.Present(frame);
 
     private void OnSurfaceCleared() => VideoSurface.Clear();
+
+    private async void OnOpenSync(object? sender, RoutedEventArgs e)
+    {
+        if (SyncViewModelFactory is not { } factory)
+        {
+            return;
+        }
+
+        var window = new SyncWindow { DataContext = factory() };
+        await window.ShowDialog(this);
+
+        // Sync clears whatever it committed, so the grid's badges need refreshing.
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.RefreshAfterSync();
+        }
+    }
 
     private async void OnOpenSettings(object? sender, RoutedEventArgs e)
     {

@@ -69,6 +69,13 @@ public class MetadataInspectorViewModelTests
                 ? new SidecarWriteResult(file.FullPath, true, file.FullPath + ".xmp")
                 : SidecarWriteResult.Failed(file.FullPath, "stub failure"));
         }
+
+        public Task<EmbedWriteResult> WriteEmbeddedAsync(
+            MediaFile file,
+            EditableMetadata metadata,
+            EmbedWriteOptions options,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new EmbedWriteResult(file.FullPath, ShouldSucceed));
     }
 
     private static (MetadataInspectorViewModel Inspector, PendingChangeStore Store, StubMetadataWriter Writer)

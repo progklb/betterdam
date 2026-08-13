@@ -582,6 +582,97 @@ for the stars, the text fields, and the clear-after-ticking case.
 
 ---
 
+## Phase 6 — Sync ✅
+
+**Goal (from the README):** pending-change tracking, sync preview, embed metadata, preserve
+timestamps, optional backups, validation, error reporting.
+
+**This is the first and only phase that modifies original media** — and only when explicitly asked.
+
+### Shape of the operation
+
+Split into **plan** then **execute**, so the user sees exactly what is about to happen before
+anything is written:
+
+```text
+pending changes → plan (counts, file types, conflicts) → options → write → journal → report
+```
+
+The dialog shows the README's summary — "8 JPG / 1 MP4" — plus a conflict count, and a plain-English
+line that changes with the options:
+
+> *XMP sidecars will be written. Your original media will not be modified.*
+> *XMP sidecars will be written, and metadata will be written into the original media files.*
+
+### Options
+
+| Option | Default | Notes |
+| ------ | ------- | ----- |
+| Embed metadata into originals | **Off** | The only setting in the application that modifies a user's media |
+| Back up originals | On | Keeps `<name>.<ext>_original`, using ExifTool's own tested backup path |
+| Preserve file timestamps | On | `-P`; the original complaint this project started from |
+| Validate after writing | On | Reads each file back and compares |
+| Skip conflicted files | On | Files whose embedded and sidecar metadata disagree are left alone |
+
+**Sidecars are always written, even when embedding**, so the two layers agree afterwards and a
+freshly synced file does not immediately look conflicted.
+
+### Resumability
+
+`SyncJournal` records each file the moment it commits. It is an **append-only line-per-path text
+file** rather than a serialised document, deliberately: appending one line is about as close to
+atomic as a filesystem gets, so a crash — or a pulled cable — mid-run leaves a readable journal
+rather than a half-rewritten blob. It lives outside the cache, because losing it would mean redoing
+work.
+
+A cancelled run therefore resumes; the dialog says how many files it will skip and offers to start
+over instead. A run that finishes cleanly clears the journal, so the next sync does not wrongly
+believe it is resuming.
+
+### Verified in the real app
+
+9 files (8 JPG + 1 MP4), all backdated to `2020-01-02 03:04:05` so a rewritten timestamp would be
+unmistakable. Batch-applied a keyword and rating, then synced **with embedding on**:
+
+- Result: **"9 file(s) written and embedded."**
+- **All 9 timestamps still `2020-01-02 03:04:05`** — including the video.
+- 9 backups created; `S01.jpg_original` hashes **identical to the pre-sync file**, while the file
+  itself now hashes differently. The backup carries none of the new metadata.
+- Metadata verified *inside* the originals — `Rating 4`, `Subject: synced` — **including inside the
+  MP4**.
+- 9 sidecars written and agreeing with the embedded values.
+- Journal cleared after the clean run.
+
+Also covered by tests: sidecar-only sync leaving originals byte-identical, embedding without
+backups, conflicted files being skipped while keeping their pending change, resume skipping
+already-committed files, and discard-resume starting over.
+
+### Bug found and fixed during verification
+
+After a successful run the dialog still read **"Changes pending: 9 file(s)"** directly above
+**"9 file(s) written and embedded"** — the plan was captured before the run and never refreshed, so
+a complete success looked like a failure. It now re-plans afterwards while preserving the result
+message.
+
+### Things to know
+
+**Embedding writes XMP into the media file.** That is the project's stated interoperability target.
+Writing IPTC/EXIF equivalents as well, for older tools that do not read embedded XMP, is a
+deliberate non-goal for now.
+
+**Backups accumulate.** `_original` files sit next to the media and are never cleaned up
+automatically — that is the point, but a large embed run doubles disk usage for those files.
+
+### Deliberately deferred
+
+- **No catalog update step.** The README's sync sequence includes "update the local catalog"; there
+  is no SQLite catalog yet, so there is nothing to update. Search (Phase 7) is where that lands.
+- Retry is "retry everything still outstanding" rather than per-file selection.
+- Conflict resolution still happens in the inspector; the sync dialog reports conflicts and skips
+  them rather than offering to resolve them inline.
+
+---
+
 ## Performance — first preview latency ✅ Fixed
 
 **Symptom:** open a folder, click a file, and the preview took a long time. Once the first preview

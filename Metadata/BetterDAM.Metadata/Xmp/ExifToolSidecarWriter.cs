@@ -98,6 +98,122 @@ public sealed class ExifToolSidecarWriter : IMetadataWriter
         }
     }
 
+    /// <summary>
+    /// Writes metadata into the media file itself. Unlike every other write in the application,
+    /// this modifies the user's original — see <see cref="IMetadataWriter.WriteEmbeddedAsync"/>.
+    /// </summary>
+    public async Task<EmbedWriteResult> WriteEmbeddedAsync(
+        MediaFile file,
+        EditableMetadata metadata,
+        EmbedWriteOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        if (_host.Session is not { } session)
+        {
+            return EmbedWriteResult.Failed(file.FullPath, "ExifTool is not available.");
+        }
+
+        if (!File.Exists(file.FullPath))
+        {
+            return EmbedWriteResult.Failed(file.FullPath, "The file no longer exists.");
+        }
+
+        var temporaryValueFiles = new List<string>();
+
+        try
+        {
+            var arguments = BuildEmbedArguments(metadata, file.FullPath, options, temporaryValueFiles);
+            var output = await session.ExecuteAsync(arguments, cancellationToken).ConfigureAwait(false);
+
+            if (!IndicatesSuccess(output))
+            {
+                _logger.LogWarning("ExifTool did not confirm the embed for {File}: {Output}", file.FullPath, output.Trim());
+                return EmbedWriteResult.Failed(file.FullPath, Summarise(output));
+            }
+
+            // ExifTool names its own backup "<file>_original" when -overwrite_original is omitted.
+            var backupPath = options.BackupOriginal ? file.FullPath + "_original" : null;
+            if (backupPath is not null && !File.Exists(backupPath))
+            {
+                backupPath = null;
+            }
+
+            if (options.ValidateAfterWrite)
+            {
+                var error = await ValidateEmbeddedAsync(file, metadata, cancellationToken).ConfigureAwait(false);
+                if (error is not null)
+                {
+                    return new EmbedWriteResult(file.FullPath, false, backupPath, error);
+                }
+            }
+
+            _logger.LogInformation("Embedded metadata into {File}", file.FullPath);
+            return new EmbedWriteResult(file.FullPath, true, backupPath);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed embedding metadata into {File}", file.FullPath);
+            return EmbedWriteResult.Failed(file.FullPath, ex.Message);
+        }
+        finally
+        {
+            foreach (var path in temporaryValueFiles)
+            {
+                TryDelete(path);
+            }
+        }
+    }
+
+    private static List<string> BuildEmbedArguments(
+        EditableMetadata metadata,
+        string mediaPath,
+        EmbedWriteOptions options,
+        List<string> temporaryValueFiles)
+    {
+        var arguments = new List<string>();
+
+        // Omitting -overwrite_original is what makes ExifTool leave "<file>_original" behind, so the
+        // backup uses its own well-tested path rather than a copy of our own devising.
+        if (!options.BackupOriginal)
+        {
+            arguments.Add("-overwrite_original");
+        }
+
+        if (options.PreserveTimestamps)
+        {
+            arguments.Add("-P");
+        }
+
+        AddMetadataArguments(arguments, metadata, temporaryValueFiles);
+        arguments.Add(mediaPath);
+        return arguments;
+    }
+
+    /// <summary>Confirms the file now reports what was asked for.</summary>
+    private async Task<string?> ValidateEmbeddedAsync(MediaFile file, EditableMetadata expected, CancellationToken cancellationToken)
+    {
+        var reread = await _reader.ReadAsync(file, cancellationToken).ConfigureAwait(false);
+        if (reread is null)
+        {
+            return "The file could not be read back after writing.";
+        }
+
+        if (!reread.Embedded.ValueEquals(expected))
+        {
+            _logger.LogWarning(
+                "Embed validation mismatch for {File}. Expected title={ExpectedTitle} rating={ExpectedRating}, found title={ActualTitle} rating={ActualRating}",
+                file.FullPath, expected.Title, expected.Rating, reread.Embedded.Title, reread.Embedded.Rating);
+
+            return "The file was written but does not match what was requested.";
+        }
+
+        return null;
+    }
+
     /// <summary>The target must be a .xmp file and must not be the media file itself.</summary>
     internal static bool IsSafeSidecarTarget(string mediaPath, string sidecarPath)
         => Path.GetExtension(sidecarPath).Equals(".xmp", StringComparison.OrdinalIgnoreCase)
@@ -111,6 +227,21 @@ public sealed class ExifToolSidecarWriter : IMetadataWriter
         // The sidecar is ours to manage, so no _original backup copies are left lying around.
         var arguments = new List<string> { "-overwrite_original" };
 
+        AddMetadataArguments(arguments, metadata, temporaryValueFiles);
+
+        arguments.Add(sidecarPath);
+        return arguments;
+    }
+
+    /// <summary>
+    /// The tag assignments themselves, shared by sidecar and embedded writes so the two cannot
+    /// drift apart on what "the metadata BetterDAM manages" means.
+    /// </summary>
+    private static void AddMetadataArguments(
+        List<string> arguments,
+        EditableMetadata metadata,
+        List<string> temporaryValueFiles)
+    {
         AddValue(arguments, "XMP:Title", metadata.Title, temporaryValueFiles);
         AddValue(arguments, "XMP:Description", metadata.Description, temporaryValueFiles);
         AddValue(arguments, "XMP:Headline", metadata.Headline, temporaryValueFiles);
@@ -137,9 +268,6 @@ public sealed class ExifToolSidecarWriter : IMetadataWriter
                 arguments.Add($"-XMP:Subject={keyword}");
             }
         }
-
-        arguments.Add(sidecarPath);
-        return arguments;
     }
 
     /// <summary>

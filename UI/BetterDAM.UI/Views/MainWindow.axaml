@@ -9,7 +9,7 @@
         mc:Ignorable="d"
         x:Class="BetterDAM.UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Title="BetterDAM"
+        Title="{Binding WindowTitle}"
         Width="1400" Height="900"
         MinWidth="900" MinHeight="600">
 
@@ -40,6 +40,16 @@
             <NativeMenuItem Header="Open Folder…"
                             Gesture="{x:Static svc:MenuConventions.OpenFolder}"
                             Click="OnOpenFolder" />
+            <!-- Contents rebuilt in code from RecentWorkspaces; see MainWindow.RebuildRecentMenu. -->
+            <NativeMenuItem Header="{x:Static svc:MenuConventions.OpenRecentHeader}">
+              <NativeMenuItem.Menu>
+                <NativeMenu />
+              </NativeMenuItem.Menu>
+            </NativeMenuItem>
+            <NativeMenuItemSeparator />
+            <NativeMenuItem Header="Close Workspace"
+                            Gesture="{x:Static svc:MenuConventions.CloseWorkspace}"
+                            Click="OnCloseWorkspace" />
             <NativeMenuItemSeparator IsVisible="{x:Static svc:MenuConventions.ShowSettingsInFileMenu}" />
             <NativeMenuItem Header="Settings…"
                             IsVisible="{x:Static svc:MenuConventions.ShowSettingsInFileMenu}"
@@ -79,6 +89,11 @@
                   Command="{Binding ClearSearchCommand}" />
           <Button DockPanel.Dock="Right" Content="Search" Margin="4,0,0,0"
                   Command="{Binding SearchCommand}" />
+          <CheckBox DockPanel.Dock="Right" Content="Everywhere" Margin="8,0,0,0"
+                    VerticalAlignment="Center" FontSize="11"
+                    IsVisible="{Binding HasWorkspace}"
+                    IsChecked="{Binding SearchEverywhere}"
+                    ToolTip.Tip="Search the whole catalog instead of just the open workspace" />
           <TextBox Text="{Binding SearchText}" MinWidth="240"
                    Watermark="keyword:motorcycle rating:&gt;=4 type:video"
                    ToolTip.Tip="Words search titles, descriptions, keywords and creators. Filters: keyword: rating: camera: lens: type: date:">
@@ -145,6 +160,23 @@
 
       <!-- Thumbnail grid over preview -->
       <Grid Grid.Column="2" RowDefinitions="*,4,280">
+
+        <!--
+          Sits in the same cell as the grid, after it so it draws on top. IsHitTestVisible is left
+          on so the button works, but the panel only exists while the grid is empty.
+        -->
+        <Panel Grid.Row="0" IsVisible="{Binding ShowEmptyState}" ZIndex="1">
+          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                      MaxWidth="380" Spacing="10">
+            <TextBlock Text="{Binding EmptyStateTitle}" FontSize="16" Opacity="0.85"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding EmptyStateDetail}" FontSize="12" Opacity="0.55"
+                       TextWrapping="Wrap" TextAlignment="Center" />
+            <Button Content="Open Folder…" HorizontalAlignment="Center" Margin="0,4,0,0"
+                    IsVisible="{Binding ShowEmptyStateAction}"
+                    Command="{Binding OpenFolderCommand}" />
+          </StackPanel>
+        </Panel>
 
         <ListBox Grid.Row="0"
                  ItemsSource="{Binding MediaItems}"

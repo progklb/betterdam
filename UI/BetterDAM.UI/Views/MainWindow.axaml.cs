@@ -1,6 +1,8 @@
+using System.Collections.Specialized;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using BetterDAM.Core.Models;
+using BetterDAM.UI.Services;
 using BetterDAM.UI.ViewModels;
 
 namespace BetterDAM.UI.Views;
@@ -25,6 +27,10 @@ public partial class MainWindow : Window
             }
 
             viewModel.StorageProvider = StorageProvider;
+
+            viewModel.RecentWorkspaces.CollectionChanged -= OnRecentChanged;
+            viewModel.RecentWorkspaces.CollectionChanged += OnRecentChanged;
+            RebuildRecentMenu();
 
             // Frames are pushed rather than bound: a binding would mean allocating a bitmap per
             // frame, where the surface reuses one and blits into it.
@@ -61,6 +67,57 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel viewModel)
         {
             viewModel.RefreshAfterSync();
+        }
+    }
+
+    private void OnRecentChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildRecentMenu();
+
+    /// <summary>
+    /// Walks the declared menu for the Open Recent placeholder. Necessary because x:Name generates
+    /// no field for a NativeMenuItem — it is not part of the visual tree.
+    /// </summary>
+    private NativeMenu? FindRecentMenu()
+        => NativeMenu.GetMenu(this)?
+            .Items.OfType<NativeMenuItem>()
+            .SelectMany(top => top.Menu?.Items.OfType<NativeMenuItem>() ?? [])
+            .FirstOrDefault(item => item.Header == MenuConventions.OpenRecentHeader)?
+            .Menu;
+
+    /// <summary>
+    /// Rebuilds Open Recent from the ViewModel. Built in code rather than bound because
+    /// <see cref="NativeMenuItem"/> has no DataContext, so an ItemsSource-style binding has nothing
+    /// to resolve against.
+    /// </summary>
+    private void RebuildRecentMenu()
+    {
+        if (FindRecentMenu() is not { } menu || DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        menu.Items.Clear();
+
+        foreach (var path in viewModel.RecentWorkspaces)
+        {
+            var item = new NativeMenuItem { Header = WorkspaceLabel.ForMenu(path), ToolTip = path };
+
+            var target = path;
+            item.Click += (_, _) => _ = viewModel.OpenPathAsync(target);
+            menu.Items.Add(item);
+        }
+
+        // An always-empty submenu looks broken, so say why it is empty.
+        if (menu.Items.Count == 0)
+        {
+            menu.Items.Add(new NativeMenuItem { Header = "No recent workspaces", IsEnabled = false });
+        }
+    }
+
+    private void OnCloseWorkspace(object? sender, EventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            _ = viewModel.CloseWorkspaceCommand.ExecuteAsync(null);
         }
     }
 

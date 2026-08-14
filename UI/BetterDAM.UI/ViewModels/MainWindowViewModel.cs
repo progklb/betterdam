@@ -28,6 +28,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly IMetadataWriter _writer;
     private readonly ICatalog _catalog;
     private readonly ICatalogIndexer _indexer;
+    private readonly ISettingsService _settings;
     private readonly ILogger<MainWindowViewModel> _logger;
 
     private CancellationTokenSource? _scanCts;
@@ -44,6 +45,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IMetadataWriter writer,
         ICatalog catalog,
         ICatalogIndexer indexer,
+        ISettingsService settings,
         MetadataInspectorViewModel inspector,
         VideoPlayerViewModel player,
         BatchEditViewModel batch,
@@ -57,6 +59,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _writer = writer;
         _catalog = catalog;
         _indexer = indexer;
+        _settings = settings;
         _logger = logger;
         Inspector = inspector;
         Player = player;
@@ -67,10 +70,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         _pending.Changed += (_, _) => PendingChangeCount = _pending.Count;
 
-        foreach (var root in _folderBrowser.GetRoots())
-        {
-            FolderRoots.Add(new FolderNodeViewModel(root.FullPath, root.Name, _folderBrowser));
-        }
+        // Driven off the collection itself rather than the four places that mutate it, so the
+        // prompt cannot drift out of step with what is actually on screen.
+        MediaItems.CollectionChanged += (_, _) => UpdateEmptyState();
+        UpdateEmptyState();
+
+        RecentWorkspaces = new ObservableCollection<string>(_settings.Current.RecentWorkspaces);
 
         StatusText = _ffmpeg.IsAvailable
             ? "Ready. Choose a folder to begin."
@@ -120,6 +125,41 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string? _currentFolderPath;
 
+    /// <summary>The open workspace, or null when none is. Everything else keys off this.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasWorkspace))]
+    [NotifyPropertyChangedFor(nameof(WindowTitle))]
+    private string? _workspacePath;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WindowTitle))]
+    private string? _workspaceName;
+
+    public bool HasWorkspace => WorkspacePath is not null;
+
+    public string WindowTitle => WorkspaceName is null ? "BetterDAM" : $"{WorkspaceName} — BetterDAM";
+
+    /// <summary>
+    /// Most recently opened first. Kept in step with the persisted list so the Open Recent menu can
+    /// be rebuilt from it.
+    /// </summary>
+    public ObservableCollection<string> RecentWorkspaces { get; }
+
+    /// <summary>
+    /// Widens search past the workspace to the whole catalog. Off by default: a workspace that
+    /// returned results from unrelated folders would not be much of a workspace.
+    /// </summary>
+    [ObservableProperty]
+    private bool _searchEverywhere;
+
+    partial void OnSearchEverywhereChanged(bool value)
+    {
+        if (IsShowingSearchResults)
+        {
+            _ = SearchAsync();
+        }
+    }
+
     /// <summary>
     /// Shown in the preview pane only while a video is selected, so a missing FFmpeg stays out of
     /// the way during metadata work but is unmissable the moment someone wants to watch something.
@@ -135,6 +175,72 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isWritingAll;
+
+    /// <summary>
+    /// Shown over the grid whenever it has nothing in it. There are three quite different reasons
+    /// for an empty grid — nothing opened yet, a folder with no readable media, and a search that
+    /// matched nothing — and each needs its own explanation to avoid looking like a failure.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showEmptyState = true;
+
+    [ObservableProperty]
+    private string _emptyStateTitle = string.Empty;
+
+    [ObservableProperty]
+    private string _emptyStateDetail = string.Empty;
+
+    /// <summary>Only the opening prompt offers an action; the other two are explanations.</summary>
+    [ObservableProperty]
+    private bool _showEmptyStateAction;
+
+    private void UpdateEmptyState()
+    {
+        // Scanning has its own progress indicator, and flashing "no media here" for the moment
+        // before the first results arrive would be wrong as often as it is right.
+        ShowEmptyState = MediaItems.Count == 0 && !IsScanning;
+        if (!ShowEmptyState)
+        {
+            return;
+        }
+
+        if (IsShowingSearchResults)
+        {
+            EmptyStateTitle = "No matches";
+            EmptyStateDetail = !SearchEverywhere && HasWorkspace
+                ? $"Nothing in {WorkspaceName} matched. Search only finds files that have been "
+                  + "indexed, and folders are indexed as you browse them. Turn on Search everywhere "
+                  + "to look outside this workspace."
+                : "Search only finds files that have been indexed. Folders are indexed in the "
+                  + "background as you browse them, so open a folder once and its contents become "
+                  + "searchable.";
+            ShowEmptyStateAction = false;
+        }
+        else if (!HasWorkspace)
+        {
+            EmptyStateTitle = "No workspace open";
+            EmptyStateDetail = "Open a folder to work in. It becomes the root of the tree, and "
+                               + "searches are scoped to it.";
+            ShowEmptyStateAction = true;
+        }
+        else
+        {
+            EmptyStateTitle = "Nothing to show here";
+            EmptyStateDetail = Recursive
+                ? "This folder and its subfolders contain no images or video BetterDAM can read."
+                : "This folder contains no images or video BetterDAM can read. Turn on Recursive to "
+                  + "include its subfolders.";
+            ShowEmptyStateAction = false;
+        }
+    }
+
+    partial void OnIsScanningChanged(bool value) => UpdateEmptyState();
+
+    partial void OnCurrentFolderPathChanged(string? value) => UpdateEmptyState();
+
+    partial void OnIsShowingSearchResultsChanged(bool value) => UpdateEmptyState();
+
+    partial void OnWorkspacePathChanged(string? value) => UpdateEmptyState();
 
     /// <summary>
     /// Writes every pending edit to its XMP sidecar. Files are processed one at a time and failures
@@ -311,7 +417,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         try
         {
-            var hits = await _catalog.SearchAsync(query, cancellationToken: cts.Token);
+            var scope = SearchEverywhere ? null : WorkspacePath;
+            var hits = await _catalog.SearchAsync(query, scope, cancellationToken: cts.Token);
             if (cts.IsCancellationRequested)
             {
                 return;
@@ -332,9 +439,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
             }
 
             CurrentFolderPath = $"Search: {SearchText}";
+
+            var where = scope is null ? "everywhere" : WorkspaceName ?? "this workspace";
             StatusText = hits.Count == 0
-                ? "No matches. Files must be indexed before they can be found."
-                : $"{hits.Count:N0} match(es)";
+                ? $"No matches in {where}."
+                : $"{hits.Count:N0} match(es) in {where}";
         }
         catch (OperationCanceledException)
         {
@@ -356,7 +465,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (SelectedFolder is { IsPlaceholder: false } folder)
         {
             _ = ScanFolderAsync(folder.FullPath);
+            return;
         }
+
+        // Nothing to fall back to. Leaving the hits on screen with an empty search box would
+        // present them as a folder listing, and CurrentFolderPath still holds "Search: ..." rather
+        // than a real path.
+        MediaItems.Clear();
+        SelectedItem = null;
+        CurrentFolderPath = null;
     }
 
     [RelayCommand]
@@ -459,21 +576,67 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Adds <paramref name="path"/> as a tree root and scans it. Used by the folder picker and by
-    /// the optional folder argument passed on the command line.
+    /// Opens <paramref name="path"/> as the workspace: it becomes the only root of the tree, the
+    /// scope searches are restricted to, and what the application reopens next launch.
+    ///
+    /// Replacing the roots rather than adding to them is the point — the previous behaviour left
+    /// every folder ever opened in the tree alongside Home, / and the volumes.
     /// </summary>
     public async Task OpenPathAsync(string path)
     {
         if (!Directory.Exists(path))
         {
             StatusText = $"Folder not found: {path}";
+
+            // A workspace that has been moved or unmounted should not keep being offered.
+            if (RecentWorkspaces.Remove(path))
+            {
+                await PersistRecentAsync();
+            }
+
             return;
         }
 
         var name = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar));
-        FolderRoots.Insert(0, new FolderNodeViewModel(path, string.IsNullOrEmpty(name) ? path : name, _folderBrowser));
+        WorkspacePath = path;
+        WorkspaceName = string.IsNullOrEmpty(name) ? path : name;
+
+        FolderRoots.Clear();
+        FolderRoots.Add(new FolderNodeViewModel(path, WorkspaceName, _folderBrowser));
+
+        RecentWorkspaces.Remove(path);
+        RecentWorkspaces.Insert(0, path);
+        while (RecentWorkspaces.Count > AppSettings.MaxRecentWorkspaces)
+        {
+            RecentWorkspaces.RemoveAt(RecentWorkspaces.Count - 1);
+        }
+
+        await _settings.SaveAsync(_settings.Current.WithWorkspace(path));
+
         await ScanFolderAsync(path);
     }
+
+    /// <summary>Returns to the no-workspace state, leaving the catalog and cache untouched.</summary>
+    [RelayCommand]
+    private async Task CloseWorkspaceAsync()
+    {
+        await CancelActiveScanAsync();
+
+        WorkspacePath = null;
+        WorkspaceName = null;
+        FolderRoots.Clear();
+        MediaItems.Clear();
+        SelectedItem = null;
+        SelectedFolder = null;
+        CurrentFolderPath = null;
+        SearchText = null;
+        IsShowingSearchResults = false;
+
+        await _settings.SaveAsync(_settings.Current with { LastWorkspacePath = null });
+    }
+
+    private Task PersistRecentAsync()
+        => _settings.SaveAsync(_settings.Current with { RecentWorkspaces = RecentWorkspaces.ToList() });
 
     [RelayCommand]
     private void CancelScan() => _scanCts?.Cancel();

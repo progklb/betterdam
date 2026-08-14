@@ -2,6 +2,7 @@ using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
 using BetterDAM.Core.Services;
 using BetterDAM.Database;
+using BetterDAM.UI.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -164,7 +165,7 @@ public class CatalogQueryBuilderTests
     public void Every_value_is_parameterised()
     {
         var query = SearchQueryParser.Parse("keyword:motorcycle camera:Sony rating:>=4 type:video lioness");
-        var (sql, parameters) = SqliteCatalog.BuildSearch(query, 100);
+        var (sql, parameters) = SqliteCatalog.BuildSearch(query, null, 100);
 
         // A search box is user input; nothing from it may be concatenated into SQL.
         Assert.DoesNotContain("motorcycle", sql);
@@ -634,5 +635,194 @@ public class CatalogManagementTests
 
         Assert.Equal(0, await catalog.RemoveMissingAsync());
         Assert.Equal(1, (await catalog.GetStatisticsAsync()).FileCount);
+    }
+}
+
+public class WorkspaceScopeTests
+{
+    private static CatalogEntry Entry(string path)
+        => new(
+            new MediaFile
+            {
+                FullPath = path,
+                FileName = Path.GetFileName(path),
+                MediaType = MediaType.Image,
+                SizeBytes = 10,
+                ModifiedUtc = DateTimeOffset.UnixEpoch,
+                CreatedUtc = DateTimeOffset.UnixEpoch
+            },
+            new EditableMetadata { Title = "Lioness at dawn" },
+            CameraInfo.Empty,
+            HasSidecar: false,
+            null);
+
+    private static string Sep(string path) => path.Replace('/', Path.DirectorySeparatorChar);
+
+    [Fact]
+    public void A_root_without_a_trailing_separator_gets_one()
+    {
+        // Without it, a root of /photos/nam would also match /photos/namibia.
+        var normalised = SqliteCatalog.NormaliseRoot(Sep("/photos/nam"));
+
+        Assert.Equal(Sep("/photos/nam") + Path.DirectorySeparatorChar, normalised);
+    }
+
+    [Fact]
+    public void A_root_that_already_ends_in_a_separator_is_left_alone()
+    {
+        var root = Sep("/photos/nam") + Path.DirectorySeparatorChar;
+
+        Assert.Equal(root, SqliteCatalog.NormaliseRoot(root));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void No_root_means_no_scoping(string? root)
+        => Assert.Null(SqliteCatalog.NormaliseRoot(root));
+
+    [Fact]
+    public void The_scope_is_parameterised()
+    {
+        var (sql, parameters) = SqliteCatalog.BuildSearch(SearchQueryParser.Parse("lioness"), "/photos", 100);
+
+        Assert.DoesNotContain("/photos", sql);
+        Assert.Contains("root", parameters.ParameterNames);
+    }
+
+    [Fact]
+    public async Task Search_is_limited_to_the_workspace()
+    {
+        using var temp = new TempFolder();
+        var catalog = new SqliteCatalog(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+
+        await catalog.UpsertAsync([
+            Entry(Sep("/photos/namibia/a.jpg")),
+            Entry(Sep("/photos/namibia/deeper/b.jpg")),
+            Entry(Sep("/photos/kenya/c.jpg"))
+        ]);
+
+        var query = SearchQueryParser.Parse("lioness");
+
+        var scoped = await catalog.SearchAsync(query, Sep("/photos/namibia"));
+        var everywhere = await catalog.SearchAsync(query);
+
+        Assert.Equal(2, scoped.Count);
+        Assert.All(scoped, hit => Assert.Contains("namibia", hit.FullPath));
+        Assert.Equal(3, everywhere.Count);
+    }
+
+    [Fact]
+    public async Task A_sibling_folder_with_a_shared_prefix_is_not_included()
+    {
+        using var temp = new TempFolder();
+        var catalog = new SqliteCatalog(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+
+        await catalog.UpsertAsync([
+            Entry(Sep("/photos/nam/a.jpg")),
+            Entry(Sep("/photos/namibia/b.jpg"))
+        ]);
+
+        var hits = await catalog.SearchAsync(SearchQueryParser.Parse("lioness"), Sep("/photos/nam"));
+
+        // The classic prefix-matching bug: /photos/nam must not swallow /photos/namibia.
+        Assert.Equal([Sep("/photos/nam/a.jpg")], hits.Select(h => h.FullPath).ToArray());
+    }
+
+    [Fact]
+    public async Task A_path_containing_a_LIKE_wildcard_is_matched_literally()
+    {
+        using var temp = new TempFolder();
+        var catalog = new SqliteCatalog(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+
+        await catalog.UpsertAsync([
+            Entry(Sep("/photos/100%/a.jpg")),
+            Entry(Sep("/photos/100x/b.jpg"))
+        ]);
+
+        // Under LIKE, "%" would be a wildcard and would also match /photos/100x.
+        var hits = await catalog.SearchAsync(SearchQueryParser.Parse("lioness"), Sep("/photos/100%"));
+
+        Assert.Equal([Sep("/photos/100%/a.jpg")], hits.Select(h => h.FullPath).ToArray());
+    }
+}
+
+public class RecentWorkspaceTests
+{
+    [Fact]
+    public void Opening_a_workspace_puts_it_first()
+    {
+        var settings = AppSettings.Default.WithWorkspace("/a").WithWorkspace("/b");
+
+        Assert.Equal("/b", settings.LastWorkspacePath);
+        Assert.Equal(["/b", "/a"], settings.RecentWorkspaces.ToArray());
+    }
+
+    [Fact]
+    public void Reopening_moves_it_up_rather_than_duplicating()
+    {
+        var settings = AppSettings.Default
+            .WithWorkspace("/a")
+            .WithWorkspace("/b")
+            .WithWorkspace("/a");
+
+        Assert.Equal(["/a", "/b"], settings.RecentWorkspaces.ToArray());
+    }
+
+    [Fact]
+    public void The_list_is_capped()
+    {
+        var settings = AppSettings.Default;
+        for (var i = 0; i < AppSettings.MaxRecentWorkspaces + 5; i++)
+        {
+            settings = settings.WithWorkspace($"/w{i}");
+        }
+
+        Assert.Equal(AppSettings.MaxRecentWorkspaces, settings.RecentWorkspaces.Count);
+
+        // The oldest are the ones dropped.
+        Assert.Equal($"/w{AppSettings.MaxRecentWorkspaces + 4}", settings.RecentWorkspaces[0]);
+        Assert.DoesNotContain("/w0", settings.RecentWorkspaces);
+    }
+}
+
+public class WorkspaceLabelTests
+{
+    [Fact]
+    public void The_name_leads_and_the_parent_follows()
+    {
+        var label = WorkspaceLabel.ForMenu(Path.Combine(Path.DirectorySeparatorChar + "media", "namibia"));
+
+        Assert.StartsWith("namibia", label);
+        Assert.Contains("media", label);
+    }
+
+    [Fact]
+    public void The_home_directory_is_abbreviated()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrEmpty(home))
+        {
+            return;
+        }
+
+        var abbreviated = WorkspaceLabel.Abbreviate(Path.Combine(home, "Pictures"));
+
+        Assert.StartsWith("~", abbreviated);
+        Assert.DoesNotContain(home, abbreviated);
+    }
+
+    [Fact]
+    public void A_long_path_keeps_its_tail()
+    {
+        var deep = string.Join(Path.DirectorySeparatorChar, Enumerable.Repeat("a-long-folder-name", 8));
+
+        var abbreviated = WorkspaceLabel.Abbreviate(deep);
+
+        // The tail identifies the folder, so the front is what gets dropped.
+        Assert.StartsWith("…", abbreviated);
+        Assert.EndsWith("a-long-folder-name", abbreviated);
+        Assert.True(abbreviated.Length <= 46, $"still {abbreviated.Length} characters");
     }
 }

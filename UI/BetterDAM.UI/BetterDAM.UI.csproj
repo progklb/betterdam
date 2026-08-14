@@ -33,4 +33,10 @@
     <ProjectReference Include="..\..\Preview\BetterDAM.Preview\BetterDAM.Preview.csproj" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <!-- Path abbreviation for the recent-workspaces menu is internal but worth testing directly. -->
+    <InternalsVisibleTo Include="BetterDAM.Tests" />
+  </ItemGroup>
+
 </Project>

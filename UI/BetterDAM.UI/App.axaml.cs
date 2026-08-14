@@ -59,7 +59,9 @@ public partial class App : Application
                 SyncViewModelFactory = services.GetRequiredService<SyncViewModel>
             };
 
-            if (StartupFolder is { } folder)
+            // A folder on the command line wins over the remembered one; otherwise reopen the last
+            // workspace so the application starts where it was left.
+            if ((StartupFolder ?? settings.Current.LastWorkspacePath) is { } folder)
             {
                 _ = viewModel.OpenPathAsync(folder);
             }

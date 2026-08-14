@@ -15,6 +15,13 @@ public static class MenuConventions
     public static bool IsMac { get; } = OperatingSystem.IsMacOS();
 
     /// <summary>
+    /// The Open Recent header, shared between the XAML that declares the item and the code that
+    /// fills it in. NativeMenuItem gets no generated field from x:Name, so the item has to be found
+    /// by header — and a literal in both places would drift the first time one was reworded.
+    /// </summary>
+    public const string OpenRecentHeader = "Open Recent";
+
+    /// <summary>
     /// True everywhere except macOS, where Settings already appears in the application menu and
     /// listing it again under File would just be a duplicate.
     /// </summary>
@@ -24,4 +31,8 @@ public static class MenuConventions
 
     /// <summary>Command-comma is the standard macOS shortcut for preferences.</summary>
     public static KeyGesture Settings { get; } = KeyGesture.Parse(IsMac ? "Cmd+," : "Ctrl+,");
+
+    /// <summary>Matches VS Code, where Shift makes it "close the workspace, not the window".</summary>
+    public static KeyGesture CloseWorkspace { get; } =
+        KeyGesture.Parse(IsMac ? "Cmd+Shift+W" : "Ctrl+Shift+W");
 }

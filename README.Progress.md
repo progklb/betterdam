@@ -1067,3 +1067,115 @@ An empty-state prompt in the grid area would fix it, if wanted.
 
 **Avalonia's stock application menu shows "Hide Others ⌥⌘Q".** The usual macOS binding is ⌥⌘H. That
 menu is built by Avalonia, not by this code.
+
+---
+
+## Interlude — Empty state ✅
+
+Moving Open Folder into the menu bar left the first launch with no visible way in. The grid now
+explains itself whenever it is empty, with **three** distinct messages — an empty grid has three
+quite different causes and one generic message would misread two of them as failures:
+
+| State | Says |
+| ----- | ---- |
+| Nothing opened yet | *No folder open* — with an **Open Folder…** button |
+| Folder has no readable media | *Nothing to show here* — and suggests **Recursive** when it is off |
+| Search matched nothing | *No matches* — and explains that search only covers indexed folders |
+
+The last one matters: "no matches" on a library you know contains the file looks like a bug, when
+the real answer is that the folder has not been browsed (and therefore indexed) yet.
+
+Visibility is driven from `MediaItems.CollectionChanged` rather than from the four places that
+mutate the collection, so it cannot drift out of step with what is on screen. It stays hidden while
+scanning, since a scan has its own progress indicator and flashing "nothing here" before the first
+results arrive would be wrong as often as right.
+
+### Fixed on the way
+
+`CurrentFolderPath` doubles as display text and holds `"Search: ..."` during a search. Clearing a
+search with no folder selected left the old hits on screen with an empty search box, presenting them
+as a folder listing. `ClearSearch` now empties the grid and resets the path in that case.
+
+---
+
+## Phase 8 — Workspaces ✅
+
+A folder opened now becomes the **workspace**: the root of the tree, the scope of search, and what
+the application reopens next launch. Modelled on how VS Code opens a folder.
+
+This is also the real answer to *"I am filtering and seeing your test files"* — a workspace gives
+search a boundary, which beats pruning the catalog by hand forever.
+
+### What changed
+
+**The tree has one root.** `OpenPathAsync` used to `Insert` the opened folder alongside Home, `/`
+and the volumes, so every folder ever opened accumulated in the tree. It now replaces them. With no
+workspace open the tree is empty and the empty state carries the prompt.
+
+**Search is scoped.** `ICatalog.SearchAsync` takes an optional `rootPath`. The **Everywhere**
+checkbox next to the search box widens it back to the whole catalog — off by default, because a
+workspace that returned results from unrelated folders would not be much of a workspace. The status
+line names the scope: *"12 match(es) in namibia"* vs *"in everywhere"*.
+
+**The workspace persists.** `LastWorkspacePath` reopens on launch; a folder on the command line
+still wins. `RecentWorkspaces` (capped at 10, de-duplicated, most recent first) drives
+**File → Open Recent**. **File → Close Workspace** (⇧⌘W) returns to the empty state.
+
+### Prefix matching, carefully
+
+Scoping is `substr(m.Path, 1, @rootLength) = @root`, **not** `LIKE @root || '%'`:
+
+- A path may contain `%` or `_`, which LIKE treats as wildcards. `/photos/100%` would match
+  `/photos/100x`. Escaping is possible but easy to get subtly wrong; `substr` sidesteps it.
+- The root is normalised to end with a directory separator, so `/photos/nam` cannot swallow
+  `/photos/namibia`.
+
+Both cases are tested. The cost is that `substr` cannot use an index on `Path` where a
+`LIKE 'prefix%'` could — irrelevant at catalog sizes measured in hundreds of thousands of rows, but
+worth knowing if it ever needs to scale further.
+
+### The second native-menu trap
+
+`x:Name` on a `NativeMenuItem` generates **no field** in the code-behind — it is not part of the
+visual tree. Open Recent has to be found by walking `NativeMenu.GetMenu(window)`, so its header is a
+shared constant (`MenuConventions.OpenRecentHeader`) referenced by both the XAML and the lookup
+rather than a literal repeated in two places that would drift the first time one was reworded.
+
+Its items are built in code for the same reason `Click` replaced `Command` last time: no DataContext.
+
+### Verified in the running app
+
+- Opened with a folder argument: title reads **"testmedia — BetterDAM"**, the tree has exactly one
+  root, and the **Everywhere** checkbox appears.
+- **File** shows Open Folder… ⌘O, Open Recent ▸, Close Workspace ⇧⌘W; the submenu lists the folder.
+- Relaunched with **no** argument and it reopened the workspace by itself.
+- Against the real catalog, the scoping predicate splits **987 rows into 18 in-workspace and 969
+  outside** — precisely the separation that was missing.
+- `dotnet test` — **288/288 passing** (was 273).
+
+### Worth knowing
+
+**Open Recent shows name first, then an abbreviated path.** The folder name alone is ambiguous —
+every library has a "2024" — but the full path dragged the menu wider than the screen. Home becomes
+`~`, and anything still over 45 characters is elided from the **front**, since the tail is what
+identifies a folder. The full path is on the tooltip.
+
+**A missing workspace removes itself from the recent list.** Opening one that has been moved or
+unmounted reports it and drops it rather than offering it again forever.
+
+**Scoping is by path prefix, so it follows the filesystem, not the library.** Media outside the
+workspace folder is invisible to a scoped search even if logically part of the same collection.
+Everywhere is the escape hatch.
+
+### Next: indexing (step 3)
+
+Agreed but not yet built:
+
+- **Skip files already indexed whose size and mtime match.** Makes reopening a workspace near-free
+  and makes interrupting an index cheap — which is why *no* "are you sure you want to quit" dialog
+  is planned. Indexing already commits every 100 files, so a kill loses at most 100 files of work.
+- **Index the whole workspace up front**, in the background, so search covers the workspace rather
+  than only the folders that happen to have been browsed.
+- **An inline, non-modal prompt above a file-count threshold** — "48,213 files. Index them for
+  search? [Index] [Not now]" — rather than a modal, with the answer stored per workspace so it is
+  asked once.

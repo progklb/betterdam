@@ -32,7 +32,15 @@ public interface ICatalog
     /// <summary>Inserts or updates entries, keyed by path.</summary>
     Task UpsertAsync(IReadOnlyList<CatalogEntry> entries, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<SearchHit>> SearchAsync(SearchQuery query, int limit = 5000, CancellationToken cancellationToken = default);
+    /// <param name="rootPath">
+    /// Restricts results to files beneath this folder. Null searches the whole catalog — the
+    /// escape hatch for finding something outside the open workspace.
+    /// </param>
+    Task<IReadOnlyList<SearchHit>> SearchAsync(
+        SearchQuery query,
+        string? rootPath = null,
+        int limit = 5000,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Forgets files that no longer exist on disk, so results cannot point at nothing.</summary>
     Task<int> RemoveMissingAsync(CancellationToken cancellationToken = default);

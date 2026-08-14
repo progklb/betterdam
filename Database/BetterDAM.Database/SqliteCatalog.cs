@@ -211,12 +211,13 @@ public sealed class SqliteCatalog : ICatalog
 
     public async Task<IReadOnlyList<SearchHit>> SearchAsync(
         SearchQuery query,
+        string? rootPath = null,
         int limit = 5000,
         CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        var (sql, parameters) = BuildSearch(query, limit);
+        var (sql, parameters) = BuildSearch(query, rootPath, limit);
 
         var rows = await connection.QueryAsync<SearchRow>(new CommandDefinition(sql, parameters, cancellationToken: cancellationToken))
             .ConfigureAwait(false);
@@ -233,10 +234,30 @@ public sealed class SqliteCatalog : ICatalog
     }
 
     /// <summary>
+    /// Normalises a workspace root for prefix matching, or returns null when the search is not
+    /// scoped. The trailing separator is the whole point: without it a root of "/photos/nam" would
+    /// also match "/photos/namibia".
+    /// </summary>
+    internal static string? NormaliseRoot(string? rootPath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath))
+        {
+            return null;
+        }
+
+        return rootPath.EndsWith(Path.DirectorySeparatorChar)
+            ? rootPath
+            : rootPath + Path.DirectorySeparatorChar;
+    }
+
+    /// <summary>
     /// Builds the WHERE clause from the parsed query. Every value is parameterised — a search box is
     /// user input, and it is not going anywhere near string-concatenated SQL.
     /// </summary>
-    internal static (string Sql, DynamicParameters Parameters) BuildSearch(SearchQuery query, int limit)
+    internal static (string Sql, DynamicParameters Parameters) BuildSearch(
+        SearchQuery query,
+        string? rootPath,
+        int limit)
     {
         var sql = new StringBuilder("""
             SELECT m.Path, m.FileName, m.MediaType, m.SizeBytes, m.ModifiedUtc, m.CreatedUtc, m.Rating, m.Title
@@ -245,6 +266,17 @@ public sealed class SqliteCatalog : ICatalog
             """);
 
         var parameters = new DynamicParameters();
+
+        if (NormaliseRoot(rootPath) is { } root)
+        {
+            // substr rather than LIKE: a path may contain % or _, which LIKE would treat as
+            // wildcards, and escaping them correctly is easy to get subtly wrong. The trailing
+            // separator that NormaliseRoot guarantees is what stops /photos/nam matching
+            // /photos/namibia.
+            sql.Append("\n  AND substr(m.Path, 1, @rootLength) = @root");
+            parameters.Add("root", root);
+            parameters.Add("rootLength", root.Length);
+        }
 
         if (!query.FreeText.IsDefaultOrEmpty)
         {

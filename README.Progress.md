@@ -921,3 +921,89 @@ limit to control, but the on-disk footprint of a cache full of tiny thumbnails i
 
 **Changing the location does not move existing thumbnails.** They stay at the old path and are
 regenerated at the new one; the UI says so. Clearing before switching reclaims the space.
+
+---
+
+## Interlude — Catalog management ✅
+
+Prompted by an observation from real use: *"Seems like cache is global, as I am filtering and seeing
+your test files."*
+
+That was the catalog, not the cache — and it was working as designed. The catalog spans everything
+ever indexed rather than the current folder, which is what makes search useful across a library that
+does not fit in one directory. The problem was not that it is global; it was that it was
+**unmanageable**: no way to see it, empty it, prune it, or move it.
+
+### What the catalog is
+
+Worth restating because it drives every decision below: the catalog is a **cache of what is already
+in the files and their sidecars**. The media stays authoritative. Deleting the catalog costs
+re-indexing and nothing else — no user data lives only there. That is why clearing and relocating
+can both be blunt.
+
+### Layout
+
+```text
+<LocalAppData>/BetterDAM/
+    settings.json
+    catalog.db             the search index  (relocatable)
+    Logs/
+    Cache/Thumbnails/      (separately relocatable)
+```
+
+`catalog.db` sits outside `Cache/` deliberately, alongside settings and logs, so **"Clear cache"
+never destroys the search index** — they are independent things and the user chose one of them.
+
+### Settings → Catalog tab
+
+| Control | Behaviour |
+| ------- | --------- |
+| Location | Path, with **Change…** / **Use default**. Live, like the cache path. |
+| Contents | `138 files, 412 keywords · 2,1 MB`, with **Refresh**. |
+| Remove entries for missing files | Prunes only rows whose file is gone. |
+| Clear catalog | Two-step inline confirmation. |
+
+### Implementation notes
+
+**The path resolves per connection, not once at construction.** `SqliteCatalog` reads
+`IAppPaths.CatalogPath` every time it opens a connection, so relocating takes effect without
+restarting. It tracks `_initialisedPath` — the path the schema was last applied to — rather than an
+`_initialised` bool, because a bool would treat a *new, empty* file at a *new* location as already
+migrated and then fail on the first query.
+
+**Reported size includes the WAL.** SQLite's `-wal` and `-shm` companions routinely dwarf the `.db`
+itself, so summing only the main file reports a size the user can see is wrong in Finder.
+
+**Clearing vacuums.** Deleting every row leaves the file exactly as large as it was, so a "Clear"
+that reports the same size afterwards looks broken. `ClearAsync` now does
+`PRAGMA wal_checkpoint(TRUNCATE)` then `VACUUM` so the space is actually returned.
+
+**Pruning finally has a caller.** `RemoveMissingAsync` existed and was tested since Phase 7 but
+nothing invoked it — precisely the gap that let stale entries accumulate.
+
+### Related fix — the stack trace on missing files
+
+Generating a thumbnail for a file the catalog still lists but that no longer exists logged a full
+`FileNotFoundException` stack trace. It was caught and handled correctly, but a stale catalog is a
+*routine* condition, and stack traces for routine conditions bury the real faults. Now a one-line
+`Debug` message.
+
+### Verified
+
+- `dotnet test` — **273/273 passing** (was 267). Six new tests: size-on-disk is non-zero, relocating
+  starts a fresh catalog *and leaves the old file intact*, the relocated catalog is usable
+  immediately (schema really is applied at the new path), clearing genuinely shrinks the file,
+  pruning removes only the missing entries, and pruning an intact catalog removes nothing.
+- The Catalog tab itself has **not** been driven through the running UI — see below.
+
+### Worth knowing
+
+**Changing the location starts an empty catalog; it does not move the old one.** The old file stays
+put. Re-index to repopulate. The UI says this rather than leaving it to be discovered.
+
+**Prune trusts the filesystem.** If the library lives on an external drive that is not mounted,
+every entry on it looks missing and will be removed. Harmless — re-indexing rebuilds it — but the
+button is slower to recover from than it looks. Worth a mount check before pruning if this bites.
+
+**Search is still global, by design.** If per-folder search is wanted, that is a scope filter on the
+query, not a change to how the catalog is stored.

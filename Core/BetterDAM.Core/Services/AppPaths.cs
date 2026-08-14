@@ -54,7 +54,17 @@ public sealed class AppPaths : IAppPaths
 
     public string DefaultCacheRoot => Path.Combine(AppDataRoot, "Cache");
 
-    public string CatalogPath => Path.Combine(AppDataRoot, "catalog.db");
+    /// <summary>Honours the user's override, so a relocated catalog takes effect without a restart.</summary>
+    public string CatalogPath
+    {
+        get
+        {
+            var over = _settings?.Current.CatalogDirectoryOverride;
+            return Path.Combine(string.IsNullOrWhiteSpace(over) ? AppDataRoot : over, "catalog.db");
+        }
+    }
+
+    public string DefaultCatalogPath => Path.Combine(AppDataRoot, "catalog.db");
 
     public string ThumbnailCacheRoot => Path.Combine(CacheRoot, "Thumbnails");
 

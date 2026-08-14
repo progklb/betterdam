@@ -33,4 +33,6 @@ internal sealed class TestPaths : IAppPaths
     public string LogRoot { get; }
 
     public string CatalogPath { get; }
+
+    public string DefaultCatalogPath => CatalogPath;
 }

@@ -497,3 +497,142 @@ public class SqliteCatalogTests
         Assert.Empty(await SearchPathsAsync(catalog, "keyword:doesnotexist"));
     }
 }
+
+public class CatalogManagementTests
+{
+    /// <summary>Lets the catalog path be moved at runtime, as the settings UI does.</summary>
+    private sealed class MovablePaths(string root) : IAppPaths
+    {
+        public string AppDataRoot { get; } = root;
+        public string CacheRoot => Path.Combine(AppDataRoot, "Cache");
+        public string DefaultCacheRoot => Path.Combine(AppDataRoot, "Cache");
+        public string ThumbnailCacheRoot => Path.Combine(CacheRoot, "Thumbnails");
+        public string VideoProxyCacheRoot => Path.Combine(CacheRoot, "VideoProxy");
+        public string LogRoot => Path.Combine(AppDataRoot, "Logs");
+        public string DefaultCatalogPath => Path.Combine(AppDataRoot, "catalog.db");
+        public string? Override { get; set; }
+        public string CatalogPath => Override is null ? DefaultCatalogPath : Path.Combine(Override, "catalog.db");
+    }
+
+    private static CatalogEntry Entry(string path)
+        => new(
+            new MediaFile
+            {
+                FullPath = path,
+                FileName = Path.GetFileName(path),
+                MediaType = MediaType.Image,
+                SizeBytes = 10,
+                ModifiedUtc = DateTimeOffset.UnixEpoch,
+                CreatedUtc = DateTimeOffset.UnixEpoch
+            },
+            new EditableMetadata { Title = "Indexed", Keywords = ["kw"] },
+            CameraInfo.Empty,
+            HasSidecar: false,
+            null);
+
+    [Fact]
+    public async Task Statistics_report_the_size_on_disk()
+    {
+        using var temp = new TempFolder();
+        var catalog = new SqliteCatalog(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+
+        await catalog.UpsertAsync([Entry("/a.jpg")]);
+
+        var stats = await catalog.GetStatisticsAsync();
+
+        // Includes the WAL, which in this state is usually larger than the database itself.
+        Assert.True(stats.SizeBytes > 0, "catalog reported zero bytes on disk");
+    }
+
+    [Fact]
+    public async Task Moving_the_catalog_starts_a_fresh_one_and_leaves_the_old_file_alone()
+    {
+        using var original = new TempFolder();
+        using var moved = new TempFolder();
+
+        var paths = new MovablePaths(original.Path);
+        var catalog = new SqliteCatalog(paths, NullLogger<SqliteCatalog>.Instance);
+
+        await catalog.UpsertAsync([Entry("/a.jpg"), Entry("/b.jpg")]);
+        Assert.Equal(2, (await catalog.GetStatisticsAsync()).FileCount);
+
+        // Relocating must take effect without recreating the service.
+        paths.Override = moved.Path;
+
+        Assert.Equal(0, (await catalog.GetStatisticsAsync()).FileCount);
+        Assert.True(File.Exists(Path.Combine(moved.Path, "catalog.db")));
+
+        // The old catalog is still intact where it was.
+        paths.Override = null;
+        Assert.Equal(2, (await catalog.GetStatisticsAsync()).FileCount);
+    }
+
+    [Fact]
+    public async Task The_relocated_catalog_is_usable_immediately()
+    {
+        using var original = new TempFolder();
+        using var moved = new TempFolder();
+
+        var paths = new MovablePaths(original.Path) { Override = moved.Path };
+        var catalog = new SqliteCatalog(paths, NullLogger<SqliteCatalog>.Instance);
+
+        // Schema must be applied at the new location, not assumed from the old one.
+        await catalog.UpsertAsync([Entry("/new.jpg")]);
+
+        Assert.Single(await catalog.SearchAsync(SearchQueryParser.Parse("Indexed")));
+    }
+
+    [Fact]
+    public async Task Clearing_reclaims_disk_space()
+    {
+        using var temp = new TempFolder();
+        var catalog = new SqliteCatalog(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+
+        await catalog.UpsertAsync(Enumerable.Range(0, 400).Select(i => Entry($"/f{i}.jpg")).ToList());
+        var before = (await catalog.GetStatisticsAsync()).SizeBytes;
+
+        await catalog.ClearAsync();
+        var after = (await catalog.GetStatisticsAsync()).SizeBytes;
+
+        // Deleting rows alone would leave the file the same size, making "Clear" look broken.
+        Assert.True(after < before, $"expected the file to shrink; was {before}, now {after}");
+        Assert.Equal(0, (await catalog.GetStatisticsAsync()).FileCount);
+    }
+
+    [Fact]
+    public async Task Pruning_removes_only_entries_whose_files_are_gone()
+    {
+        using var temp = new TempFolder();
+        var catalog = new SqliteCatalog(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+
+        var present = Path.Combine(temp.Path, "present.jpg");
+        await File.WriteAllTextAsync(present, "x");
+
+        await catalog.UpsertAsync([
+            Entry(present),
+            Entry(Path.Combine(temp.Path, "deleted-one.jpg")),
+            Entry(Path.Combine(temp.Path, "deleted-two.jpg"))
+        ]);
+
+        var removed = await catalog.RemoveMissingAsync();
+
+        Assert.Equal(2, removed);
+
+        var remaining = await catalog.SearchAsync(SearchQueryParser.Parse("Indexed"));
+        Assert.Equal([present], remaining.Select(h => h.FullPath).ToArray());
+    }
+
+    [Fact]
+    public async Task Pruning_an_intact_catalog_removes_nothing()
+    {
+        using var temp = new TempFolder();
+        var catalog = new SqliteCatalog(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+
+        var present = Path.Combine(temp.Path, "present.jpg");
+        await File.WriteAllTextAsync(present, "x");
+        await catalog.UpsertAsync([Entry(present)]);
+
+        Assert.Equal(0, await catalog.RemoveMissingAsync());
+        Assert.Equal(1, (await catalog.GetStatisticsAsync()).FileCount);
+    }
+}

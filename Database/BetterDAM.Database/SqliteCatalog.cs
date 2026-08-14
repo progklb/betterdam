@@ -14,38 +14,74 @@ namespace BetterDAM.Database;
 /// </summary>
 public sealed class SqliteCatalog : ICatalog
 {
-    private readonly string _connectionString;
+    private readonly IAppPaths _paths;
     private readonly ILogger<SqliteCatalog> _logger;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
-    private bool _initialised;
+
+    /// <summary>
+    /// The path the schema was last applied to. Tracked rather than a simple bool so that relocating
+    /// the catalog re-initialises at the new location instead of quietly using an unmigrated file.
+    /// </summary>
+    private string? _initialisedPath;
 
     public SqliteCatalog(IAppPaths paths, ILogger<SqliteCatalog> logger)
     {
+        _paths = paths;
         _logger = logger;
+    }
 
-        var path = paths.CatalogPath;
+    /// <summary>Resolved per connection so a location change in settings takes effect immediately.</summary>
+    public string CurrentPath => _paths.CatalogPath;
+
+    private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
+    {
+        var path = _paths.CatalogPath;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-        _connectionString = new SqliteConnectionStringBuilder
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = path,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Cache = SqliteCacheMode.Shared
-        }.ToString();
-    }
+        }.ToString());
 
-    private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
-    {
-        var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!_initialised)
+        if (!string.Equals(_initialisedPath, path, StringComparison.Ordinal))
         {
             CatalogSchema.Apply(connection);
-            _initialised = true;
+            _initialisedPath = path;
         }
 
         return connection;
+    }
+
+    /// <summary>
+    /// Size on disk. SQLite in WAL mode keeps a journal beside the database that is frequently
+    /// larger than the database itself, so reporting only the .db file would understate it badly.
+    /// </summary>
+    private long GetSizeOnDisk()
+    {
+        var path = _paths.CatalogPath;
+        var total = 0L;
+
+        foreach (var candidate in (string[])[path, path + "-wal", path + "-shm"])
+        {
+            try
+            {
+                var info = new FileInfo(candidate);
+                if (info.Exists)
+                {
+                    total += info.Length;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogDebug(ex, "Could not measure {Path}", candidate);
+            }
+        }
+
+        return total;
     }
 
     public async Task<CatalogStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default)
@@ -55,7 +91,7 @@ public sealed class SqliteCatalog : ICatalog
         var files = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM Media;").ConfigureAwait(false);
         var keywords = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM Keyword;").ConfigureAwait(false);
 
-        return new CatalogStatistics(files, keywords);
+        return new CatalogStatistics(files, keywords, GetSizeOnDisk());
     }
 
     public async Task UpsertAsync(IReadOnlyList<CatalogEntry> entries, CancellationToken cancellationToken = default)
@@ -328,6 +364,11 @@ public sealed class SqliteCatalog : ICatalog
             {
                 await connection.ExecuteAsync($"DELETE FROM {table};").ConfigureAwait(false);
             }
+
+            // Deleting rows does not shrink the file, and a "Clear" that reports the same size
+            // afterwards looks broken. Checkpoint the journal, then reclaim the space.
+            await connection.ExecuteAsync("PRAGMA wal_checkpoint(TRUNCATE);").ConfigureAwait(false);
+            await connection.ExecuteAsync("VACUUM;").ConfigureAwait(false);
         }
         finally
         {

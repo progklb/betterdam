@@ -17,17 +17,20 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private readonly ISettingsService _settings;
     private readonly ICacheMaintenance _maintenance;
+    private readonly ICatalog _catalog;
     private readonly IAppPaths _paths;
     private readonly ILogger<SettingsViewModel> _logger;
 
     public SettingsViewModel(
         ISettingsService settings,
         ICacheMaintenance maintenance,
+        ICatalog catalog,
         IAppPaths paths,
         ILogger<SettingsViewModel> logger)
     {
         _settings = settings;
         _maintenance = maintenance;
+        _catalog = catalog;
         _paths = paths;
         _logger = logger;
 
@@ -39,6 +42,8 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         CachePath = paths.CacheRoot;
         IsUsingDefaultCachePath = string.IsNullOrWhiteSpace(current.CacheDirectoryOverride);
+        CatalogPath = paths.CatalogPath;
+        IsUsingDefaultCatalogPath = string.IsNullOrWhiteSpace(current.CatalogDirectoryOverride);
     }
 
     /// <summary>Supplied by the view; the ViewModel does not reach for the window itself.</summary>
@@ -71,6 +76,18 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Two-step confirmation, so a mis-click cannot throw away a large cache.</summary>
     [ObservableProperty]
     private bool _isConfirmingClear;
+
+    [ObservableProperty]
+    private string _catalogPath = string.Empty;
+
+    [ObservableProperty]
+    private bool _isUsingDefaultCatalogPath;
+
+    [ObservableProperty]
+    private string _catalogSizeDisplay = "Calculating…";
+
+    [ObservableProperty]
+    private bool _isConfirmingCatalogClear;
 
     public string LimitSummary => IsCacheLimited
         ? $"Oldest thumbnails are removed once the cache passes {ByteSize.Format(SelectedLimitBytes)}."
@@ -120,6 +137,12 @@ public sealed partial class SettingsViewModel : ObservableObject
                 ? "Empty"
                 : $"{ByteSize.Format(stats.TotalBytes)} in {stats.FileCount:N0} files";
             CachePath = _paths.CacheRoot;
+
+            var catalog = await _catalog.GetStatisticsAsync().ConfigureAwait(true);
+            CatalogSizeDisplay = catalog.FileCount == 0
+                ? "Empty"
+                : $"{catalog.FileCount:N0} files, {catalog.KeywordCount:N0} keywords · {ByteSize.Format(catalog.SizeBytes)}";
+            CatalogPath = _paths.CatalogPath;
         }
         catch (Exception ex)
         {
@@ -194,6 +217,100 @@ public sealed partial class SettingsViewModel : ObservableObject
         await SaveAsync(_settings.Current with { CacheDirectoryOverride = null }).ConfigureAwait(true);
         IsUsingDefaultCachePath = true;
         StatusMessage = "Using the default cache location.";
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private void BeginClearCatalog() => IsConfirmingCatalogClear = true;
+
+    [RelayCommand]
+    private void CancelClearCatalog() => IsConfirmingCatalogClear = false;
+
+    [RelayCommand]
+    private async Task ConfirmClearCatalogAsync()
+    {
+        IsConfirmingCatalogClear = false;
+        IsBusy = true;
+        StatusMessage = null;
+
+        try
+        {
+            await _catalog.ClearAsync().ConfigureAwait(true);
+            StatusMessage = "Catalog cleared. Folders are re-indexed as you browse them.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clear the catalog");
+            StatusMessage = $"Could not clear the catalog: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            await RefreshAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Drops entries whose files are gone. Cheaper and far less disruptive than clearing when the
+    /// catalog has simply accumulated references to files that were moved or deleted.
+    /// </summary>
+    [RelayCommand]
+    private async Task PruneCatalogAsync()
+    {
+        IsBusy = true;
+        StatusMessage = null;
+
+        try
+        {
+            var removed = await _catalog.RemoveMissingAsync().ConfigureAwait(true);
+            StatusMessage = removed == 0
+                ? "Every catalog entry still points at a file that exists."
+                : $"Removed {removed:N0} entr{(removed == 1 ? "y" : "ies")} for files that no longer exist.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to prune the catalog");
+            StatusMessage = $"Could not prune the catalog: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            await RefreshAsync().ConfigureAwait(true);
+        }
+    }
+
+    [RelayCommand]
+    private async Task ChooseCatalogFolderAsync()
+    {
+        if (StorageProvider is null)
+        {
+            return;
+        }
+
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Choose a catalog location",
+            AllowMultiple = false
+        });
+
+        var path = folders.FirstOrDefault()?.TryGetLocalPath();
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        await SaveAsync(_settings.Current with { CatalogDirectoryOverride = path }).ConfigureAwait(true);
+        IsUsingDefaultCatalogPath = false;
+        StatusMessage = "Catalog location changed. A new, empty catalog is created there — the old one stays where it was.";
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private async Task UseDefaultCatalogFolderAsync()
+    {
+        await SaveAsync(_settings.Current with { CatalogDirectoryOverride = null }).ConfigureAwait(true);
+        IsUsingDefaultCatalogPath = true;
+        StatusMessage = "Using the default catalog location.";
         await RefreshAsync().ConfigureAwait(true);
     }
 

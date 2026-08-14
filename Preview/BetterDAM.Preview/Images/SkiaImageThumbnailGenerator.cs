@@ -34,6 +34,14 @@ public sealed class SkiaImageThumbnailGenerator : IThumbnailGenerator
         {
             throw;
         }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Routine rather than exceptional: the catalog outlives the files it indexes, so a
+            // search can legitimately return something that has since been moved or deleted. A
+            // stack trace here reads like a fault and buries the real ones.
+            _logger.LogDebug("Skipping a thumbnail for {File}, which no longer exists", file.FullPath);
+            return null;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to generate thumbnail for {File}", file.FullPath);

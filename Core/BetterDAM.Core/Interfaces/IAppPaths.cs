@@ -27,4 +27,7 @@ public interface IAppPaths
     /// re-reading metadata for the whole library, so it is not something to throw away casually.
     /// </summary>
     string CatalogPath { get; }
+
+    /// <summary>Where the catalog lives when the user has not chosen somewhere else.</summary>
+    string DefaultCatalogPath { get; }
 }

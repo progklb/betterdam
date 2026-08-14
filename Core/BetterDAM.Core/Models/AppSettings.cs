@@ -16,6 +16,12 @@ public sealed record AppSettings
     public string? CacheDirectoryOverride { get; init; }
 
     /// <summary>
+    /// Where the search catalog lives. Null means alongside the other application data. Useful when
+    /// the library is large and the boot disk is not.
+    /// </summary>
+    public string? CatalogDirectoryOverride { get; init; }
+
+    /// <summary>
     /// Size ceiling for the thumbnail cache in bytes. <see cref="UnlimitedCache"/> disables trimming.
     /// When exceeded, the least recently used entries are evicted — the cache is disposable, so
     /// discarding old entries only costs regenerating them if they are needed again.

@@ -10,7 +10,14 @@ public sealed record CatalogEntry(
     bool HasSidecar,
     DateTimeOffset? CaptureDate);
 
-public sealed record CatalogStatistics(int FileCount, int KeywordCount);
+/// <param name="SizeBytes">
+/// Size on disk including SQLite's write-ahead log and shared-memory files, which can dwarf the
+/// main database file and would otherwise make the reported size look wrong.
+/// </param>
+public sealed record CatalogStatistics(int FileCount, int KeywordCount, long SizeBytes)
+{
+    public static readonly CatalogStatistics Empty = new(0, 0, 0);
+}
 
 /// <summary>
 /// The local search catalog.

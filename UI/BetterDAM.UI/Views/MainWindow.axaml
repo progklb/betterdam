@@ -5,6 +5,7 @@
         xmlns:vm="using:BetterDAM.UI.ViewModels"
         xmlns:controls="using:BetterDAM.UI.Controls"
         xmlns:views="using:BetterDAM.UI.Views"
+        xmlns:svc="using:BetterDAM.UI.Services"
         mc:Ignorable="d"
         x:Class="BetterDAM.UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -23,18 +24,42 @@
     </Style>
   </Window.Styles>
 
+  <!--
+    Window-scoped menu. macOS exports this to the system menu bar; elsewhere the NativeMenuBar below
+    draws it inside the window.
+  -->
+  <NativeMenu.Menu>
+    <NativeMenu>
+      <NativeMenuItem Header="File">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <!--
+              Click rather than Command: NativeMenuItem has no DataContext, so a {Binding} here
+              silently resolves to null and the item does nothing.
+            -->
+            <NativeMenuItem Header="Open Folder…"
+                            Gesture="{x:Static svc:MenuConventions.OpenFolder}"
+                            Click="OnOpenFolder" />
+            <NativeMenuItemSeparator IsVisible="{x:Static svc:MenuConventions.ShowSettingsInFileMenu}" />
+            <NativeMenuItem Header="Settings…"
+                            IsVisible="{x:Static svc:MenuConventions.ShowSettingsInFileMenu}"
+                            Gesture="{x:Static svc:MenuConventions.Settings}"
+                            Click="OnOpenSettings" />
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+    </NativeMenu>
+  </NativeMenu.Menu>
+
   <DockPanel>
+
+    <!-- Renders the menu in-window on platforms without a system menu bar; nothing on macOS. -->
+    <NativeMenuBar DockPanel.Dock="Top" />
 
     <!-- Toolbar -->
     <Border DockPanel.Dock="Top" Padding="8" BorderThickness="0,0,0,1" BorderBrush="#22FFFFFF">
       <DockPanel LastChildFill="True">
-        <!-- Settings stays pinned right so a long folder path never pushes it off the toolbar. -->
-        <Button DockPanel.Dock="Right" Content="⚙ Settings" Margin="12,0,0,0"
-                Click="OnOpenSettings"
-                ToolTip.Tip="Cache location, size and clearing" />
-
         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-          <Button Content="Open Folder…" Command="{Binding OpenFolderCommand}" />
           <CheckBox Content="Recursive" IsChecked="{Binding Recursive}" VerticalAlignment="Center" />
           <Button Content="Cancel Scan"
                   Command="{Binding CancelScanCommand}"

@@ -1007,3 +1007,63 @@ button is slower to recover from than it looks. Worth a mount check before pruni
 
 **Search is still global, by design.** If per-folder search is wanted, that is a scope filter on the
 query, not a change to how the catalog is stored.
+
+---
+
+## Interlude — macOS menu bar ✅
+
+**Open Folder…** and **Settings** moved out of the in-window toolbar and into the system menu bar.
+
+| Item | Where | Shortcut |
+| ---- | ----- | -------- |
+| Open Folder… | **File** | ⌘O |
+| Settings… | **BetterDAM** application menu | ⌘, |
+
+`Application.Name` is now set to `BetterDAM`; without it the menu bar reads *"Avalonia Application"*.
+
+### The trap: NativeMenuItem has no DataContext
+
+`Command="{Binding OpenFolderCommand}"` **compiles, runs, and silently does nothing.**
+`NativeMenuItem` is an `AvaloniaObject`, not a `StyledElement` — it has no `DataContext` property at
+all, so there is nothing for a binding to resolve against and the command stays null. The menu item
+still appears, still looks enabled, and does nothing when clicked.
+
+This was caught by probing the live menu (`NativeMenu.GetMenu(window)`) at three points in the
+window lifecycle and printing whether `Command` was null. It was null at all three. Both items now
+use `Click` handlers, which are verified when the XAML compiles.
+
+Worth remembering for any future menu item: **on a native menu, use `Click`, not `Command`.**
+
+### Cross-platform
+
+macOS is the only platform with a system menu bar, so:
+
+- `NativeMenuBar` sits at the top of the window's `DockPanel`. On macOS the menu is exported to the
+  system bar and this renders nothing; on Windows and Linux it draws the menu inside the window.
+- The application menu only exists on macOS, so `MenuConventions.ShowSettingsInFileMenu` adds
+  Settings (and a separator) to **File** everywhere else, where it would otherwise be unreachable.
+- Modifiers differ too: `MenuConventions` builds ⌘O/⌘, on macOS and Ctrl+O/Ctrl+, elsewhere. Avalonia
+  does not translate `Cmd` per platform — left alone it would bind the Windows key on Windows.
+
+`KeyGesture.Parse` accepts `"Cmd+O"` and `"Cmd+,"`, but **not** the `⌘` glyph — verified against
+Avalonia 11.3.20 rather than assumed.
+
+### Verified in the running app
+
+- Menu bar reads **BetterDAM  File**.
+- **File → Open Folder…** present, showing ⌘O.
+- **BetterDAM → Settings… ⌘,** sits above Services/Hide/Quit, per macOS convention, and opening it
+  from there really does show the dialog — that path goes through `App`, which has no window
+  reference of its own and forwards to `MainWindow.OpenSettingsAsync`.
+- The toolbar now starts at **Recursive**; both buttons are gone.
+- The Catalog tab reported **969 files, 33 keywords · 484 KB**.
+- `dotnet test` — **273/273 passing**.
+
+### Worth knowing
+
+**Discoverability drops on first launch.** With the button gone, an empty window offers no visible
+way to open a folder — the status bar says *"Ready. Choose a folder to begin."* but points nowhere.
+An empty-state prompt in the grid area would fix it, if wanted.
+
+**Avalonia's stock application menu shows "Hide Others ⌥⌘Q".** The usual macOS binding is ⌥⌘H. That
+menu is built by Avalonia, not by this code.

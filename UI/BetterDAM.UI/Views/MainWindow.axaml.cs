@@ -64,7 +64,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnOpenSettings(object? sender, RoutedEventArgs e)
+    private void OnOpenFolder(object? sender, EventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel && viewModel.OpenFolderCommand.CanExecute(null))
+        {
+            viewModel.OpenFolderCommand.Execute(null);
+        }
+    }
+
+    private void OnOpenSettings(object? sender, EventArgs e) => _ = OpenSettingsAsync();
+
+    /// <summary>
+    /// Public because the macOS application menu lives on <see cref="App"/>, which has no other way
+    /// to reach the window that must own the dialog.
+    /// </summary>
+    public async Task OpenSettingsAsync()
     {
         if (SettingsViewModelFactory is not { } factory)
         {

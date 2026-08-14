@@ -24,6 +24,18 @@ public partial class App : Application
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
+    /// <summary>
+    /// Settings sits in the macOS application menu, which is application-scoped and so cannot bind
+    /// to the window's ViewModel. Forward to the window, which owns the dialog.
+    /// </summary>
+    private void OnOpenSettings(object? sender, EventArgs e)
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: MainWindow window })
+        {
+            _ = window.OpenSettingsAsync();
+        }
+    }
+
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)

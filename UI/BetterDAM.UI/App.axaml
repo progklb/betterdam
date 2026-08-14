@@ -1,8 +1,23 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="using:BetterDAM.UI.Converters"
+             xmlns:svc="using:BetterDAM.UI.Services"
              x:Class="BetterDAM.UI.App"
+             Name="BetterDAM"
              RequestedThemeVariant="Dark">
+
+  <!--
+    Application-scoped menu. On macOS these items land in the application menu, next to Quit, which
+    is where the platform expects Settings to be. Other platforms have no such menu, so this is
+    ignored there and File carries Settings instead - see MenuConventions.
+  -->
+  <NativeMenu.Menu>
+    <NativeMenu>
+      <NativeMenuItem Header="Settings…"
+                      Gesture="{x:Static svc:MenuConventions.Settings}"
+                      Click="OnOpenSettings" />
+    </NativeMenu>
+  </NativeMenu.Menu>
 
   <Application.Resources>
     <conv:MediaTypeGlyphConverter x:Key="MediaTypeGlyph" />

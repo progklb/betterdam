@@ -1179,3 +1179,91 @@ Agreed but not yet built:
 - **An inline, non-modal prompt above a file-count threshold** — "48,213 files. Index them for
   search? [Index] [Not now]" — rather than a modal, with the answer stored per workspace so it is
   asked once.
+
+---
+
+## Phase 9 — Workspace indexing ✅
+
+Step 3 of the workspace work. Search now covers the **whole workspace** rather than only the folders
+that happened to have been browsed, and re-opening one is nearly free.
+
+### Skip what has not changed
+
+`CatalogIndexer` asks the catalog what it already knows before reading anything, and skips files
+whose **size and modified time both match**. Size *and* time rather than either alone: an edit that
+preserves the timestamp usually changes the size, and one that preserves the size usually changes
+the timestamp. Content hashing would be exact but reading every byte would cost far more than the
+metadata read it is avoiding.
+
+The lookup is per 100-file chunk (`Path IN @paths`) rather than one query for the whole workspace —
+bounded memory regardless of library size, and negligible next to the ExifTool reads it prevents.
+
+`IndexAsync` now returns `IndexResult(Indexed, Skipped)` instead of a bare count, because "0 files"
+after opening a large workspace reads as a failure where *"All 48,213 file(s) already indexed"*
+reads as fast.
+
+### Why there is no "are you sure you want to quit" dialog
+
+Because interruption is no longer worth warning about:
+
+- Chunks are committed as they go, so stopping keeps everything already done — that was true before.
+- Skip-if-unchanged means resuming re-reads only the remainder — that is new.
+
+Together, a kill mid-index costs at most 100 files of work. A dialog guarding two seconds of work is
+friction that teaches people to dismiss dialogs. The status line says *"Indexing stopped — progress
+so far is kept"* instead. Both behaviours are covered by tests that interrupt a run part-way and
+assert what survives and what the next run re-reads.
+
+### Offering, not demanding
+
+Above **5,000 files** the workspace is not indexed automatically. An **inline, non-modal banner**
+over the grid asks, and browsing carries on regardless of whether it is ever answered:
+
+> 5,001 files in this workspace. Index them so you can search titles, keywords, ratings and camera
+> details? Browsing works either way.  **[Index] [Not now]**
+
+The answer is stored **per workspace**, so it is asked once rather than every open. **Not now** is
+not a one-way door — an **Index workspace** button then appears in the status bar.
+
+Below the threshold the work is short enough that asking would be more disruptive than the indexing.
+
+### Indexing the workspace, not the folder
+
+The workspace pass always walks the tree recursively, regardless of the **Recursive** toggle — that
+toggle controls what is *shown*, and a search promising the workspace while only covering its top
+folder would be a poor promise.
+
+Two guards stop the passes fighting: browsing a subfolder cannot cancel a running workspace index,
+and the per-folder index is suppressed while a workspace pass is pending. Without the second one,
+opening a workspace indexed the top folder and then immediately walked the same files again — caught
+by seeing the same line logged twice.
+
+Declining also suppresses per-folder indexing, which would otherwise quietly override the answer.
+
+### Verified in the running app
+
+- Reopening the 18-file workspace: *"Indexed 0 file(s), skipped 18 already current"*.
+- A synthetic **5,001-file** workspace showed the banner, kept browsing underneath, and recorded
+  **Not now** as `false` in settings.
+- **Index workspace** then indexed all 5,001 and flipped the stored answer to `true`.
+- Reopening it read **zero** files: *"Indexed 0 file(s), skipped 5001 already current, of 5001"*.
+- `dotnet test` — **302/302 passing** (was 288).
+
+### Checked and not a bug
+
+`RemoveMissingAsync` deletes from `Media` and `MediaSearch` but not `MediaKeyword`, which looked like
+it would orphan keyword links: the cascade relies on `PRAGMA foreign_keys`, which is per connection
+and only set where the schema is applied. It turns out **Microsoft.Data.Sqlite enables foreign keys
+by default**, so the cascade fires on every connection. A regression test now pins that, since the
+code would silently rot if the provider ever changed its default.
+
+Note this does *not* hold for the `sqlite3` CLI, which leaves foreign keys off — hand-written
+maintenance SQL against this database has to enable them explicitly.
+
+### Worth knowing
+
+**The threshold is a file count, not a size or a time estimate.** Count is what is known before any
+work starts. A workspace of 4,000 RAWs will index without asking and still take a while.
+
+**Nothing re-indexes on a timer.** A file changed by another application is picked up the next time
+its workspace is opened or the folder is browsed, not while the application sits idle.

@@ -34,6 +34,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private CancellationTokenSource? _scanCts;
     private CancellationTokenSource? _previewCts;
     private CancellationTokenSource? _indexCts;
+    private CancellationTokenSource? _workspaceIndexCts;
     private CancellationTokenSource? _searchCts;
 
     public MainWindowViewModel(
@@ -480,12 +481,176 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private void CancelIndexing() => _indexCts?.Cancel();
 
     /// <summary>
+    /// Every media file in the workspace, held between offering to index and the answer, so saying
+    /// yes does not have to walk the tree again.
+    /// </summary>
+    private IReadOnlyList<MediaFile> _workspaceFiles = [];
+
+    /// <summary>
+    /// Set while the whole workspace is being indexed. Browsing a subfolder must not cancel that
+    /// run — the workspace pass already covers those files.
+    /// </summary>
+    private bool _indexingWorkspace;
+
+    /// <summary>
+    /// Set from opening a workspace until the workspace pass has decided what to do. Without it the
+    /// initial folder scan would index the top folder, only for the workspace pass to walk the same
+    /// files again moments later.
+    /// </summary>
+    private bool _workspaceIndexPending;
+
+    [ObservableProperty]
+    private bool _showIndexPrompt;
+
+    [ObservableProperty]
+    private string _indexPromptText = string.Empty;
+
+    /// <summary>
+    /// True once indexing has been declined for this workspace, so there is still a way back in
+    /// without reopening the folder.
+    /// </summary>
+    [ObservableProperty]
+    private bool _canIndexWorkspace;
+
+    /// <summary>
+    /// Walks the whole workspace and decides whether to index it now or ask first. Runs after the
+    /// initial scan so the grid fills before any of this starts.
+    /// </summary>
+    private async Task PrepareWorkspaceIndexAsync(string workspace, CancellationToken cancellationToken)
+    {
+        ShowIndexPrompt = false;
+        CanIndexWorkspace = false;
+        _workspaceFiles = [];
+
+        try
+        {
+            var files = new List<MediaFile>();
+
+            // Always recursive: the Recursive toggle controls what is *shown*, but the workspace is
+            // the whole tree, and a search that only covered the top folder would be a poor promise.
+            await foreach (var file in _scanner.ScanAsync(
+                               workspace,
+                               new ScanOptions { Recursive = true },
+                               cancellationToken: cancellationToken))
+            {
+                files.Add(file);
+            }
+
+            if (files.Count == 0 || cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _workspaceFiles = files;
+
+            var choice = _settings.Current.WorkspaceIndexing.TryGetValue(workspace, out var stored)
+                ? stored
+                : (bool?)null;
+
+            if (choice == false)
+            {
+                // Declined before. Stay quiet, but leave the door open.
+                CanIndexWorkspace = true;
+                return;
+            }
+
+            if (choice is null && files.Count > AppSettings.IndexPromptThreshold)
+            {
+                IndexPromptText =
+                    $"{files.Count:N0} files in this workspace. Index them so you can search "
+                    + "titles, keywords, ratings and camera details? Browsing works either way.";
+                ShowIndexPrompt = true;
+                return;
+            }
+
+            await IndexWorkspaceAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not enumerate the workspace at {Path}", workspace);
+        }
+        finally
+        {
+            _workspaceIndexPending = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task AcceptIndexPromptAsync()
+    {
+        ShowIndexPrompt = false;
+
+        if (WorkspacePath is { } workspace)
+        {
+            await _settings.SaveAsync(_settings.Current.WithIndexingChoice(workspace, true));
+        }
+
+        await IndexWorkspaceAsync(CancellationToken.None);
+    }
+
+    [RelayCommand]
+    private async Task DeclineIndexPromptAsync()
+    {
+        ShowIndexPrompt = false;
+        CanIndexWorkspace = true;
+
+        if (WorkspacePath is { } workspace)
+        {
+            await _settings.SaveAsync(_settings.Current.WithIndexingChoice(workspace, false));
+        }
+    }
+
+    /// <summary>Indexes every file in the workspace. Also the "changed my mind" entry point.</summary>
+    [RelayCommand]
+    private async Task IndexWorkspaceAsync(CancellationToken cancellationToken)
+    {
+        if (_workspaceFiles.Count == 0)
+        {
+            return;
+        }
+
+        ShowIndexPrompt = false;
+        CanIndexWorkspace = false;
+
+        if (WorkspacePath is { } workspace)
+        {
+            await _settings.SaveAsync(_settings.Current.WithIndexingChoice(workspace, true));
+        }
+
+        _indexingWorkspace = true;
+        try
+        {
+            await RunIndexAsync(_workspaceFiles, cancellationToken);
+        }
+        finally
+        {
+            _indexingWorkspace = false;
+        }
+    }
+
+    /// <summary>
     /// Indexes the files just scanned, in the background. Indexing reads metadata for every file,
     /// so it must never hold up browsing.
     /// </summary>
-    private async Task IndexScannedAsync(IReadOnlyList<MediaItemViewModel> items)
+    private Task IndexScannedAsync(IReadOnlyList<MediaItemViewModel> items)
     {
-        if (items.Count == 0)
+        // The workspace pass covers every file beneath the root, so browsing into a subfolder while
+        // it is running or pending must not cancel it or duplicate its work. CanIndexWorkspace
+        // means indexing was declined for this workspace, which per-folder indexing would override.
+        if (items.Count == 0 || _indexingWorkspace || _workspaceIndexPending || CanIndexWorkspace)
+        {
+            return Task.CompletedTask;
+        }
+
+        return RunIndexAsync(items.Select(i => i.File).ToList(), CancellationToken.None);
+    }
+
+    private async Task RunIndexAsync(IReadOnlyList<MediaFile> files, CancellationToken cancellationToken)
+    {
+        if (files.Count == 0)
         {
             return;
         }
@@ -496,7 +661,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             previous.Dispose();
         }
 
-        var cts = new CancellationTokenSource();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _indexCts = cts;
 
         IsIndexing = true;
@@ -504,19 +669,29 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         try
         {
-            var files = items.Select(i => i.File).ToList();
             var progress = new Progress<JobProgress>(p =>
             {
                 IndexProgress = p.Fraction;
                 IndexStatus = $"Indexing {p.Completed:N0} of {p.Total:N0}";
             });
 
-            var indexed = await _indexer.IndexAsync(files, progress, cts.Token);
-            IndexStatus = $"Indexed {indexed:N0} file(s)";
+            var result = await _indexer.IndexAsync(files, progress, cts.Token);
+
+            // Distinguishing the two is worth a few words: "0 files" after opening a large
+            // workspace reads as a failure, where "all 48,213 already current" reads as fast.
+            IndexStatus = result switch
+            {
+                { Indexed: 0, Skipped: 0 } => null,
+                { Indexed: 0 } => $"All {result.Skipped:N0} file(s) already indexed",
+                { Skipped: 0 } => $"Indexed {result.Indexed:N0} file(s)",
+                _ => $"Indexed {result.Indexed:N0} file(s), {result.Skipped:N0} already current"
+            };
         }
         catch (OperationCanceledException)
         {
-            IndexStatus = "Indexing cancelled";
+            // Chunks are committed as they go, so whatever finished is kept and the next run
+            // skips it. Say so, rather than implying the work was lost.
+            IndexStatus = "Indexing stopped — progress so far is kept";
         }
         catch (Exception ex)
         {
@@ -613,7 +788,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         await _settings.SaveAsync(_settings.Current.WithWorkspace(path));
 
+        _workspaceIndexPending = true;
         await ScanFolderAsync(path);
+
+        // After the scan, so the grid is populated before the tree walk for indexing begins.
+        _workspaceIndexCts?.Cancel();
+        _workspaceIndexCts?.Dispose();
+        _workspaceIndexCts = new CancellationTokenSource();
+        var token = _workspaceIndexCts.Token;
+        _ = Task.Run(() => PrepareWorkspaceIndexAsync(path, token), token);
     }
 
     /// <summary>Returns to the no-workspace state, leaving the catalog and cache untouched.</summary>
@@ -621,6 +804,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private async Task CloseWorkspaceAsync()
     {
         await CancelActiveScanAsync();
+
+        _workspaceIndexCts?.Cancel();
+        _indexCts?.Cancel();
+        ShowIndexPrompt = false;
+        CanIndexWorkspace = false;
+        _workspaceFiles = [];
 
         WorkspacePath = null;
         WorkspaceName = null;

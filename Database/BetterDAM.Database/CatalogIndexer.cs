@@ -27,26 +27,45 @@ public sealed class CatalogIndexer : ICatalogIndexer
         _logger = logger;
     }
 
-    public async Task<int> IndexAsync(
+    public async Task<IndexResult> IndexAsync(
         IReadOnlyList<MediaFile> files,
         IProgress<JobProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         if (files.Count == 0 || !_metadata.IsAvailable)
         {
-            return 0;
+            return default;
         }
 
         var indexed = 0;
+        var skipped = 0;
+        var seen = 0;
 
         foreach (var chunk in files.Chunk(ChunkSize))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var metadata = await _metadata.ReadManyAsync(chunk, null, cancellationToken).ConfigureAwait(false);
+            // Ask what is already known before reading anything. Metadata reads shell out to
+            // ExifTool and dominate the cost; this query does not.
+            var known = await _catalog
+                .GetIndexedStampsAsync(chunk.Select(f => f.FullPath).ToList(), cancellationToken)
+                .ConfigureAwait(false);
 
-            var entries = new List<CatalogEntry>(chunk.Length);
-            foreach (var file in chunk)
+            var stale = chunk.Where(file => NeedsIndexing(file, known)).ToArray();
+
+            seen += chunk.Length;
+            skipped += chunk.Length - stale.Length;
+
+            if (stale.Length == 0)
+            {
+                progress?.Report(new JobProgress(seen, files.Count, chunk[^1].FileName));
+                continue;
+            }
+
+            var metadata = await _metadata.ReadManyAsync(stale, null, cancellationToken).ConfigureAwait(false);
+
+            var entries = new List<CatalogEntry>(stale.Length);
+            foreach (var file in stale)
             {
                 if (!metadata.TryGetValue(file.FullPath, out var read))
                 {
@@ -64,12 +83,30 @@ public sealed class CatalogIndexer : ICatalogIndexer
             await _catalog.UpsertAsync(entries, cancellationToken).ConfigureAwait(false);
 
             indexed += entries.Count;
-            progress?.Report(new JobProgress(indexed, files.Count, chunk[^1].FileName));
+            progress?.Report(new JobProgress(seen, files.Count, chunk[^1].FileName));
         }
 
-        _logger.LogInformation("Indexed {Count} of {Total} file(s) into the catalog", indexed, files.Count);
-        return indexed;
+        _logger.LogInformation(
+            "Indexed {Count} file(s), skipped {Skipped} already current, of {Total}",
+            indexed,
+            skipped,
+            files.Count);
+
+        return new IndexResult(indexed, skipped);
     }
+
+    /// <summary>
+    /// True when the catalog has no record of the file, or its size or modified time has moved.
+    ///
+    /// Comparing size *and* modified time rather than either alone: an edit that preserves the
+    /// timestamp usually changes the size, and one that preserves the size usually changes the
+    /// timestamp. Content hashing would be exact, but reading every byte of every file would cost
+    /// far more than the metadata read it is trying to avoid.
+    /// </summary>
+    internal static bool NeedsIndexing(MediaFile file, IReadOnlyDictionary<string, IndexedStamp> known)
+        => !known.TryGetValue(file.FullPath, out var stamp)
+           || stamp.SizeBytes != file.SizeBytes
+           || stamp.ModifiedUtc != file.ModifiedUtc.ToUnixTimeSeconds();
 
     /// <summary>
     /// EXIF dates use colons between date parts — "2024:06:01 09:15:22" — which no standard parser

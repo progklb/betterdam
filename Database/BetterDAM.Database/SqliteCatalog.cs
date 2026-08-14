@@ -209,6 +209,25 @@ public sealed class SqliteCatalog : ICatalog
             transaction).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyDictionary<string, IndexedStamp>> GetIndexedStampsAsync(
+        IReadOnlyList<string> paths,
+        CancellationToken cancellationToken = default)
+    {
+        if (paths.Count == 0)
+        {
+            return new Dictionary<string, IndexedStamp>();
+        }
+
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var rows = await connection.QueryAsync<StampRow>(new CommandDefinition(
+            "SELECT Path, SizeBytes, ModifiedUtc FROM Media WHERE Path IN @paths",
+            new { paths },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return rows.ToDictionary(r => r.Path, r => new IndexedStamp(r.SizeBytes, r.ModifiedUtc), StringComparer.Ordinal);
+    }
+
     public async Task<IReadOnlyList<SearchHit>> SearchAsync(
         SearchQuery query,
         string? rootPath = null,
@@ -423,5 +442,16 @@ public sealed class SqliteCatalog : ICatalog
         long? Rating,
         string? Title);
 
+    /// <summary>Test hook: the number of media-to-keyword links, used to check for orphans.</summary>
+    internal async Task<int> CountKeywordLinksAsync()
+    {
+        await using var connection = await OpenAsync(CancellationToken.None).ConfigureAwait(false);
+        return await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM MediaKeyword;").ConfigureAwait(false);
+    }
+
     private sealed record MediaRow(long Id, string Path);
+
+    // long, not int: SQLite hands back every integer column as Int64, and a mismatched constructor
+    // makes Dapper fail to materialise the row at all.
+    private sealed record StampRow(string Path, long SizeBytes, long ModifiedUtc);
 }

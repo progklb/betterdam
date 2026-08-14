@@ -20,6 +20,12 @@ public sealed record CatalogStatistics(int FileCount, int KeywordCount, long Siz
 }
 
 /// <summary>
+/// What the catalog already knows about a file, used to decide whether it needs re-reading.
+/// Modified time is seconds since the epoch, matching how it is stored.
+/// </summary>
+public readonly record struct IndexedStamp(long SizeBytes, long ModifiedUtc);
+
+/// <summary>
 /// The local search catalog.
 ///
 /// It is a cache of what is already in the media and its sidecars — the files stay authoritative,
@@ -31,6 +37,15 @@ public interface ICatalog
 
     /// <summary>Inserts or updates entries, keyed by path.</summary>
     Task UpsertAsync(IReadOnlyList<CatalogEntry> entries, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// What is already indexed for the given paths. Paths absent from the result are not in the
+    /// catalog. Lets indexing skip files it has already read, which is the difference between
+    /// reopening a large workspace being instant and being a full re-read.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, IndexedStamp>> GetIndexedStampsAsync(
+        IReadOnlyList<string> paths,
+        CancellationToken cancellationToken = default);
 
     /// <param name="rootPath">
     /// Restricts results to files beneath this folder. Null searches the whole catalog — the
@@ -48,10 +63,17 @@ public interface ICatalog
     Task ClearAsync(CancellationToken cancellationToken = default);
 }
 
+/// <param name="Indexed">Files actually read and written to the catalog.</param>
+/// <param name="Skipped">Files already current, whose metadata was not re-read.</param>
+public readonly record struct IndexResult(int Indexed, int Skipped)
+{
+    public int Total => Indexed + Skipped;
+}
+
 /// <summary>Populates the catalog from a set of files.</summary>
 public interface ICatalogIndexer
 {
-    Task<int> IndexAsync(
+    Task<IndexResult> IndexAsync(
         IReadOnlyList<MediaFile> files,
         IProgress<JobProgress>? progress = null,
         CancellationToken cancellationToken = default);

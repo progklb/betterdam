@@ -45,6 +45,30 @@ public sealed record AppSettings
     public const int MaxRecentWorkspaces = 10;
 
     /// <summary>
+    /// Above this many files, indexing a workspace is offered rather than simply done. Below it the
+    /// work is short enough that asking would be more disruptive than the indexing.
+    /// </summary>
+    public const int IndexPromptThreshold = 5000;
+
+    /// <summary>
+    /// Whether each workspace should be indexed, keyed by path — only recorded for workspaces large
+    /// enough to have been asked about. Per workspace so the question is answered once, not on
+    /// every open.
+    /// </summary>
+    public IReadOnlyDictionary<string, bool> WorkspaceIndexing { get; init; }
+        = new Dictionary<string, bool>();
+
+    public AppSettings WithIndexingChoice(string workspace, bool index)
+    {
+        var choices = new Dictionary<string, bool>(WorkspaceIndexing, StringComparer.Ordinal)
+        {
+            [workspace] = index
+        };
+
+        return this with { WorkspaceIndexing = choices };
+    }
+
+    /// <summary>
     /// Records <paramref name="path"/> as the current workspace and moves it to the front of the
     /// recent list, de-duplicating so reopening the same folder does not fill the menu with it.
     /// </summary>

@@ -32,6 +32,10 @@ public static class MenuConventions
     /// <summary>Command-comma is the standard macOS shortcut for preferences.</summary>
     public static KeyGesture Settings { get; } = KeyGesture.Parse(IsMac ? "Cmd+," : "Ctrl+,");
 
+    /// <summary>VS Code uses Cmd+B for the sidebar, and this panel plays the same role.</summary>
+    public static KeyGesture ToggleFolderPanel { get; } =
+        KeyGesture.Parse(IsMac ? "Cmd+B" : "Ctrl+B");
+
     /// <summary>Matches VS Code, where Shift makes it "close the workspace, not the window".</summary>
     public static KeyGesture CloseWorkspace { get; } =
         KeyGesture.Parse(IsMac ? "Cmd+Shift+W" : "Ctrl+Shift+W");

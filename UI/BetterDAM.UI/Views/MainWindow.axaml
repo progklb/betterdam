@@ -13,6 +13,11 @@
         Width="1400" Height="900"
         MinWidth="900" MinHeight="600">
 
+  <Window.KeyBindings>
+    <KeyBinding Gesture="{x:Static svc:MenuConventions.ToggleFolderPanel}"
+                Command="{Binding ToggleFolderPanelCommand}" />
+  </Window.KeyBindings>
+
   <Window.Styles>
     <Style Selector="TreeViewItem" x:DataType="vm:FolderNodeViewModel">
       <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
@@ -68,40 +73,41 @@
 
     <!-- Toolbar -->
     <Border DockPanel.Dock="Top" Padding="8" BorderThickness="0,0,0,1" BorderBrush="#22FFFFFF">
+      <!--
+        The top bar is search and nothing else. Controls that act on a specific panel now live in
+        that panel: Recursive with the folders, thumbnail size with the thumbnails.
+      -->
       <DockPanel LastChildFill="True">
-        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-          <CheckBox Content="Recursive" IsChecked="{Binding Recursive}" VerticalAlignment="Center" />
-          <Button Content="Cancel Scan"
-                  Command="{Binding CancelScanCommand}"
-                  IsVisible="{Binding IsScanning}" />
-          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-            <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" />
-            <Slider Minimum="90" Maximum="320" Width="160"
-                    Value="{Binding ThumbnailSize}" VerticalAlignment="Center" />
-          </StackPanel>
-        </StackPanel>
+        <Button DockPanel.Dock="Left" Content="☰" Padding="10,4" Margin="0,0,10,0"
+                Command="{Binding ToggleFolderPanelCommand}"
+                ToolTip.Tip="Show or hide the folders panel (⌘B)" />
 
-        <!-- Search sits centre-right: it queries the catalog, not just the current folder. -->
-        <DockPanel Margin="12,0,0,0">
-          <Button DockPanel.Dock="Right" Content="✕" Margin="4,0,0,0" Padding="8,2"
-                  ToolTip.Tip="Clear the search and go back to the folder"
-                  IsVisible="{Binding IsShowingSearchResults}"
-                  Command="{Binding ClearSearchCommand}" />
-          <Button DockPanel.Dock="Right" Content="Search" Margin="4,0,0,0"
-                  Command="{Binding SearchCommand}" />
-          <CheckBox DockPanel.Dock="Right" Content="Everywhere" Margin="8,0,0,0"
-                    VerticalAlignment="Center" FontSize="11"
-                    IsVisible="{Binding HasWorkspace}"
-                    IsChecked="{Binding SearchEverywhere}"
-                    ToolTip.Tip="Search the whole catalog instead of just the open workspace" />
-          <TextBox Text="{Binding SearchText}" MinWidth="240"
-                   Watermark="keyword:motorcycle rating:&gt;=4 type:video"
-                   ToolTip.Tip="Words search titles, descriptions, keywords and creators. Filters: keyword: rating: camera: lens: type: date:">
-            <TextBox.KeyBindings>
-              <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
-            </TextBox.KeyBindings>
-          </TextBox>
-        </DockPanel>
+        <!-- Scope, as the filter control on the right of the field. -->
+        <ToggleButton DockPanel.Dock="Right" Margin="8,0,0,0" Padding="10,4"
+                      IsVisible="{Binding HasWorkspace}"
+                      IsChecked="{Binding SearchEverywhere}"
+                      ToolTip.Tip="Search everything indexed, not just the open workspace">
+          <TextBlock Text="⑂" FontSize="14" />
+        </ToggleButton>
+
+        <TextBox Text="{Binding SearchText}"
+                 Watermark="{Binding SearchWatermark}"
+                 HorizontalAlignment="Stretch"
+                 ToolTip.Tip="Words search titles, descriptions, keywords and creators. Filters: keyword: rating: camera: lens: type: date:">
+          <TextBox.InnerLeftContent>
+            <TextBlock Text="🔍" Margin="8,0,4,0" FontSize="12" Opacity="0.6"
+                       VerticalAlignment="Center" />
+          </TextBox.InnerLeftContent>
+          <TextBox.InnerRightContent>
+            <Button Content="✕" Padding="8,2" Margin="0,0,4,0" Background="Transparent"
+                    ToolTip.Tip="Clear the search and go back to the folder"
+                    IsVisible="{Binding IsShowingSearchResults}"
+                    Command="{Binding ClearSearchCommand}" />
+          </TextBox.InnerRightContent>
+          <TextBox.KeyBindings>
+            <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
+          </TextBox.KeyBindings>
+        </TextBox>
       </DockPanel>
     </Border>
 
@@ -125,6 +131,9 @@
         <StackPanel Orientation="Horizontal" Spacing="10">
           <ProgressBar IsIndeterminate="True" Width="90" Height="4"
                        VerticalAlignment="Center" IsVisible="{Binding IsScanning}" />
+          <Button Content="Cancel scan" FontSize="11" Padding="8,2"
+                  IsVisible="{Binding IsScanning}"
+                  Command="{Binding CancelScanCommand}" />
           <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
 
           <!-- Indexing runs behind browsing, so it reports quietly rather than blocking. -->
@@ -149,23 +158,39 @@
       </DockPanel>
     </Border>
 
-    <Grid ColumnDefinitions="240,4,*,4,360">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="{Binding FolderColumnWidth}" />
+        <ColumnDefinition Width="4" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="4" />
+        <ColumnDefinition Width="360" />
+      </Grid.ColumnDefinitions>
 
-      <!-- Folder tree -->
-      <TreeView Grid.Column="0"
-                ItemsSource="{Binding FolderRoots}"
-                SelectedItem="{Binding SelectedFolder}">
-        <TreeView.ItemTemplate>
-          <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:FolderNodeViewModel">
-            <TextBlock Text="{Binding Name}" />
-          </TreeDataTemplate>
-        </TreeView.ItemTemplate>
-      </TreeView>
 
-      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="#22FFFFFF" />
+      <!-- Folders panel: the tree plus the one option that only affects it. -->
+      <DockPanel Grid.Column="0" IsVisible="{Binding IsFolderPanelVisible}">
+        <Border DockPanel.Dock="Bottom" Padding="8,6" BorderThickness="0,1,0,0" BorderBrush="#22FFFFFF">
+          <CheckBox Content="Include subfolders" FontSize="11"
+                    IsChecked="{Binding Recursive}"
+                    ToolTip.Tip="Show media from every folder beneath the selected one" />
+        </Border>
+
+        <TreeView ItemsSource="{Binding FolderRoots}"
+                  SelectedItem="{Binding SelectedFolder}">
+          <TreeView.ItemTemplate>
+            <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:FolderNodeViewModel">
+              <TextBlock Text="{Binding Name}" />
+            </TreeDataTemplate>
+          </TreeView.ItemTemplate>
+        </TreeView>
+      </DockPanel>
+
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="#22FFFFFF"
+                    IsVisible="{Binding IsFolderPanelVisible}" />
 
       <!-- Thumbnail grid over preview -->
-      <Grid Grid.Column="2" RowDefinitions="Auto,*,4,280">
+      <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,4,280">
 
         <!--
           Non-modal by design: indexing a large workspace is offered, not demanded, and browsing
@@ -263,9 +288,20 @@
           </ListBox.ItemTemplate>
         </ListBox>
 
-        <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="#22FFFFFF" />
+        <!-- Thumbnail size belongs to the thumbnails, bottom-right and out of the way. -->
+        <Border Grid.Row="2" BorderBrush="#22FFFFFF" BorderThickness="0,1,0,0"
+                Padding="8,1" IsVisible="{Binding !ShowEmptyState}">
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+            <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.6" FontSize="11" />
+            <!-- Height pinned: the default slider is tall enough to steal a row of thumbnails. -->
+            <Slider Minimum="90" Maximum="320" Width="140" Height="24"
+                    Value="{Binding ThumbnailSize}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
 
-        <Border Grid.Row="3" Background="#10FFFFFF">
+        <GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="#22FFFFFF" />
+
+        <Border Grid.Row="4" Background="#10FFFFFF">
           <Panel>
 
             <!-- ============ Video player ============ -->

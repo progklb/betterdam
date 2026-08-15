@@ -1267,3 +1267,62 @@ work starts. A workspace of 4,000 RAWs will index without asking and still take 
 
 **Nothing re-indexes on a timer.** A file changed by another application is picked up the next time
 its workspace is opened or the folder is browsed, not while the application sits idle.
+
+---
+
+## Interlude — Layout ✅
+
+Controls that act on one panel moved into that panel, leaving the top bar to do one job.
+
+| Was | Now |
+| --- | --- |
+| **Recursive** checkbox in the top bar | **Include subfolders**, in a footer on the folders panel |
+| **Size** slider in the top bar | A slim strip along the bottom of the thumbnail panel |
+| — | **☰** in the top bar collapses the folders panel (⌘B) |
+| **Cancel Scan** in the top bar | Beside the scan progress bar in the status bar, which is what it cancels |
+
+The top bar is now a single full-width search field, following the reference: magnifier inside on the
+left, clear **✕** inside on the right while results are showing, and the scope toggle as a filter
+button to its right.
+
+### The search field names its own scope
+
+The watermark reads **"Search testmedia"** — the workspace name — rather than a syntax example, and
+switches to **"Search everything indexed"** when the scope toggle is on. A search box that says
+*"Search testmedia"* while quietly searching the whole catalog would be a lie, so the watermark is
+computed from the workspace *and* the toggle, with both notifying it.
+
+The filter syntax it used to advertise (`keyword: rating: type:`) moved to the tooltip. Discoverable
+on hover, not occupying the field permanently.
+
+### Collapsing binds the column, not the panel
+
+`IsVisible` on the tree alone would leave its 240px column behind as a gap. The first
+`ColumnDefinition.Width` is bound to a `GridLength` on the ViewModel instead, and the splitter
+follows the panel's visibility so there is no orphaned drag handle against the window edge.
+
+### Two layout fixes found by looking
+
+**The size strip was overlaying the thumbnails.** Anchored bottom with a translucent background, it
+sat on top of the third row of tiles, which showed through it. Given its own `Auto` row it takes
+space instead of covering content.
+
+**The default slider is tall.** At its natural height the strip stole most of a row of thumbnails,
+so the slider height is pinned to 24.
+
+### Verified in the running app
+
+- Collapsed: the grid goes from 4 tiles across to 5, with no leftover gap, and restores on a second
+  click.
+- **Include subfolders** sits at the foot of the folders panel; the size strip at the foot of the
+  thumbnails, hidden while the empty state is showing.
+- Incidental confirmation of Phase 9: `/private/tmp` was swept overnight, so the test media was
+  recreated at the same paths with new sizes and timestamps. The next run re-read all 15
+  (*"Indexed 15, skipped 0"*) and the run after skipped all 15 — exactly the intended behaviour for
+  changed-in-place files.
+- `dotnet test` — **302/302 passing**.
+
+### Worth knowing
+
+**The collapse state is not persisted.** Reopening starts with the panel showing. Adding it to
+settings alongside the workspace would be a few lines if that becomes annoying.

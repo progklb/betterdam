@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using BetterDAM.Core.Interfaces;
@@ -130,15 +131,39 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasWorkspace))]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
+    [NotifyPropertyChangedFor(nameof(SearchWatermark))]
     private string? _workspacePath;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
+    [NotifyPropertyChangedFor(nameof(SearchWatermark))]
     private string? _workspaceName;
 
     public bool HasWorkspace => WorkspacePath is not null;
 
     public string WindowTitle => WorkspaceName is null ? "BetterDAM" : $"{WorkspaceName} — BetterDAM";
+
+    /// <summary>
+    /// Names what will actually be searched, since the scope is the workspace rather than
+    /// everything. Follows the Everywhere toggle so the field never claims the wrong scope.
+    /// </summary>
+    public string SearchWatermark => !HasWorkspace || SearchEverywhere
+        ? "Search everything indexed"
+        : $"Search {WorkspaceName}";
+
+    /// <summary>
+    /// Collapses the folders panel so the thumbnails and preview get the whole window. Bound to the
+    /// column width rather than the tree's visibility: a hidden child of a fixed-width column would
+    /// leave the 240px gap behind.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FolderColumnWidth))]
+    private bool _isFolderPanelVisible = true;
+
+    public GridLength FolderColumnWidth => IsFolderPanelVisible ? new GridLength(240) : new GridLength(0);
+
+    [RelayCommand]
+    private void ToggleFolderPanel() => IsFolderPanelVisible = !IsFolderPanelVisible;
 
     /// <summary>
     /// Most recently opened first. Kept in step with the persisted list so the Open Recent menu can
@@ -151,6 +176,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// returned results from unrelated folders would not be much of a workspace.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SearchWatermark))]
     private bool _searchEverywhere;
 
     partial void OnSearchEverywhereChanged(bool value)

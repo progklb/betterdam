@@ -1326,3 +1326,56 @@ so the slider height is pinned to 24.
 
 **The collapse state is not persisted.** Reopening starts with the panel showing. Adding it to
 settings alongside the workspace would be a few lines if that becomes annoying.
+
+### Fixed — the splitter broke the layout
+
+Reported from testing: dragging the horizontal splitter emptied the thumbnail grid and left the size
+slider floating in the middle of a black panel.
+
+**Cause, and it was the size bar's fault.** Giving the bar its own row put it *between* the grid and
+the splitter:
+
+```text
+Auto  index prompt
+*     thumbnails
+Auto  size bar      <- splitter resized this
+4     splitter
+280   preview
+```
+
+A `GridSplitter` resizes the rows on either side of it. With the size bar directly above, dragging
+inflated **the size bar's row** rather than the thumbnails. The `*` row collapsed to nothing, so the
+grid vanished, and the slider — vertically centred in a now-enormous row — was left floating.
+
+The bar belongs *inside* the thumbnail region, not beside it. Row 1 is now a `DockPanel` with the bar
+docked to its bottom and the grid filling the rest, so the splitter is once again adjacent to the
+thumbnails and resizes them. This also fixes the bar being clipped by the splitter, since it now sits
+above it by construction rather than by coincidence.
+
+The lesson generalises: **anything docked between a splitter and the content it resizes changes what
+the splitter does.**
+
+### The size bar, quieter
+
+Label at 10px and 40% opacity, slider 110px wide, no border, no background of its own.
+
+An earlier attempt pinned the slider to `Height="20"`. That is shorter than the Fluent template
+needs, so the thumb was **clipped in half** and the track was pushed off centre, leaving the "Size"
+label misaligned with the line it labels. Clamping a control shorter than its template fights the
+template and loses. The slider keeps its natural height now, with `MinHeight="0"` and `Padding="0"`
+to keep it compact, and the strip carries the spacing instead. The whole thumbnail region — grid and bar together — now shares one surface (`#10FFFFFF`,
+the same faint overlay the preview pane uses) with the ListBox transparent on top, so the bar no
+longer reads as a separate black band beneath the tiles.
+
+### A real filter icon
+
+The `⑂` placeholder is now a `PathIcon` funnel — `M2 4 H22 L14 13 V20 L10 18 V13 Z` — wide mouth,
+converging neck, stem down the middle. Vector, so it scales with the button and takes the theme
+foreground.
+
+### Verified
+
+- Splitter dragged **up** and **down** to both extremes: the thumbnails resize, the grid never
+  empties, and the size bar stays pinned at the bottom of the thumbnail region, never under the
+  splitter.
+- `dotnet test` — **302/302 passing**.

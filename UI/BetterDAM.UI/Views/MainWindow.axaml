@@ -87,7 +87,9 @@
                       IsVisible="{Binding HasWorkspace}"
                       IsChecked="{Binding SearchEverywhere}"
                       ToolTip.Tip="Search everything indexed, not just the open workspace">
-          <TextBlock Text="⑂" FontSize="14" />
+          <!-- Funnel: wide mouth, converging neck, stem down the middle. -->
+          <PathIcon Width="13" Height="13"
+                    Data="M2 4 H22 L14 13 V20 L10 18 V13 Z" />
         </ToggleButton>
 
         <TextBox Text="{Binding SearchText}"
@@ -190,7 +192,7 @@
                     IsVisible="{Binding IsFolderPanelVisible}" />
 
       <!-- Thumbnail grid over preview -->
-      <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,4,280">
+      <Grid Grid.Column="2" RowDefinitions="Auto,*,4,280">
 
         <!--
           Non-modal by design: indexing a large workspace is offered, not demanded, and browsing
@@ -213,7 +215,33 @@
           Sits in the same cell as the grid, after it so it draws on top. IsHitTestVisible is left
           on so the button works, but the panel only exists while the grid is empty.
         -->
-        <Panel Grid.Row="1" IsVisible="{Binding ShowEmptyState}" ZIndex="1">
+        <!--
+          The size bar docks inside the thumbnail region rather than occupying a row of its own.
+          A row of its own sat between the grid and the splitter, so dragging the splitter resized
+          *it* instead of the thumbnails - the bar grew, the grid collapsed to nothing, and the
+          slider was left floating in the middle of an empty panel.
+        -->
+        <DockPanel Grid.Row="1" Background="#10FFFFFF">
+
+          <Border DockPanel.Dock="Bottom" Padding="8,2,8,4"
+                  IsVisible="{Binding !ShowEmptyState}">
+            <!--
+              The slider keeps its natural height. Clamping it shorter than its template needs
+              clipped the thumb in half and pushed the track off centre, so the label no longer
+              lined up with it. Compactness comes from MinHeight on the template parts instead.
+            -->
+            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+              <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.4" FontSize="10" />
+              <Slider Minimum="90" Maximum="320" Width="110"
+                      MinHeight="0" Padding="0"
+                      Value="{Binding ThumbnailSize}" VerticalAlignment="Center"
+                      ToolTip.Tip="Thumbnail size" />
+            </StackPanel>
+          </Border>
+
+          <Panel>
+
+        <Panel IsVisible="{Binding ShowEmptyState}" ZIndex="1">
           <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                       MaxWidth="380" Spacing="10">
             <TextBlock Text="{Binding EmptyStateTitle}" FontSize="16" Opacity="0.85"
@@ -226,7 +254,7 @@
           </StackPanel>
         </Panel>
 
-        <ListBox Grid.Row="1"
+        <ListBox Background="Transparent"
                  ItemsSource="{Binding MediaItems}"
                  SelectedItem="{Binding SelectedItem}"
                  SelectionMode="Multiple"
@@ -288,20 +316,12 @@
           </ListBox.ItemTemplate>
         </ListBox>
 
-        <!-- Thumbnail size belongs to the thumbnails, bottom-right and out of the way. -->
-        <Border Grid.Row="2" BorderBrush="#22FFFFFF" BorderThickness="0,1,0,0"
-                Padding="8,1" IsVisible="{Binding !ShowEmptyState}">
-          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
-            <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.6" FontSize="11" />
-            <!-- Height pinned: the default slider is tall enough to steal a row of thumbnails. -->
-            <Slider Minimum="90" Maximum="320" Width="140" Height="24"
-                    Value="{Binding ThumbnailSize}" VerticalAlignment="Center" />
-          </StackPanel>
-        </Border>
+          </Panel>
+        </DockPanel>
 
-        <GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="#22FFFFFF" />
+        <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="#22FFFFFF" />
 
-        <Border Grid.Row="4" Background="#10FFFFFF">
+        <Border Grid.Row="3" Background="#10FFFFFF">
           <Panel>
 
             <!-- ============ Video player ============ -->

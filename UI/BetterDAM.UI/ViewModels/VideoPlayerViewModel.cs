@@ -11,10 +11,10 @@ namespace BetterDAM.UI.ViewModels;
 /// <summary>
 /// Drives video preview: proxy selection, transport, scrubbing and frame stepping.
 ///
-/// There is no audio yet — this plays decoded frames paced against a wall clock. That is deliberate
-/// for this phase: it delivers the browsing workflow (scrub, step, watch) without taking on a media
-/// framework dependency, and the proxies it generates are already audio-bearing so playback with
-/// sound can be added later without regenerating anything.
+/// Video frames are decoded and paced against a wall clock; audio is decoded separately from the
+/// same file and played through the platform sound device. The two are started together at the same
+/// position and each runs at its natural rate, which is accurate enough for preview-length clips
+/// without video having to be slaved to an audio clock.
 /// </summary>
 public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
 {
@@ -22,6 +22,7 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
     private readonly IVideoFrameSource _frames;
     private readonly IVideoInfoProvider _infoProvider;
     private readonly IFfmpegLocator _ffmpeg;
+    private readonly IAudioPlayer _audio;
     private readonly ILogger<VideoPlayerViewModel> _logger;
 
     private CancellationTokenSource? _playbackCts;
@@ -37,13 +38,17 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
         IVideoFrameSource frames,
         IVideoInfoProvider infoProvider,
         IFfmpegLocator ffmpeg,
+        IAudioPlayer audio,
         ILogger<VideoPlayerViewModel> logger)
     {
         _proxies = proxies;
         _frames = frames;
         _infoProvider = infoProvider;
         _ffmpeg = ffmpeg;
+        _audio = audio;
         _logger = logger;
+
+        _audio.Volume = EffectiveVolume;
     }
 
     /// <summary>Raised on the UI thread with a frame to display; the frame is disposed afterwards.</summary>
@@ -89,6 +94,41 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
 
     public bool IsAvailable => _ffmpeg.IsAvailable;
 
+    /// <summary>
+    /// 0 to 1. Applied to the samples as they pass through, so a change is heard within the length
+    /// of one decode chunk rather than at the next seek.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EffectiveVolume))]
+    [NotifyPropertyChangedFor(nameof(VolumeDisplay))]
+    private double _volume = 0.8;
+
+    /// <summary>
+    /// Separate from <see cref="Volume"/> so unmuting returns to the level that was set rather than
+    /// to a default.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EffectiveVolume))]
+    [NotifyPropertyChangedFor(nameof(VolumeDisplay))]
+    private bool _isMuted;
+
+    public double EffectiveVolume => IsMuted ? 0 : Volume;
+
+    public string VolumeDisplay => IsMuted ? "Muted" : $"{EffectiveVolume * 100:F0}%";
+
+    /// <summary>
+    /// False for a silent file, or where the platform has no audio backend. Drives the control's
+    /// enabled state so a dead volume slider is never offered.
+    /// </summary>
+    public bool CanPlayAudio => _audio.IsAvailable && _proxy?.Info.HasAudio == true;
+
+    partial void OnVolumeChanged(double value) => _audio.Volume = EffectiveVolume;
+
+    partial void OnIsMutedChanged(bool value) => _audio.Volume = EffectiveVolume;
+
+    [RelayCommand]
+    private void ToggleMute() => IsMuted = !IsMuted;
+
     private VideoQuality SelectedQuality => Qualities[Math.Clamp(SelectedQualityIndex, 0, Qualities.Length - 1)];
 
     partial void OnPositionSecondsChanged(double value)
@@ -116,6 +156,7 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
 
         _file = file;
         _proxy = null;
+        OnPropertyChanged(nameof(CanPlayAudio));
         StatusMessage = null;
         ProxyProgress = 0;
 
@@ -180,6 +221,7 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
         {
             var progress = new Progress<double>(p => ProxyProgress = p);
             _proxy = await _proxies.GetProxyAsync(file, quality, progress, cancellationToken).ConfigureAwait(true);
+            OnPropertyChanged(nameof(CanPlayAudio));
 
             StatusMessage = _proxy is null
                 ? "Could not prepare this video for playback."
@@ -339,6 +381,13 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
         _playbackCts = cts;
         IsPlaying = true;
 
+        // Same file, same position: the proxy keeps its audio track, so nothing has to be
+        // correlated between two different sources.
+        if (CanPlayAudio)
+        {
+            _ = _audio.StartAsync(proxy.ProxyPath, from, cts.Token);
+        }
+
         _ = Task.Run(() => PlaybackLoopAsync(proxy, from, cts.Token), cts.Token);
     }
 
@@ -374,6 +423,7 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
             }
 
             // Reaching the end stops playback rather than looping.
+            await _audio.StopAsync().ConfigureAwait(false);
             await Dispatcher.UIThread.InvokeAsync(() => IsPlaying = false);
         }
         catch (OperationCanceledException)
@@ -389,6 +439,8 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
     private async Task StopPlaybackAsync()
     {
         IsPlaying = false;
+
+        await _audio.StopAsync().ConfigureAwait(true);
 
         if (_playbackCts is not { } cts)
         {
@@ -428,6 +480,7 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _audio.Dispose();
         _playbackCts?.Cancel();
         _playbackCts?.Dispose();
         _loadCts?.Dispose();

@@ -24,6 +24,7 @@
     <conv:StarGlyphConverter x:Key="StarGlyph" />
     <conv:StatusBrushConverter x:Key="StatusBrush" />
     <conv:PlayGlyphConverter x:Key="PlayGlyph" />
+    <conv:VolumeGlyphConverter x:Key="VolumeGlyph" />
     <conv:KeywordHeadingConverter x:Key="KeywordHeading" />
   </Application.Resources>
 

@@ -341,7 +341,7 @@
                 <StackPanel Spacing="6">
 
                   <!-- Transport -->
-                  <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
+                  <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto">
                     <Button Grid.Column="0" Content="⏮" ToolTip.Tip="Previous frame" FontSize="13"
                             Padding="8,2" Command="{Binding StepBackCommand}" />
                     <Button Grid.Column="1" Margin="4,0"
@@ -351,19 +351,52 @@
                     <Button Grid.Column="2" Content="⏭" ToolTip.Tip="Next frame" FontSize="13"
                             Padding="8,2" Command="{Binding StepForwardCommand}" />
 
-                    <TextBlock Grid.Column="3" VerticalAlignment="Center" Margin="12,0,8,0"
+                    <!--
+                      Volume. Disabled rather than hidden for a silent file, so the control stays
+                      where the eye expects it and its tooltip can explain why nothing happens.
+                    -->
+                    <Button Grid.Column="3" Margin="8,0,0,0" Padding="8,2"
+                            IsEnabled="{Binding CanPlayAudio}"
+                            ToolTip.Tip="{Binding VolumeDisplay}">
+                      <PathIcon Width="14" Height="14"
+                                Data="{Binding IsMuted, Converter={StaticResource VolumeGlyph}}" />
+                      <Button.Flyout>
+                        <Flyout Placement="Top">
+                          <StackPanel Width="190" Spacing="6" Margin="4">
+                            <DockPanel>
+                              <TextBlock DockPanel.Dock="Left" Text="Volume" FontSize="11"
+                                         VerticalAlignment="Center" />
+                              <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                         FontSize="11" Opacity="0.5" VerticalAlignment="Center"
+                                         Text="{Binding VolumeDisplay}" />
+                            </DockPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                              <ToggleButton Padding="6,2" IsChecked="{Binding IsMuted}"
+                                            ToolTip.Tip="Mute">
+                                <PathIcon Width="12" Height="12"
+                                          Data="{Binding IsMuted, Converter={StaticResource VolumeGlyph}}" />
+                              </ToggleButton>
+                              <Slider Width="120" Minimum="0" Maximum="1"
+                                      Value="{Binding Volume}" VerticalAlignment="Center" />
+                            </StackPanel>
+                          </StackPanel>
+                        </Flyout>
+                      </Button.Flyout>
+                    </Button>
+
+                    <TextBlock Grid.Column="4" VerticalAlignment="Center" Margin="12,0,8,0"
                                FontSize="12" FontFamily="monospace"
                                Text="{Binding PositionDisplay}" />
 
-                    <Slider Grid.Column="4" VerticalAlignment="Center"
+                    <Slider Grid.Column="5" VerticalAlignment="Center"
                             Minimum="0" Maximum="{Binding DurationSeconds}"
                             Value="{Binding PositionSeconds}" />
 
-                    <TextBlock Grid.Column="5" VerticalAlignment="Center" Margin="8,0,12,0"
+                    <TextBlock Grid.Column="6" VerticalAlignment="Center" Margin="8,0,12,0"
                                FontSize="12" FontFamily="monospace" Opacity="0.7"
                                Text="{Binding DurationDisplay}" />
 
-                    <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                       <TextBlock Text="Quality" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
                       <ComboBox ItemsSource="{Binding QualityChoices}"
                                 SelectedIndex="{Binding SelectedQualityIndex}"

@@ -5,10 +5,12 @@ using BetterDAM.Metadata.ExifTool;
 using BetterDAM.Metadata.Xmp;
 using BetterDAM.Preview;
 using BetterDAM.Preview.Cache;
+using BetterDAM.Preview.Audio;
 using BetterDAM.Preview.Images;
 using BetterDAM.Preview.Video;
 using BetterDAM.UI.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Serilog;
 
 namespace BetterDAM.UI.Services;
@@ -41,6 +43,12 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IVideoInfoProvider, FfprobeVideoInfoProvider>();
         services.AddSingleton<IVideoProxyService, FfmpegVideoProxyService>();
         services.AddSingleton<IVideoFrameSource, FfmpegFrameSource>();
+
+        // CoreAudio on macOS; elsewhere audio is silent until a backend exists for that platform.
+        services.AddSingleton<IAudioOutput>(sp => OperatingSystem.IsMacOS()
+            ? new CoreAudioOutput(sp.GetRequiredService<ILogger<CoreAudioOutput>>())
+            : new SilentAudioOutput());
+        services.AddSingleton<IAudioPlayer, FfmpegAudioPlayer>();
 
         services.AddSingleton<IExifToolLocator, ExifToolLocator>();
         services.AddSingleton<IEmbeddedPreviewExtractor, ExifToolPreviewExtractor>();

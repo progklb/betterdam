@@ -50,8 +50,7 @@ public sealed class FfprobeVideoInfoProvider : IVideoInfoProvider
         foreach (var argument in (string[])
                  [
                      "-v", "error",
-                     "-select_streams", "v:0",
-                     "-show_entries", "stream=width,height,avg_frame_rate,r_frame_rate:format=duration",
+                     "-show_entries", "stream=codec_type,width,height,avg_frame_rate,r_frame_rate:format=duration",
                      "-of", "json",
                      path
                  ])
@@ -105,7 +104,36 @@ public sealed class FfprobeVideoInfoProvider : IVideoInfoProvider
                 return null;
             }
 
-            var stream = streams[0];
+            // Every stream is listed now, not just the first video one, so the video stream has to
+            // be picked out - and audio can be spotted in the same pass.
+            var hasAudio = false;
+            JsonElement? video = null;
+            JsonElement? dimensioned = null;
+
+            foreach (var candidate in streams.EnumerateArray())
+            {
+                var type = candidate.TryGetProperty("codec_type", out var t) ? t.GetString() : null;
+
+                if (string.Equals(type, "audio", StringComparison.Ordinal))
+                {
+                    hasAudio = true;
+                    continue;
+                }
+
+                if (video is null && string.Equals(type, "video", StringComparison.Ordinal))
+                {
+                    video = candidate;
+                }
+
+                // Fallback for output that does not label its streams: anything with dimensions is
+                // a picture of some kind, which is the only thing this needs from it.
+                dimensioned ??= candidate.TryGetProperty("width", out _) ? candidate : null;
+            }
+
+            if ((video ?? dimensioned) is not { } stream)
+            {
+                return null;
+            }
             var width = stream.TryGetProperty("width", out var w) && w.TryGetInt32(out var wv) ? wv : 0;
             var height = stream.TryGetProperty("height", out var h) && h.TryGetInt32(out var hv) ? hv : 0;
 
@@ -123,7 +151,7 @@ public sealed class FfprobeVideoInfoProvider : IVideoInfoProvider
                 duration = TimeSpan.FromSeconds(seconds);
             }
 
-            return new VideoMediaInfo(duration, width, height, frameRate);
+            return new VideoMediaInfo(duration, width, height, frameRate, hasAudio);
         }
         catch (JsonException)
         {

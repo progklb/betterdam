@@ -18,7 +18,8 @@ public sealed record VideoMediaInfo(
     TimeSpan Duration,
     int Width,
     int Height,
-    double FrameRate)
+    double FrameRate,
+    bool HasAudio = false)
 {
     public static readonly VideoMediaInfo Unknown = new(TimeSpan.Zero, 0, 0, 0);
 

@@ -1441,3 +1441,79 @@ After the fix the same drag produced **22 measure passes**, tracking the slider 
 
 The general shape of this one is worth keeping: **inferring layout state from a child is fine, but
 the parent still has to be told when to look again.**
+
+---
+
+## Phase 10 — Audio ✅
+
+Video played silently. It now plays with sound, and the transport has a volume control.
+
+### How it works
+
+```text
+ffmpeg -vn -f s16le -ar 48000 -ac 2  →  PCM on stdout  →  CoreAudio AudioQueue
+```
+
+A second ffmpeg decodes the audio track of the **same file** the video frames come from — the proxies
+have always carried their audio, so nothing needed regenerating and there are no two sources to
+correlate. ffmpeg resamples anything to one fixed format, so the output device never negotiates.
+
+**CoreAudio via P/Invoke rather than a bundled media library.** AudioQueue is part of the OS: no
+native binary to ship, sign or update. The interop is six functions — create, allocate, enqueue,
+start, stop, dispose. LibVLCSharp was already ruled out in Phase 4 (its macOS build is Intel-only,
+from 2018), and SDL2 or OpenAL would mean shipping binaries for a preview feature.
+
+The device *asks* for audio rather than being pushed to: a callback fires as each buffer is consumed
+and refills it. That callback runs on a CoreAudio thread, so it never blocks on the decoder, never
+allocates, and never throws — an exception crossing back into native code would take the process
+down, so it catches everything and pads with silence instead.
+
+Three buffers of 100 ms each. Enough that a scheduling hiccup does not produce a gap, short enough
+that a seek is heard promptly. The queue feeding them is bounded, and that back-pressure is what
+holds decoding to realtime instead of letting ffmpeg race to the end of the file.
+
+### Volume
+
+Applied by **scaling the samples in the pump**, not through a device volume control. It therefore
+works identically on any future backend, mutes exactly rather than merely quietly, and takes effect
+within one decode chunk. The multiplier is fixed-point so the audio path does no floating-point work
+per sample and reads of it are atomic without a lock.
+
+`Volume` and `IsMuted` are separate so unmuting returns to the level that was set rather than to a
+default.
+
+### The control
+
+A speaker button sits with the transport, right of the frame-step buttons, opening a flyout with a
+mute toggle and a slider. It is **disabled rather than hidden** for a silent file, so the control
+stays where the eye expects it and its tooltip can say why nothing happens.
+
+Knowing a file is silent needed ffprobe to report more: it used to ask only for `v:0`, so audio was
+invisible to it. It now lists every stream's `codec_type`, which means the video stream has to be
+picked out by type rather than assumed to be first — with a fallback to "the first stream that has
+dimensions" for output that does not label its streams. That fallback is not hypothetical: it is
+what three existing parser tests were built on, and they caught the regression immediately.
+
+### Verified
+
+- A test tone through the interop produced callbacks every 96–106 ms against a 100 ms buffer, which
+  is the device consuming samples at realtime rate — and **confirmed audible** by ear.
+- A clip with a real audio track: the speaker button enabled itself (so `HasAudio` was detected), the
+  flyout showed **80%**, and playback ran with the decoder invoked exactly as intended:
+  `-ss 0 -i WITHSOUND.mp4 -vn -f s16le -acodec pcm_s16le -ar 48000 -ac 2 -`.
+- After the clip ended: **no leftover ffmpeg processes**, no errors logged.
+- `dotnet test` — **316/316 passing** (was 302).
+
+### Worth knowing
+
+**Audio is macOS-only for now.** `SilentAudioOutput` reports itself unavailable on Windows and Linux,
+so the player skips decoding entirely rather than running ffmpeg to throw the samples away, and the
+volume control disables itself. Adding a platform means implementing one interface with four methods.
+
+**Video and audio are started together and each runs at its own rate.** No audio clock, no frame
+dropping. For preview-length clips the drift is not perceptible, but this is the thing to revisit
+first if playing something long ever looks out of step — the fix is to slave the video pacing to the
+audio position rather than to a stopwatch.
+
+**Seeking restarts the audio decoder.** `-ss` before `-i` keeps that fast, but a seek is a new
+process, not a repositioning of the existing one.

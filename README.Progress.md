@@ -1355,17 +1355,25 @@ above it by construction rather than by coincidence.
 The lesson generalises: **anything docked between a splitter and the content it resizes changes what
 the splitter does.**
 
-### The size bar, quieter
+### The size bar became a View flyout
 
-Label at 10px and 40% opacity, slider 110px wide, no border, no background of its own.
+The strip was replaced rather than tuned further. Two rounds of fixing it — first for overlaying the
+tiles, then for being clipped by the splitter and misaligning its own label — were symptoms of a
+control that had no good place to live: it competed with the splitter for the bottom edge of the
+panel and had to be kept clear of it by hand.
 
-An earlier attempt pinned the slider to `Height="20"`. That is shorter than the Fluent template
-needs, so the thumb was **clipped in half** and the track was pushed off centre, leaving the "Size"
-label misaligned with the line it labels. Clamping a control shorter than its template fights the
-template and loses. The slider keeps its natural height now, with `MinHeight="0"` and `Padding="0"`
-to keep it compact, and the strip carries the spacing instead. The whole thumbnail region — grid and bar together — now shares one surface (`#10FFFFFF`,
-the same faint overlay the preview pane uses) with the ListBox transparent on top, so the bar no
-longer reads as a separate black band beneath the tiles.
+A **View** button in the toolbar, right of the filter, now opens a flyout holding the thumbnail size
+slider with a live `px` readout. It costs no permanent space, cannot collide with the splitter, and
+is the place for the display controls that follow — sort order, what the tiles show — without each
+one having to find room in the chrome.
+
+With the strip gone, the thumbnail region is a plain `Panel` again: the grid and the empty-state
+overlay, on one surface.
+
+*Superseded note, kept because the trap is easy to hit again:* an attempt to make the strip compact
+pinned the slider to `Height="20"`. That is shorter than the Fluent template needs, so the thumb was
+**clipped in half** and the track pushed off centre, leaving the label misaligned with the line it
+labelled. Clamping a control shorter than its template fights the template and loses.
 
 ### A real filter icon
 
@@ -1379,3 +1387,57 @@ foreground.
   empties, and the size bar stays pinned at the bottom of the thumbnail region, never under the
   splitter.
 - `dotnet test` — **302/302 passing**.
+
+### Icons
+
+Both toolbar icons are `PathIcon` vectors, so they scale with the button and take the theme
+foreground rather than depending on a font having the glyph:
+
+| Button | Geometry |
+| ------ | -------- |
+| Search scope | Funnel — `M2 4 H22 L14 13 V20 L10 18 V13 Z` |
+| View | Three slider tracks with knobs, the standard "tune" geometry |
+
+The first attempt at the View icon was hand-drawn from two tracks and read as a muddle at 14px.
+Small icons are mostly negative space, and a shape that works at 24px often does not survive the
+reduction — the three-track version was drawn for this size and does.
+
+### Verified
+
+- View sits right of the filter; the flyout opens on click and its slider drives the grid live
+  (dragged to **261 px**, tiles resized immediately).
+- The thumbnail panel has no chrome of its own now, and the splitter has nothing to collide with.
+- `dotnet test` — **302/302 passing**.
+
+### Fixed — the grid did not re-flow when tiles grew
+
+Reported from testing: dragging the size slider **up** made the tiles zoom in place and overlap each
+other, while the column count stayed put. Dragging **down**, or resizing the panel, laid out
+correctly.
+
+**Cause.** `VirtualizingWrapPanel` learned its cell size by measuring a live tile — deliberately, so
+the layout followed the zoom slider without the panel needing to know the slider exists. That
+inference was sound; the assumption underneath it was not. **A child invalidating its own measure
+does not reliably re-run its parent's `MeasureOverride` in Avalonia.** So the tiles re-measured
+themselves and grew, while the panel kept laying out on the cell size it learned last time.
+
+Instrumenting the measure pass made it obvious: across a 20-step drag the panel measured **twice**,
+and its cell size stalled at 192px while the slider reached 283.
+
+The asymmetry follows from that. Tiles bigger than a stale cell overflow it — nothing clips them, so
+they bleed into their neighbours. Tiles smaller than a stale cell simply sit inside it and look
+fine, which is why only one direction appeared broken. Resizing the panel changed `availableSize`,
+which *does* force a measure, so that appeared to fix it too.
+
+**Fix.** An `ItemWidth` styled property on the panel, registered with `AffectsMeasure` and bound to
+the same `ThumbnailSize`. The panel still does not lay out from it — a live tile remains the only
+thing that knows the true cell size including margins and caption — it exists solely to guarantee the
+invalidation. The probe is also explicitly invalidated before measuring, since `Measure` is a no-op
+when a control still considers itself valid for the same constraint and would otherwise hand back
+the previous size.
+
+After the fix the same drag produced **22 measure passes**, tracking the slider continuously
+(273 → 278 → 283 → 288 → 293).
+
+The general shape of this one is worth keeping: **inferring layout state from a child is fine, but
+the parent still has to be told when to look again.**

@@ -82,6 +82,32 @@
                 Command="{Binding ToggleFolderPanelCommand}"
                 ToolTip.Tip="Show or hide the folders panel (⌘B)" />
 
+        <!--
+          View options. A flyout rather than a strip in the thumbnail panel: it costs no permanent
+          space, and it is the place to put the display controls that follow (sort order, what the
+          tiles show) without each one having to find room in the chrome.
+        -->
+        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Padding="10,4"
+                ToolTip.Tip="View options">
+          <!-- Three slider tracks with knobs at different positions: "adjust how this looks". -->
+          <PathIcon Width="14" Height="14"
+                    Data="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedRight">
+              <StackPanel Width="230" Spacing="6" Margin="4">
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="Thumbnail size"
+                             FontSize="11" VerticalAlignment="Center" />
+                  <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
+                             FontSize="11" Opacity="0.5" VerticalAlignment="Center"
+                             Text="{Binding ThumbnailSize, StringFormat='{}{0:F0} px'}" />
+                </DockPanel>
+                <Slider Minimum="90" Maximum="320" Value="{Binding ThumbnailSize}" />
+              </StackPanel>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+
         <!-- Scope, as the filter control on the right of the field. -->
         <ToggleButton DockPanel.Dock="Right" Margin="8,0,0,0" Padding="10,4"
                       IsVisible="{Binding HasWorkspace}"
@@ -212,35 +238,16 @@
         </Border>
 
         <!--
+          One surface for the whole thumbnail region. View controls live in the toolbar's View
+          flyout rather than in a strip here: a strip docked above the splitter competed with it
+          for space and had to be kept clear of it by hand.
+        -->
+        <Panel Grid.Row="1" Background="#10FFFFFF">
+
+        <!--
           Sits in the same cell as the grid, after it so it draws on top. IsHitTestVisible is left
           on so the button works, but the panel only exists while the grid is empty.
         -->
-        <!--
-          The size bar docks inside the thumbnail region rather than occupying a row of its own.
-          A row of its own sat between the grid and the splitter, so dragging the splitter resized
-          *it* instead of the thumbnails - the bar grew, the grid collapsed to nothing, and the
-          slider was left floating in the middle of an empty panel.
-        -->
-        <DockPanel Grid.Row="1" Background="#10FFFFFF">
-
-          <Border DockPanel.Dock="Bottom" Padding="8,2,8,4"
-                  IsVisible="{Binding !ShowEmptyState}">
-            <!--
-              The slider keeps its natural height. Clamping it shorter than its template needs
-              clipped the thumb in half and pushed the track off centre, so the label no longer
-              lined up with it. Compactness comes from MinHeight on the template parts instead.
-            -->
-            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
-              <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.4" FontSize="10" />
-              <Slider Minimum="90" Maximum="320" Width="110"
-                      MinHeight="0" Padding="0"
-                      Value="{Binding ThumbnailSize}" VerticalAlignment="Center"
-                      ToolTip.Tip="Thumbnail size" />
-            </StackPanel>
-          </Border>
-
-          <Panel>
-
         <Panel IsVisible="{Binding ShowEmptyState}" ZIndex="1">
           <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                       MaxWidth="380" Spacing="10">
@@ -264,7 +271,8 @@
             <ItemsPanelTemplate>
               <!-- Virtualizing: only tiles in view are realized, so opening a folder of 50,000
                    files does not queue 50,000 thumbnail jobs. -->
-              <controls:VirtualizingWrapPanel />
+              <controls:VirtualizingWrapPanel
+                  ItemWidth="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).ThumbnailSize}" />
             </ItemsPanelTemplate>
           </ListBox.ItemsPanel>
           <ListBox.ItemTemplate>
@@ -316,8 +324,7 @@
           </ListBox.ItemTemplate>
         </ListBox>
 
-          </Panel>
-        </DockPanel>
+        </Panel>
 
         <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="#22FFFFFF" />
 

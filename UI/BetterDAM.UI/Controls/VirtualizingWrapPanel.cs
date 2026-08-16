@@ -27,6 +27,27 @@ public class VirtualizingWrapPanel : VirtualizingPanel
     /// </summary>
     private const int BufferRows = 1;
 
+    /// <summary>
+    /// The tile width the items are being templated at.
+    ///
+    /// The panel does **not** lay out from this value — it measures a live tile, which is the only
+    /// thing that knows the true cell size including margins and caption. This exists purely so a
+    /// size change reliably invalidates the panel's measure. Avalonia does not guarantee that a
+    /// child invalidating its own measure re-runs the parent's <see cref="MeasureOverride"/>, so
+    /// without it the layout kept stale cells while the tiles themselves grew, and the tiles
+    /// overflowed into each other.
+    /// </summary>
+    public static readonly StyledProperty<double> ItemWidthProperty =
+        AvaloniaProperty.Register<VirtualizingWrapPanel, double>(nameof(ItemWidth), double.NaN);
+
+    public double ItemWidth
+    {
+        get => GetValue(ItemWidthProperty);
+        set => SetValue(ItemWidthProperty, value);
+    }
+
+    static VirtualizingWrapPanel() => AffectsMeasure<VirtualizingWrapPanel>(ItemWidthProperty);
+
     private readonly Dictionary<int, Control> _realized = [];
     private readonly Dictionary<Control, object?> _recycleKeys = [];
     private readonly Dictionary<object, Stack<Control>> _recyclePool = [];
@@ -135,6 +156,11 @@ public class VirtualizingWrapPanel : VirtualizingPanel
         {
             return;
         }
+
+        // Invalidated first because Measure is a no-op when the control still considers itself
+        // valid for the same constraint, which would hand back the previous tile size and pin the
+        // layout to it.
+        probe.InvalidateMeasure();
 
         // Measured unconstrained so the tile reports its natural size; the zoom slider changes it.
         probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));

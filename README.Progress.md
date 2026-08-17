@@ -1517,3 +1517,128 @@ audio position rather than to a stopwatch.
 
 **Seeking restarts the audio decoder.** `-ss` before `-i` keeps that fast, but a seek is a new
 process, not a repositioning of the existing one.
+
+---
+
+## Phase 11 — Fullscreen and zoom ✅
+
+Fullscreen inspection for both stills and video, with scroll-to-zoom and drag-to-pan.
+
+### One viewer, not two
+
+`ZoomPanViewer` transforms whatever child it is given, so a still and a video surface become
+inspectable through the same control instead of each growing its own zoom implementation. That is
+also what makes **side-by-side comparison** a matter of placing two of them beside each other later,
+with their scale and offset optionally linked.
+
+The child is laid out at its natural size and moved with a render transform, so zooming costs a
+transform rather than a layout pass — and scale means what it says: **at 1, one content pixel covers
+one screen pixel.** That matters for the stated purpose. "Fit" is therefore a computed scale rather
+than a separate mode, and 100% is a real 1:1.
+
+### The arithmetic is separate from the control
+
+`ZoomState` holds the maths with no dependency on a window, so the fiddly parts are tested rather
+than eyeballed:
+
+- **Zoom anchors on the pointer.** The content point under the cursor is computed before the scale
+  change and put back under it afterwards, which is what makes wheel zoom feel like it is pulling
+  the image rather than scrolling past it.
+- **Panning cannot lose the image.** Offsets are clamped to the content's own edges, and any axis
+  where the content is smaller than the viewport is centred rather than draggable.
+- **Resizing the window keeps the chosen magnification**; loading different content refits. The
+  user's zoom is not the window manager's to reset.
+- Trackpad deltas are fractional, so the step is raised to that power — a slow two-finger scroll is
+  smooth instead of jumping a notch at a time.
+
+### The fullscreen window
+
+A separate window rather than a mode of the main one: the main window keeps its layout and selection
+untouched, and closing needs nothing restored. Video **keeps playing** into it, because the player
+pushes frames to whoever is listening rather than owning one view — the fullscreen surface simply
+subscribes to the same events.
+
+Entry points: the ⛶ button on the transport, the one on the still preview, double-clicking a still,
+or **F**. Inside: scroll to zoom, drag to pan, double-click to toggle fit ↔ 100%, `0` fit, `1` actual
+size, space to play/pause, Esc or F to leave.
+
+**F is handled in code-behind rather than as a KeyBinding** so it can be ignored while a text box has
+focus — otherwise typing "f" into the search box would throw you into fullscreen.
+
+### Verified
+
+- `dotnet test` — **327/327 passing** (was 316), 11 of them covering the zoom arithmetic: anchoring,
+  clamping at both ends, pan limits, centring, refit-on-new-content and keep-scale-on-resize.
+- Driven through the UI: see the follow-up section below, which is where the interesting bugs were.
+
+### Worth knowing
+
+**Zooming video magnifies a 720p frame.** `FfmpegFrameSource` caps decode at `MaxDecodeHeight = 720`
+regardless of the Quality setting, because decoding a 5.3K frame to shrink it into a preview pane is
+exactly the waste proxies exist to avoid. Zoom therefore works on video and is genuinely useful for
+framing and motion, but it is **not** pixel-level quality inspection of a 4K source — past about 1:1
+of the decoded frame you are looking at upscaling. Lifting that requires decoding at native
+resolution when zoomed in, which is a real change to the decode path rather than a constant edit:
+the frame buffers are pooled by size and a 5.3K BGRA frame is ~30 MB.
+
+**Stills are inspected at full resolution**, since the preview bitmap is decoded at up to 1600px and
+the source is re-read at native size — so 100% on a photo is a true 1:1.
+
+### Follow-up — five fixes from testing
+
+**It was not actually fullscreen.** Three attempts failed before the cause turned up:
+
+| Attempt | Result |
+| ------- | ------ |
+| `WindowState="FullScreen"` in XAML | Ordinary small window |
+| Sized manually to `screen.Bounds`, `SystemDecorations="None"` | Filled the screen, but the macOS menu bar drew over the top |
+| `WindowState = FullScreen` in `Opened`, then posted to the dispatcher | No effect at all |
+
+The cause was none of those things: **macOS will not take an owned window fullscreen.** The viewer was
+shown with `Show(this)`, which makes it a child of the main window, and the request was silently
+ignored. Shown with `Show()` instead, `WindowState.FullScreen` works exactly as advertised — no menu
+bar, no chrome, the whole screen.
+
+Worth remembering, because the failure mode is silence: the window simply stays the size it was.
+
+**The initial fit was computed at the wrong size.** The window is created at an ordinary size and
+only *then* goes fullscreen, so the first fit measured the small viewport and the zoom opened at 57%.
+The rule that resizing preserves magnification — correct for a user resizing a window — was
+preserving a number that had never been right. The viewer now refits on resize until the view is
+first touched by hand, after which the magnification is the user's and resizing leaves it alone.
+
+**Space re-triggered the last button instead of fitting.** Clicking *100%* left that button focused,
+and a focused button takes Space as "press me". Fixed by handling keys on the **tunnel** rather than
+the bubble, so the viewer's shortcuts run before any focused control sees them — safe here because
+there is nothing to type into — and by making the overlay buttons non-focusable as well.
+
+**Video opened black while paused.** Frames are pushed to whoever is listening, so a surface created
+after the last frame was sent has nothing to show. `RefreshFrameAsync` re-emits the frame at the
+current position when a new view appears.
+
+**The transport is now one control, not two.** `VideoTransport` is shared by the inline preview and
+the viewer, so they cannot drift apart. Its fullscreen button raises an event rather than acting,
+because what it means depends on the host: enter from the main window, leave from the viewer.
+
+### Also added
+
+- **Space fits**, alongside `0`. Play/pause in the viewer is on the transport, `K` or `Enter` —
+  resetting the view is what an inspection pass wants constantly, so it gets the big key.
+- **← and →** move through the set, sharing the main ViewModel so the grid selection follows. Stops
+  at the ends rather than wrapping, which would give no clue the last file had been reached.
+- **A counter**, top-left: `4 of 17 · IMG001.png`.
+- **The hint fades** after four seconds, via a transition on its opacity.
+
+### Verified in the running app
+
+- Fullscreen covers the entire screen, menu bar included, and reads **Fit** on open.
+- **→ →** moved from *2 of 17 · DETAIL.png* to *4 of 17 · IMG001.png*.
+- *100%* then **space** returned the label to **Fit**.
+- A video opened fullscreen shows its paused frame and carries the complete transport — step, play,
+  volume, scrub, quality.
+- `dotnet test` — **327/327 passing**.
+
+### Worth knowing
+
+**Fullscreen uses a macOS Space.** That is what native fullscreen means on the platform, and it is
+the price of covering the menu bar; the alternative that avoids it leaves the menu bar on top.

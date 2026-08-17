@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using BetterDAM.Core.Models;
 using BetterDAM.UI.Services;
@@ -119,6 +120,42 @@ public partial class MainWindow : Window
         {
             _ = viewModel.CloseWorkspaceCommand.ExecuteAsync(null);
         }
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+
+        // Ignored while typing: "f" belongs to the search box when it has focus.
+        if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.None && FocusManager?.GetFocusedElement() is not TextBox)
+        {
+            OpenFullscreen();
+            e.Handled = true;
+        }
+    }
+
+    private void OnPreviewDoubleTapped(object? sender, TappedEventArgs e) => OpenFullscreen();
+
+    private void OnFullscreen(object? sender, RoutedEventArgs e) => OpenFullscreen();
+
+    private void OnTransportFullscreen(object? sender, EventArgs e) => OpenFullscreen();
+
+    /// <summary>
+    /// Opens the current selection for inspection. Video keeps playing into the fullscreen surface
+    /// because the player pushes frames to whoever is listening, rather than owning one view.
+    /// </summary>
+    private void OpenFullscreen()
+    {
+        if (DataContext is not MainWindowViewModel viewModel || viewModel.SelectedItem is null)
+        {
+            return;
+        }
+
+        // Shown without an owner: macOS refuses to take a child window fullscreen, so an owned
+        // viewer silently stays a normal window.
+        var window = new MediaViewerWindow();
+        window.Show();
+        window.Attach(viewModel);
     }
 
     private void OnOpenFolder(object? sender, EventArgs e)

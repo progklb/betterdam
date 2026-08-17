@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:BetterDAM.UI.Controls"
+        xmlns:vm="using:BetterDAM.UI.ViewModels"
+        x:Class="BetterDAM.UI.Views.MediaViewerWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="BetterDAM"
+        Background="Black"
+        ShowInTaskbar="False">
+
+  <Panel>
+
+    <!-- One viewer for both media types: the child differs, the interaction does not. -->
+    <controls:ZoomPanViewer x:Name="Viewer">
+      <Panel>
+        <Image x:Name="Still" />
+        <controls:VideoSurface x:Name="Surface" />
+      </Panel>
+    </controls:ZoomPanViewer>
+
+    <!--
+      Overlay chrome, outside the viewer so it never zooms with the content.
+    -->
+    <Border VerticalAlignment="Top" HorizontalAlignment="Right" Margin="16"
+            Background="#B0000000" CornerRadius="6" Padding="10,6">
+      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <TextBlock x:Name="ZoomLabel" Text="Fit" FontSize="12" VerticalAlignment="Center"
+                   MinWidth="52" TextAlignment="Right" />
+        <Button Content="Fit" FontSize="11" Padding="8,2" Click="OnFit" Focusable="False" />
+        <Button Content="100%" FontSize="11" Padding="8,2" Click="OnActualSize" Focusable="False" />
+        <Button Content="✕" FontSize="11" Padding="8,2" Click="OnClose" Focusable="False" ToolTip.Tip="Close (Esc)" />
+      </StackPanel>
+    </Border>
+
+    <!-- Position through the set, so browsing with the arrows has somewhere to report to. -->
+    <Border x:Name="Counter" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="16"
+            Background="#B0000000" CornerRadius="6" Padding="10,6">
+      <TextBlock x:Name="CounterLabel" FontSize="12" />
+    </Border>
+
+    <!-- The same transport as the main window, not a second implementation of it. -->
+    <controls:VideoTransport x:Name="Transport"
+                             VerticalAlignment="Bottom"
+                             DataContext="{Binding Player}"
+                             IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsVideoSelected}"
+                             FullscreenRequested="OnLeaveFullscreen" />
+
+    <!--
+      Shown on arrival and then faded out: useful the first time, clutter every time after.
+    -->
+    <Border x:Name="Hint" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="24,24,24,90"
+            Background="#B0000000" CornerRadius="6" Padding="12,7" IsHitTestVisible="False">
+      <Border.Transitions>
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.8" />
+        </Transitions>
+      </Border.Transitions>
+      <TextBlock FontSize="11" Opacity="0.85"
+                 Text="Scroll to zoom · drag to pan · space to fit · ← → to browse · Esc to close" />
+    </Border>
+
+  </Panel>
+</Window>

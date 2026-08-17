@@ -370,6 +370,15 @@ public sealed partial class VideoPlayerViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Re-emits the frame at the current position, for a surface that has only just appeared —
+    /// otherwise a view opened while paused stays black until playback is started.
+    /// </summary>
+    public Task RefreshFrameAsync()
+        => IsPlaying || _proxy is null
+            ? Task.CompletedTask
+            : ShowFrameAtAsync(TimeSpan.FromSeconds(PositionSeconds), CancellationToken.None);
+
     private void StartPlayback(TimeSpan from)
     {
         if (_proxy is not { } proxy)

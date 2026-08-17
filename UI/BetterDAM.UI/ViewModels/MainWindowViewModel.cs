@@ -162,6 +162,33 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public GridLength FolderColumnWidth => IsFolderPanelVisible ? new GridLength(240) : new GridLength(0);
 
+    /// <summary>
+    /// Moves the selection through the grid, for arrow-key browsing in the fullscreen viewer.
+    /// Stops at the ends rather than wrapping: silently looping back to the first file gives no
+    /// clue that the last one was reached.
+    /// </summary>
+    [RelayCommand]
+    private void SelectNext() => MoveSelection(1);
+
+    [RelayCommand]
+    private void SelectPrevious() => MoveSelection(-1);
+
+    private void MoveSelection(int delta)
+    {
+        if (MediaItems.Count == 0)
+        {
+            return;
+        }
+
+        var index = SelectedItem is null ? -1 : MediaItems.IndexOf(SelectedItem);
+        var target = Math.Clamp(index + delta, 0, MediaItems.Count - 1);
+
+        if (target != index)
+        {
+            SelectedItem = MediaItems[target];
+        }
+    }
+
     [RelayCommand]
     private void ToggleFolderPanel() => IsFolderPanelVisible = !IsFolderPanelVisible;
 

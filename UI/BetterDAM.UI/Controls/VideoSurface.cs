@@ -20,6 +20,12 @@ public sealed class VideoSurface : Control
     private WriteableBitmap? _bitmap;
     private PixelSize _size;
 
+    /// <summary>
+    /// The decoded frame size, or empty before the first frame. Fullscreen needs it to know what
+    /// 100% means; it is the decoded size, which is not necessarily the source's.
+    /// </summary>
+    public Size FrameSize => new(_size.Width, _size.Height);
+
     /// <summary>Copies a frame into the backing bitmap. Must be called on the UI thread.</summary>
     public void Present(VideoFrame frame)
     {

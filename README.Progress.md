@@ -1642,3 +1642,117 @@ because what it means depends on the host: enter from the main window, leave fro
 
 **Fullscreen uses a macOS Space.** That is what native fullscreen means on the platform, and it is
 the price of covering the menu bar; the alternative that avoids it leaves the menu bar on top.
+
+---
+
+## Interlude — Viewer refinements ✅
+
+### Portrait video was stretched
+
+Reported from real footage. The cause was rotation metadata, and it is worth spelling out because
+nothing in the chain looks wrong on its own:
+
+- Cameras and phones record portrait footage as a **landscape stream plus a rotation**. ffprobe
+  reports the *stored* size — 1920×1080 with `"rotation": 90`.
+- **ffmpeg applies that rotation when decoding.** Frames arrive 1080×1920.
+- The frame source scaled to the dimensions ffprobe reported, so `scale=1920:1080` squashed portrait
+  content into a landscape frame.
+
+`VideoSurface` letterboxes correctly and `ZoomPanViewer` fits correctly — they were both faithfully
+presenting a frame that had already been ruined.
+
+Fixed where it starts: the probe now reads the display matrix and swaps width and height on a quarter
+turn, so `VideoMediaInfo` describes what frames will actually look like rather than how they are
+stored. The old `rotate` tag is read too, for files that predate side data. Proxies were never
+affected — they scale with `-2:height`, which derives the width after rotation.
+
+Confirmed against a real rotated file: reported **720×1280**, decode target **404×720**. Unrotated
+files are untouched. *Aspect ratio confirmed correct in the app by the user.*
+
+### Opening the viewer
+
+- **Double-clicking a thumbnail** opens it, which is what double-click means everywhere else.
+- **Right-click** offers *Open Fullscreen* and *Reveal in Finder* — named for the platform's own file
+  manager, so it reads "Show in Explorer" on Windows. Both act on the **right-clicked tile**, not the
+  selected one, since right-clicking something that was not selected should act on what was clicked.
+
+### Fullscreen or maximised, as a setting
+
+macOS treats these as different things and the difference matters here: real fullscreen hides the
+menu bar but takes a **Space of its own**, with the animation and context switch that implies — a lot
+of ceremony for a look at one photo. The View flyout now offers both, and **Maximised is the
+default**: it fills the current screen, stays on this desktop, and opens instantly.
+
+Fullscreen remains available for when the menu bar is genuinely in the way. The choice is persisted.
+
+### Verified in the running app
+
+- Double-clicking a tile opened the viewer **maximised**, counter reading *3 of 18 · IMG000.png*.
+- The View flyout shows **Open viewer as: Maximised window / Fullscreen**, maximised selected.
+- Rotation verified end to end against the real file, through the real probe.
+- `dotnet test` — **343/343 passing** (was 327).
+
+### Worth knowing
+
+**The context menu was confirmed working by the user** — both items — after automation could not
+reach it (the app lost focus mid-test while the machine was in use). The platform command is covered
+by tests regardless, including the Windows `/select,` quirk where a space after the comma opens
+Documents instead of selecting the file.
+
+---
+
+## Interlude — Full-quality viewing ✅
+
+Reported: images looked compressed fullscreen. They were. The viewer was showing the **preview**,
+which is deliberately not the photograph:
+
+- capped at **1600px** on the long edge, and
+- re-encoded as **JPEG quality 85**.
+
+Both are right for a grid of hundreds of tiles and wrong for judging a shot. On a 24MP file that is a
+quarter of the linear resolution plus a lossy round-trip — and it made the zoom readout dishonest,
+because "100%" meant one *preview* pixel per screen pixel, not one image pixel.
+
+### What now happens
+
+`SkiaFullImageDecoder` decodes the original at native resolution and hands back **raw BGRA** rather
+than encoded bytes — re-encoding to pass it along would reintroduce exactly the loss being removed.
+The UI blits those pixels straight into a `WriteableBitmap`.
+
+The viewer shows the cached rendition first, because it is already in memory and appears instantly,
+then swaps in the full decode when it arrives. Swapping refits **only if the view had not been
+adjusted**, so a zoom set while waiting is not thrown away. `NaturalSize` follows the real image, so
+100% is now a true 1:1.
+
+Measured on a 6000×4000 JPEG: **91 MB decoded in 1.2s**. A 3000×2000 PNG: 22 MB in 93ms. The delay
+is covered by the rendition being on screen throughout.
+
+### Not keeping it around
+
+A 24MP image is ~96 MB as BGRA. It is decoded on demand when the viewer opens, replaced when the
+selection moves — a late-arriving decode checks the selection has not changed before displacing what
+is on screen — and released when the viewer closes.
+
+Very large images are decoded downscaled, above about **80MP**: that is already 320 MB, and a
+panorama should not be able to exhaust memory from a double-click. The codec is asked to scale during
+decode rather than decoding everything and shrinking it.
+
+### Verified
+
+- The decoder run against real files through its real code path: **6000×4000 in, 6000×4000 out**,
+  where the preview pipeline would have produced 1600×1067.
+- `dotnet test` — **349/349 passing** (was 343). Six new: native size preserved, buffer matches
+  dimensions, JPEG sources, video rejected, missing file returns null rather than throwing, and RAW
+  with no extractor yields nothing.
+- **Not driven through the UI by hand** — the machine was in use, so automation stopped rather than
+  taking over the screen.
+
+### Worth knowing
+
+**RAW still goes through the embedded preview.** That is the largest image available without a
+demosaicing library, and for most cameras it is the full-size JPEG the camera itself produced — so
+this is a large improvement on the 1600px rendition, but it is not a RAW development. Actual RAW
+decoding would mean taking on something like LibRaw.
+
+**The grid and inline preview are unchanged.** They still use the fast JPEG renditions, which is what
+keeps browsing quick; only the viewer pays for full quality.

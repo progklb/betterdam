@@ -108,6 +108,20 @@
                              Text="{Binding ThumbnailSize, StringFormat='{}{0:F0} px'}" />
                 </DockPanel>
                 <Slider Minimum="90" Maximum="320" Value="{Binding ThumbnailSize}" />
+
+                <Separator Margin="0,4" />
+
+                <TextBlock Text="Open viewer as" FontSize="11" />
+                <StackPanel Spacing="2">
+                  <RadioButton GroupName="ViewerMode" FontSize="11"
+                               Content="Maximised window"
+                               IsChecked="{Binding !ViewerOpensFullscreen}"
+                               ToolTip.Tip="Fills the current screen and stays on this desktop" />
+                  <RadioButton GroupName="ViewerMode" FontSize="11"
+                               Content="Fullscreen"
+                               IsChecked="{Binding ViewerOpensFullscreen}"
+                               ToolTip.Tip="Hides the menu bar, but macOS gives it a Space of its own" />
+                </StackPanel>
               </StackPanel>
             </Flyout>
           </Button.Flyout>
@@ -283,7 +297,16 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:MediaItemViewModel">
               <StackPanel Width="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).ThumbnailSize}"
-                          Margin="4" Spacing="4">
+                          Margin="4" Spacing="4"
+                          DoubleTapped="OnThumbnailDoubleTapped">
+                <StackPanel.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Open Fullscreen" Click="OnFullscreenFromMenu" />
+                    <Separator />
+                    <MenuItem Header="{x:Static svc:RevealInFileManager.MenuHeader}"
+                              Click="OnRevealInFileManager" />
+                  </ContextMenu>
+                </StackPanel.ContextMenu>
                 <Border Height="{Binding $parent[StackPanel].Width}"
                         Background="#18FFFFFF" CornerRadius="3">
                   <Panel>

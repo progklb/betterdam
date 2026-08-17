@@ -1,5 +1,7 @@
 using Avalonia;
+using BetterDAM.Preview.Video;
 using BetterDAM.UI.Controls;
+using BetterDAM.UI.Services;
 using Xunit;
 
 namespace BetterDAM.Tests;
@@ -152,4 +154,108 @@ public class ZoomStateTests
         Assert.False(state.HasContent);
         Assert.Equal(1, state.FitScale);
     }
+}
+
+public class VideoRotationTests
+{
+    /// <summary>A one-video-stream probe result, with whatever extra stream properties are needed.</summary>
+    private static string Json(string extraStreamProperties)
+        => "{\"streams\":[{\"codec_type\":\"video\",\"width\":1920,\"height\":1080,"
+           + "\"avg_frame_rate\":\"30/1\""
+           + extraStreamProperties
+           + "}],\"format\":{\"duration\":\"5\"}}";
+
+    [Fact]
+    public void An_unrotated_stream_keeps_its_dimensions()
+    {
+        var info = FfprobeVideoInfoProvider.Parse(Json(""));
+
+        Assert.Equal(1920, info!.Width);
+        Assert.Equal(1080, info.Height);
+    }
+
+    [Theory]
+    [InlineData(90)]
+    [InlineData(-90)]
+    [InlineData(270)]
+    public void A_quarter_turn_swaps_them(int degrees)
+    {
+        // ffmpeg applies the rotation when decoding, so frames arrive portrait. Reporting the
+        // stored landscape size would make the scaler squash them.
+        var info = FfprobeVideoInfoProvider.Parse(
+            Json(",\"side_data_list\":[{\"rotation\":" + degrees + "}]"));
+
+        Assert.Equal(1080, info!.Width);
+        Assert.Equal(1920, info.Height);
+    }
+
+    [Fact]
+    public void A_half_turn_does_not()
+    {
+        var info = FfprobeVideoInfoProvider.Parse(Json(",\"side_data_list\":[{\"rotation\":180}]"));
+
+        Assert.Equal(1920, info!.Width);
+        Assert.Equal(1080, info.Height);
+    }
+
+    [Fact]
+    public void The_legacy_rotate_tag_is_understood()
+    {
+        // Older files carry rotation as a tag rather than as display-matrix side data.
+        var info = FfprobeVideoInfoProvider.Parse(Json(",\"tags\":{\"rotate\":\"90\"}"));
+
+        Assert.Equal(1080, info!.Width);
+        Assert.Equal(1920, info.Height);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(90, true)]
+    [InlineData(-90, true)]
+    [InlineData(180, false)]
+    [InlineData(270, true)]
+    [InlineData(360, false)]
+    public void Quarter_turns_are_recognised(double degrees, bool expected)
+        => Assert.Equal(expected, FfprobeVideoInfoProvider.IsQuarterTurn(degrees));
+}
+
+public class RevealInFileManagerTests
+{
+    private const string Path = "/library/namibia/IMG001.jpg";
+
+    [Fact]
+    public void macOS_selects_the_file_rather_than_opening_it()
+    {
+        var (command, arguments) = RevealInFileManager.BuildCommand(Path, RevealInFileManager.PlatformKind.MacOS);
+
+        // -R reveals; without it "open" would launch the file in Preview.
+        Assert.Equal("open", command);
+        Assert.Equal(["-R", Path], arguments);
+    }
+
+    [Fact]
+    public void Windows_puts_no_space_after_the_select_comma()
+    {
+        var (command, arguments) = RevealInFileManager.BuildCommand(Path, RevealInFileManager.PlatformKind.Windows);
+
+        Assert.Equal("explorer.exe", command);
+
+        // "/select, path" would be read as two arguments and open Documents instead.
+        Assert.Single(arguments);
+        Assert.DoesNotContain(", ", arguments[0]);
+        Assert.EndsWith(Path, arguments[0]);
+    }
+
+    [Fact]
+    public void Elsewhere_the_containing_folder_is_opened()
+    {
+        var (command, arguments) = RevealInFileManager.BuildCommand(Path, RevealInFileManager.PlatformKind.Other);
+
+        Assert.Equal("xdg-open", command);
+        Assert.Equal([System.IO.Path.GetDirectoryName(Path)], arguments);
+    }
+
+    [Fact]
+    public void The_menu_names_the_platform_s_own_file_manager()
+        => Assert.Contains(RevealInFileManager.MenuHeader, (string[])["Reveal in Finder", "Show in Explorer", "Show in File Manager"]);
 }

@@ -39,6 +39,7 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IThumbnailGenerator, RawThumbnailGenerator>();
         services.AddSingleton<IThumbnailGenerator, FfmpegVideoThumbnailGenerator>();
         services.AddSingleton<IThumbnailService, ThumbnailService>();
+        services.AddSingleton<IFullImageDecoder, SkiaFullImageDecoder>();
 
         services.AddSingleton<IVideoInfoProvider, FfprobeVideoInfoProvider>();
         services.AddSingleton<IVideoProxyService, FfmpegVideoProxyService>();

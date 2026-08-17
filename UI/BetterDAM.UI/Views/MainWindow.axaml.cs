@@ -136,6 +136,49 @@ public partial class MainWindow : Window
 
     private void OnPreviewDoubleTapped(object? sender, TappedEventArgs e) => OpenFullscreen();
 
+    /// <summary>
+    /// Double-clicking a tile opens it, which is what double-clicking a thumbnail means everywhere
+    /// else. The single click that precedes it has already selected the item.
+    /// </summary>
+    private void OnThumbnailDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        OpenFullscreen();
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Opens the right-clicked item, selecting it first: right-clicking a tile that was not already
+    /// selected should show that tile, not whatever happened to be selected before.
+    /// </summary>
+    private void OnFullscreenFromMenu(object? sender, RoutedEventArgs e)
+    {
+        if (ItemFor(sender) is { } item && DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.SelectedItem = item;
+        }
+
+        OpenFullscreen();
+    }
+
+    /// <summary>The item a context-menu click came from; the menu carries the tile's DataContext.</summary>
+    private MediaItemViewModel? ItemFor(object? sender)
+        => (sender as Control)?.DataContext as MediaItemViewModel
+           ?? (DataContext as MainWindowViewModel)?.SelectedItem;
+
+    /// <summary>
+    /// Reveals the right-clicked item, which is not necessarily the selected one — the context menu
+    /// carries its own DataContext, so it works even on a tile that was never clicked.
+    /// </summary>
+    private void OnRevealInFileManager(object? sender, RoutedEventArgs e)
+    {
+        var item = ItemFor(sender);
+
+        if (item is not null)
+        {
+            RevealInFileManager.Reveal(item.File.FullPath);
+        }
+    }
+
     private void OnFullscreen(object? sender, RoutedEventArgs e) => OpenFullscreen();
 
     private void OnTransportFullscreen(object? sender, EventArgs e) => OpenFullscreen();
@@ -153,9 +196,12 @@ public partial class MainWindow : Window
 
         // Shown without an owner: macOS refuses to take a child window fullscreen, so an owned
         // viewer silently stays a normal window.
+        // Attached before showing, so it knows whether to open fullscreen or maximised. Shown
+        // without an owner: macOS refuses to take a child window fullscreen, and an owned viewer
+        // would silently stay a normal window.
         var window = new MediaViewerWindow();
-        window.Show();
         window.Attach(viewModel);
+        window.Show();
     }
 
     private void OnOpenFolder(object? sender, EventArgs e)

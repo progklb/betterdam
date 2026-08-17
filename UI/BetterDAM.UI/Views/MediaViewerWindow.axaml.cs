@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using BetterDAM.Core.Models;
@@ -59,6 +60,7 @@ public partial class MediaViewerWindow : Window
         };
     }
 
+    /// <summary>Must be called before showing: the window sizes itself from these settings.</summary>
     public void Attach(MainWindowViewModel viewModel)
     {
         _viewModel = viewModel;
@@ -87,27 +89,34 @@ public partial class MediaViewerWindow : Window
     }
 
     /// <summary>
-    /// Goes properly fullscreen, which on macOS is the only way to get out from under the menu bar:
-    /// it draws above ordinary windows whatever their bounds, so sizing to the screen leaves it
-    /// covering the top of the image.
+    /// Fills the screen, one of two ways.
     ///
-    /// This needs the window to keep its system decorations. A window with
-    /// <c>SystemDecorations="None"</c> has no titlebar, and macOS will not take a window without one
-    /// into fullscreen — it simply stays the size it was, which is exactly what the first attempt
-    /// did. The decorations are invisible once fullscreen anyway.
+    /// **Fullscreen** hides the menu bar, but on macOS that means a Space of its own — an animation
+    /// and a context switch every time, which is a lot of ceremony for a look at one photo.
+    /// **Maximised** stays on the current Space and leaves the menu bar showing. Neither is
+    /// obviously right, so it is a setting.
+    ///
+    /// Two things are needed for real fullscreen and both are easy to get wrong silently: the window
+    /// must keep its system decorations (macOS will not take an undecorated window fullscreen), and
+    /// it must not be owned by another window (a child window is refused too). In either case the
+    /// request is ignored and the window simply stays the size it was.
     /// </summary>
     private void FillScreen()
     {
-        // Positioned on the screen the main window is on first, so it goes fullscreen on that
-        // display rather than wherever it happened to open.
-        if ((Screens.ScreenFromWindow(Owner as Window ?? this) ?? Screens.Primary) is { } screen)
+        // Positioned on the screen the main window is on, so it fills that display rather than
+        // wherever it happened to open.
+        if ((Screens.ScreenFromWindow(this) ?? Screens.Primary) is { } screen)
         {
             Position = screen.Bounds.Position;
         }
 
+        var state = _viewModel?.ViewerOpensFullscreen == true
+            ? WindowState.FullScreen
+            : WindowState.Maximized;
+
         // Posted rather than set inline: assigning the state during Opened is ignored, the window
         // having only just been created natively.
-        Dispatcher.UIThread.Post(() => WindowState = WindowState.FullScreen, DispatcherPriority.Background);
+        Dispatcher.UIThread.Post(() => WindowState = state, DispatcherPriority.Background);
     }
 
     private void OnClosed(object? sender, EventArgs e)
@@ -122,6 +131,10 @@ public partial class MediaViewerWindow : Window
         viewModel.PropertyChanged -= OnViewModelChanged;
         viewModel.Player.FrameReady -= OnFrameReady;
         viewModel.Player.SurfaceCleared -= OnSurfaceCleared;
+
+        // Tens of megabytes; the inline preview does not need it and nothing else is holding it.
+        Still.Source = null;
+        viewModel.DiscardFullPreview();
     }
 
     private void OnViewModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -131,6 +144,12 @@ public partial class MediaViewerWindow : Window
             or nameof(MainWindowViewModel.IsVideoSelected))
         {
             ShowCurrent();
+        }
+        else if (e.PropertyName == nameof(MainWindowViewModel.FullPreview) && _viewModel?.IsVideoSelected == false)
+        {
+            // The full-size decode has landed; swap it in for the rendition.
+            ShowStill(_viewModel.FullPreview ?? _viewModel.Preview);
+            UpdateZoomLabel();
         }
     }
 
@@ -157,11 +176,40 @@ public partial class MediaViewerWindow : Window
 
         Surface.IsVisible = false;
         Still.IsVisible = true;
-        Still.Source = viewModel.Preview;
 
-        if (viewModel.Preview is { } preview)
+        // The cached preview first, because it is already in memory and appears instantly. It is a
+        // 1600px JPEG rendition, so the full-size decode follows and replaces it.
+        ShowStill(viewModel.Preview);
+
+        _ = viewModel.EnsureFullPreviewAsync();
+    }
+
+    /// <summary>
+    /// Points the viewer at a bitmap and sizes it from that bitmap's pixels, so 100% means one image
+    /// pixel per screen pixel — which is only true once the full-size decode has arrived.
+    /// </summary>
+    private void ShowStill(Bitmap? image)
+    {
+        Still.Source = image;
+
+        if (image is null)
         {
-            Viewer.NaturalSize = new Size(preview.PixelSize.Width, preview.PixelSize.Height);
+            return;
+        }
+
+        var size = new Size(image.PixelSize.Width, image.PixelSize.Height);
+        if (Viewer.NaturalSize == size)
+        {
+            return;
+        }
+
+        var wasFitted = Viewer.IsFitted;
+        Viewer.NaturalSize = size;
+
+        // Refit only if the view had not been adjusted: swapping in the full-size image must not
+        // throw away a zoom the user set while waiting for it.
+        if (wasFitted || _awaitingInitialFit)
+        {
             Viewer.Fit();
         }
     }

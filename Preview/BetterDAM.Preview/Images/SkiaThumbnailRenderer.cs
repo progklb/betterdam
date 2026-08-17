@@ -106,6 +106,10 @@ internal static class SkiaThumbnailRenderer
             ?? source.Copy();
     }
 
+    /// <summary>Shared with the full-size decoder: orientation handling is identical.</summary>
+    internal static SKBitmap ApplyOrientationTo(SKBitmap source, SKEncodedOrigin origin)
+        => ApplyOrientation(source, origin);
+
     private static SKBitmap ApplyOrientation(SKBitmap source, SKEncodedOrigin origin)
     {
         if (origin is SKEncodedOrigin.Default or SKEncodedOrigin.TopLeft)

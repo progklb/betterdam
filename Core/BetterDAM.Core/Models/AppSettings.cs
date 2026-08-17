@@ -41,6 +41,14 @@ public sealed record AppSettings
     /// </summary>
     public IReadOnlyList<string> RecentWorkspaces { get; init; } = [];
 
+    /// <summary>
+    /// Whether the viewer takes over the whole screen or just fills the current one.
+    ///
+    /// Two different things on macOS: real fullscreen hides the menu bar but moves the window to a
+    /// Space of its own, which is heavy-handed for a quick look at a photo. Maximised stays put.
+    /// </summary>
+    public bool ViewerOpensFullscreen { get; init; }
+
     /// <summary>Beyond this many entries, Open Recent stops being a shortcut and becomes a list.</summary>
     public const int MaxRecentWorkspaces = 10;
 

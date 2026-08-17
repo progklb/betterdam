@@ -1,0 +1,26 @@
+using BetterDAM.Core.Models;
+
+namespace BetterDAM.Core.Interfaces;
+
+/// <summary>
+/// An image decoded at full resolution, as tightly packed BGRA ready to blit.
+///
+/// Raw pixels rather than encoded bytes: this exists to avoid a lossy round-trip, so re-encoding it
+/// to hand it over would defeat the point. Large — a 24MP frame is around 96 MB — so it is loaded on
+/// demand and released as soon as something else is being looked at.
+/// </summary>
+public sealed record DecodedImage(byte[] Pixels, int Width, int Height)
+{
+    public long SizeBytes => (long)Width * Height * 4;
+}
+
+/// <summary>
+/// Decodes an image at its native resolution, for inspection rather than browsing.
+///
+/// Separate from <see cref="IThumbnailService"/> on purpose: thumbnails are deliberately small and
+/// JPEG-compressed, which is right for a grid of hundreds and wrong for judging a photograph.
+/// </summary>
+public interface IFullImageDecoder
+{
+    Task<DecodedImage?> DecodeAsync(MediaFile file, CancellationToken cancellationToken = default);
+}

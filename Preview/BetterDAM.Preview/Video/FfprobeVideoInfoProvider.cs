@@ -50,7 +50,7 @@ public sealed class FfprobeVideoInfoProvider : IVideoInfoProvider
         foreach (var argument in (string[])
                  [
                      "-v", "error",
-                     "-show_entries", "stream=codec_type,width,height,avg_frame_rate,r_frame_rate:format=duration",
+                     "-show_entries", "stream=codec_type,width,height,avg_frame_rate,r_frame_rate:stream_side_data=rotation:format=duration",
                      "-of", "json",
                      path
                  ])
@@ -83,6 +83,40 @@ public sealed class FfprobeVideoInfoProvider : IVideoInfoProvider
             _logger.LogWarning(ex, "ffprobe failed reading {File}", path);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Rotation in degrees from the stream's display matrix, or 0. ffprobe reports it as side data,
+    /// and older files carry it as a "rotate" tag instead, so both are accepted.
+    /// </summary>
+    internal static double ReadRotation(JsonElement stream)
+    {
+        if (stream.TryGetProperty("side_data_list", out var sideData) && sideData.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in sideData.EnumerateArray())
+            {
+                if (entry.TryGetProperty("rotation", out var rotation) && rotation.TryGetDouble(out var degrees))
+                {
+                    return degrees;
+                }
+            }
+        }
+
+        if (stream.TryGetProperty("tags", out var tags) &&
+            tags.TryGetProperty("rotate", out var tag) &&
+            double.TryParse(tag.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var tagged))
+        {
+            return tagged;
+        }
+
+        return 0;
+    }
+
+    /// <summary>True for a quarter turn either way, which is what swaps width and height.</summary>
+    internal static bool IsQuarterTurn(double degrees)
+    {
+        var normalised = Math.Abs(degrees % 180);
+        return normalised is > 45 and < 135;
     }
 
     internal static VideoMediaInfo? Parse(string json)
@@ -136,6 +170,15 @@ public sealed class FfprobeVideoInfoProvider : IVideoInfoProvider
             }
             var width = stream.TryGetProperty("width", out var w) && w.TryGetInt32(out var wv) ? wv : 0;
             var height = stream.TryGetProperty("height", out var h) && h.TryGetInt32(out var hv) ? hv : 0;
+
+            // Cameras and phones record portrait footage as a landscape stream plus a rotation, and
+            // ffmpeg applies that rotation when decoding. The stored dimensions are therefore not
+            // the ones frames arrive in, and scaling to them squashes the picture — so report what
+            // will actually come out.
+            if (IsQuarterTurn(ReadRotation(stream)))
+            {
+                (width, height) = (height, width);
+            }
 
             var frameRate = ParseRational(stream, "avg_frame_rate");
             if (frameRate <= 0)

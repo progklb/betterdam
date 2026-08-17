@@ -1,7 +1,9 @@
+using Avalonia;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
@@ -24,6 +26,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly IMediaScanner _scanner;
     private readonly IFolderBrowser _folderBrowser;
     private readonly IThumbnailService _thumbnails;
+    private readonly IFullImageDecoder _fullImages;
     private readonly IFfmpegLocator _ffmpeg;
     private readonly IPendingChangeStore _pending;
     private readonly IMetadataWriter _writer;
@@ -42,6 +45,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IMediaScanner scanner,
         IFolderBrowser folderBrowser,
         IThumbnailService thumbnails,
+        IFullImageDecoder fullImages,
         IFfmpegLocator ffmpeg,
         IPendingChangeStore pending,
         IMetadataWriter writer,
@@ -56,6 +60,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _scanner = scanner;
         _folderBrowser = folderBrowser;
         _thumbnails = thumbnails;
+        _fullImages = fullImages;
         _ffmpeg = ffmpeg;
         _pending = pending;
         _writer = writer;
@@ -78,6 +83,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         UpdateEmptyState();
 
         RecentWorkspaces = new ObservableCollection<string>(_settings.Current.RecentWorkspaces);
+        _viewerOpensFullscreen = _settings.Current.ViewerOpensFullscreen;
 
         StatusText = _ffmpeg.IsAvailable
             ? "Ready. Choose a folder to begin."
@@ -150,6 +156,103 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public string SearchWatermark => !HasWorkspace || SearchEverywhere
         ? "Search everything indexed"
         : $"Search {WorkspaceName}";
+
+    /// <summary>
+    /// The selection decoded at native resolution, for the viewer. Null until asked for: it costs
+    /// tens of megabytes and a decode, neither of which is worth spending on the inline preview.
+    /// </summary>
+    [ObservableProperty]
+    private Bitmap? _fullPreview;
+
+    private CancellationTokenSource? _fullPreviewCts;
+
+    /// <summary>
+    /// Decodes the selection at full size if that has not already happened. Safe to call repeatedly;
+    /// the viewer calls it whenever the selection changes.
+    /// </summary>
+    public async Task EnsureFullPreviewAsync()
+    {
+        if (_fullPreviewCts is { } previous)
+        {
+            await previous.CancelAsync().ConfigureAwait(true);
+            previous.Dispose();
+        }
+
+        DiscardFullPreview();
+
+        if (SelectedItem is not { } item || IsVideoSelected)
+        {
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _fullPreviewCts = cts;
+
+        try
+        {
+            var decoded = await _fullImages.DecodeAsync(item.File, cts.Token).ConfigureAwait(true);
+
+            // The selection can move while a 24MP file is decoding; a late arrival must not
+            // replace what is now on screen.
+            if (decoded is null || cts.IsCancellationRequested || !ReferenceEquals(SelectedItem, item))
+            {
+                return;
+            }
+
+            FullPreview = ToBitmap(decoded);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load {File} at full size", item.File.FullPath);
+        }
+    }
+
+    /// <summary>Releases the full-size bitmap, which is far too large to keep around unseen.</summary>
+    public void DiscardFullPreview()
+    {
+        FullPreview?.Dispose();
+        FullPreview = null;
+    }
+
+    private static Bitmap ToBitmap(DecodedImage image)
+    {
+        var size = new PixelSize(image.Width, image.Height);
+        var bitmap = new WriteableBitmap(size, new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+
+        using (var locked = bitmap.Lock())
+        {
+            var stride = image.Width * 4;
+
+            if (locked.RowBytes == stride)
+            {
+                System.Runtime.InteropServices.Marshal.Copy(image.Pixels, 0, locked.Address, image.Pixels.Length);
+            }
+            else
+            {
+                // Rows can be padded for alignment, so copy row by row rather than assuming a match.
+                for (var row = 0; row < image.Height; row++)
+                {
+                    System.Runtime.InteropServices.Marshal.Copy(
+                        image.Pixels, row * stride, locked.Address + (row * locked.RowBytes), stride);
+                }
+            }
+        }
+
+        return bitmap;
+    }
+
+    /// <summary>
+    /// True to open the viewer in real fullscreen, false to open it maximised on the current
+    /// screen. Persisted, because it is a working preference rather than a per-item choice.
+    /// </summary>
+    [ObservableProperty]
+    private bool _viewerOpensFullscreen;
+
+    partial void OnViewerOpensFullscreenChanged(bool value)
+        => _ = _settings.SaveAsync(_settings.Current with { ViewerOpensFullscreen = value });
 
     /// <summary>
     /// Collapses the folders panel so the thumbnails and preview get the whole window. Bound to the

@@ -1756,3 +1756,96 @@ decoding would mean taking on something like LibRaw.
 
 **The grid and inline preview are unchanged.** They still use the fast JPEG renditions, which is what
 keeps browsing quick; only the viewer pays for full quality.
+
+---
+
+## Phase 12 — RAW development ✅
+
+RAW files were displayed from the JPEG the camera embedded beside them. They are now demosaiced
+properly, with a setting to choose.
+
+### Correcting an earlier claim
+
+While investigating I told the user the embedded preview was "full sensor resolution". **It is not.**
+On the X-S20:
+
+| | Pixels |
+| --- | --- |
+| Embedded preview | 4416×2944 — 13MP |
+| Developed RAW | **6252×4176 — 26MP** |
+
+So developing is not only about tonal latitude and skipping in-camera processing: it is **twice the
+pixels**. That materially changes what the feature is worth, which is why it is recorded here rather
+than quietly fixed.
+
+### Why LibRaw, after trying not to need it
+
+macOS ImageIO decodes RAW natively and would have meant no new dependency — the same argument that
+made CoreAudio right for audio. It lists `com.fuji.raw-image` among its supported types, so it looked
+like a straight win.
+
+It cannot decode this camera. `CGImageSourceCreateWithURL` recognises the file and reports the right
+UTI; `CGImageSourceCreateImageAtIndex` returns null, as does the thumbnail path. `sips` fails with
+"Cannot extract image from file". macOS 26.1 simply does not support X-S20 RAF, and Apple's RAW
+support is only ever as current as the OS.
+
+So: **LibRaw**, as a third optional external tool alongside ExifTool and FFmpeg, found by the same
+kind of locator and degrading the same way — without it, RAW files still display from their embedded
+preview and only the developed rendering is lost.
+
+### The CLI, not the library
+
+`dcraw_emu` is driven as a process rather than P/Invoking `libraw.dylib`:
+
+- It matches how ExifTool and FFmpeg are already used.
+- A malformed RAW crashes the tool, not the application.
+- Nothing native has to be shipped or signed.
+
+Output comes back as a **PPM on stdout** (`-Z -`), parsed directly into BGRA. A 26MP develop is 78MB;
+writing that to a temporary file and reading it back on every image would cost more than the
+demosaic. The parser is written out rather than pulled in — a P6 PPM is a header and a block of RGB
+bytes, and this is the hot path for a 26MP image.
+
+Arguments worth their comments: `-w` uses the **camera's** white balance, because the comparison
+being made is against the photograph as shot rather than LibRaw's guess at neutral; `-o 1` for sRGB;
+`-q 3` for AHD interpolation, which is slower than bilinear and visibly better on fine detail — the
+entire reason for developing at all.
+
+### The setting
+
+**View → RAW files → Develop the RAW / Embedded JPEG**, persisted, defaulting to developing. Changing
+it reloads what is on screen, so the difference is visible immediately.
+
+Developing is worth defaulting to because the cost is hidden: the viewer already shows the cached
+rendition instantly and swaps in the full decode when it lands, so the wait happens behind a picture
+rather than a blank screen. A failed develop falls back to the embedded preview rather than showing
+nothing.
+
+### Verified against a real file
+
+Run through the real decode path on an X-S20 RAF (borrowed from the user's library read-only, and
+deleted afterwards):
+
+```text
+LibRaw available: True (/opt/homebrew/bin/dcraw_emu)
+  embedded JPEG  4416x2944   49 MB    383 ms
+  developed RAW  6252x4176   99 MB   3781 ms
+```
+
+`dotnet test` — **358/358 passing** (was 349). Nine new, covering the camera white balance flag,
+stdout and sRGB arguments, PPM parsing to BGRA in the right channel order, headers with comments and
+irregular whitespace, and rejection of the greyscale variant, 16-bit, truncated bodies and zero
+dimensions — anything that could be half-read into a plausible-looking wrong image.
+
+### Worth knowing
+
+**Developing takes about four seconds for 26MP.** That is LibRaw doing real work at `-q 3`, and it is
+per image, so arrowing through a folder of RAWs in the viewer will always be showing the embedded
+preview first. Switching the setting to Embedded JPEG makes browsing instant at the cost of half the
+pixels.
+
+**The grid and inline preview still use the embedded preview**, deliberately — a folder of RAWs would
+be unusable if every tile demosaiced.
+
+**LibRaw is LGPL-2.1 / CDDL**, used here as a separate executable, which keeps it at arm's length
+from the application's own licensing.

@@ -23,11 +23,19 @@ public sealed class SkiaFullImageDecoder : IFullImageDecoder
     private const long MaxPixels = 80_000_000;
 
     private readonly IEmbeddedPreviewExtractor _previews;
+    private readonly IRawDecoder _raw;
+    private readonly ISettingsService _settings;
     private readonly ILogger<SkiaFullImageDecoder> _logger;
 
-    public SkiaFullImageDecoder(IEmbeddedPreviewExtractor previews, ILogger<SkiaFullImageDecoder> logger)
+    public SkiaFullImageDecoder(
+        IEmbeddedPreviewExtractor previews,
+        IRawDecoder raw,
+        ISettingsService settings,
+        ILogger<SkiaFullImageDecoder> logger)
     {
         _previews = previews;
+        _raw = raw;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -49,8 +57,19 @@ public sealed class SkiaFullImageDecoder : IFullImageDecoder
                 return Decode(stream, cancellationToken);
             }
 
-            // RAW: the embedded preview is the best available without demosaicing, and is typically
-            // the full-size JPEG the camera itself produced.
+            // RAW. Developing is the real thing but costs seconds; the embedded preview is instant.
+            // Which one is wanted is a setting, and a failed develop falls back rather than showing
+            // nothing.
+            if (_settings.Current.DevelopRawFiles && _raw.IsAvailable)
+            {
+                if (await _raw.DevelopAsync(file, cancellationToken).ConfigureAwait(false) is { } developed)
+                {
+                    return developed;
+                }
+
+                _logger.LogDebug("Developing {File} produced nothing; falling back to its preview", file.FullPath);
+            }
+
             var preview = await _previews.ExtractAsync(file, cancellationToken).ConfigureAwait(false);
             if (preview is null)
             {

@@ -84,6 +84,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         RecentWorkspaces = new ObservableCollection<string>(_settings.Current.RecentWorkspaces);
         _viewerOpensFullscreen = _settings.Current.ViewerOpensFullscreen;
+        _developRawFiles = _settings.Current.DevelopRawFiles;
 
         StatusText = _ffmpeg.IsAvailable
             ? "Ready. Choose a folder to begin."
@@ -242,6 +243,19 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
 
         return bitmap;
+    }
+
+    /// <summary>
+    /// True to develop RAW files for viewing, false to show the JPEG the camera embedded.
+    /// Changing it reloads whatever is on screen, so the effect is visible immediately.
+    /// </summary>
+    [ObservableProperty]
+    private bool _developRawFiles = true;
+
+    partial void OnDevelopRawFilesChanged(bool value)
+    {
+        _ = _settings.SaveAsync(_settings.Current with { DevelopRawFiles = value });
+        _ = EnsureFullPreviewAsync();
     }
 
     /// <summary>

@@ -111,6 +111,20 @@
 
                 <Separator Margin="0,4" />
 
+                <TextBlock Text="RAW files" FontSize="11" />
+                <StackPanel Spacing="2">
+                  <RadioButton GroupName="RawMode" FontSize="11"
+                               Content="Develop the RAW"
+                               IsChecked="{Binding DevelopRawFiles}"
+                               ToolTip.Tip="Demosaics the sensor data: more pixels and no in-camera processing, but takes a few seconds" />
+                  <RadioButton GroupName="RawMode" FontSize="11"
+                               Content="Embedded JPEG"
+                               IsChecked="{Binding !DevelopRawFiles}"
+                               ToolTip.Tip="The preview the camera wrote alongside the RAW - instant, but smaller and already processed" />
+                </StackPanel>
+
+                <Separator Margin="0,4" />
+
                 <TextBlock Text="Open viewer as" FontSize="11" />
                 <StackPanel Spacing="2">
                   <RadioButton GroupName="ViewerMode" FontSize="11"

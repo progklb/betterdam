@@ -49,6 +49,15 @@ public sealed record AppSettings
     /// </summary>
     public bool ViewerOpensFullscreen { get; init; }
 
+    /// <summary>
+    /// Whether RAW files are developed for viewing, or shown from the JPEG the camera embedded.
+    ///
+    /// Developing demosaics the sensor data: more pixels than the preview and no in-camera
+    /// processing, at the cost of several seconds per image. The preview is instant and is what the
+    /// camera thought the picture should look like.
+    /// </summary>
+    public bool DevelopRawFiles { get; init; } = true;
+
     /// <summary>Beyond this many entries, Open Recent stops being a shortcut and becomes a list.</summary>
     public const int MaxRecentWorkspaces = 10;
 

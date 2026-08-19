@@ -123,6 +123,16 @@
                                ToolTip.Tip="The preview the camera wrote alongside the RAW - instant, but smaller and already processed" />
                 </StackPanel>
 
+                <StackPanel Spacing="4" IsVisible="{Binding DevelopRawFiles}">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="RAW quality" FontSize="11" VerticalAlignment="Center" />
+                    <ComboBox DockPanel.Dock="Right" HorizontalAlignment="Right" MinWidth="106" FontSize="11"
+                              ItemsSource="{Binding RawQualities}"
+                              SelectedItem="{Binding RawQuality}"
+                              ToolTip.Tip="Fast is for a first pass through a folder; Best is for judging a frame. It is the difference between roughly instant and several seconds an image." />
+                  </DockPanel>
+                </StackPanel>
+
                 <Separator Margin="0,4" />
 
                 <TextBlock Text="Open viewer as" FontSize="11" />

@@ -26,6 +26,65 @@
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
         <TextBlock x:Name="ZoomLabel" Text="Fit" FontSize="12" VerticalAlignment="Center"
                    MinWidth="52" TextAlignment="Right" />
+
+        <!--
+          Develop controls, here rather than in the main window because this is where a photograph
+          is actually being judged. Only offered when they would do something.
+        -->
+        <Button Content="Develop" FontSize="11" Padding="8,2" Focusable="False"
+                IsVisible="{Binding IsRawSelected}"
+                IsEnabled="{Binding DevelopRawFiles}"
+                ToolTip.Tip="Adjust how this RAW is developed">
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedRight">
+              <StackPanel Width="250" Spacing="10" Margin="4">
+
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="Highlights" FontSize="11" VerticalAlignment="Center" />
+                  <ComboBox DockPanel.Dock="Right" HorizontalAlignment="Right" MinWidth="110" FontSize="11"
+                            ItemsSource="{Binding HighlightModes}"
+                            SelectedItem="{Binding Highlights}"
+                            ToolTip.Tip="What to do with clipped highlights. Rebuild reconstructs them from the channels that did not clip." />
+                </DockPanel>
+
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="White balance" FontSize="11" VerticalAlignment="Center" />
+                  <ComboBox DockPanel.Dock="Right" HorizontalAlignment="Right" MinWidth="110" FontSize="11"
+                            ItemsSource="{Binding WhiteBalanceModes}"
+                            SelectedItem="{Binding WhiteBalance}"
+                            ToolTip.Tip="Camera is the picture as shot; Auto averages the frame." />
+                </DockPanel>
+
+                <StackPanel Spacing="4">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="Exposure" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right" FontSize="11"
+                               Opacity="0.5" VerticalAlignment="Center"
+                               Text="{Binding ExposureDisplay}" />
+                  </DockPanel>
+                  <Slider Minimum="-2" Maximum="3" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                          Value="{Binding ExposureStops}"
+                          ToolTip.Tip="Stops. Applied during the develop, so it recovers detail rather than brightening a finished image." />
+                </StackPanel>
+
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="Noise reduction" FontSize="11" VerticalAlignment="Center" />
+                  <ComboBox DockPanel.Dock="Right" HorizontalAlignment="Right" MinWidth="110" FontSize="11"
+                            ItemsSource="{Binding NoiseReductionLevels}"
+                            SelectedItem="{Binding NoiseReduction}"
+                            ToolTip.Tip="FBDD, applied before demosaicing. Worth it at high ISO." />
+                </DockPanel>
+
+                <Button Content="Reset to as shot" FontSize="11" HorizontalAlignment="Stretch"
+                        IsEnabled="{Binding HasDevelopAdjustments}"
+                        Command="{Binding ResetDevelopCommand}" />
+
+                <TextBlock FontSize="10" Opacity="0.45" TextWrapping="Wrap"
+                           Text="Applies to every RAW. Nothing is written to your files." />
+              </StackPanel>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
         <Button Content="Fit" FontSize="11" Padding="8,2" Click="OnFit" Focusable="False" />
         <Button Content="100%" FontSize="11" Padding="8,2" Click="OnActualSize" Focusable="False" />
         <Button Content="✕" FontSize="11" Padding="8,2" Click="OnClose" Focusable="False" ToolTip.Tip="Close (Esc)" />
@@ -46,6 +105,19 @@
                              FullscreenRequested="OnLeaveFullscreen" />
 
     <!--
+      Progress for the full-size decode. Developing a RAW takes seconds, and the rendition on screen
+      looks final until something says otherwise.
+    -->
+    <Border VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,16,0,0"
+            Background="#B0000000" CornerRadius="6" Padding="12,7" IsHitTestVisible="False"
+            IsVisible="{Binding IsPreparingFullPreview}">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <ProgressBar IsIndeterminate="True" Width="70" Height="3" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding FullPreviewStatus}" FontSize="11" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+
+    <!--
       Shown on arrival and then faded out: useful the first time, clutter every time after.
     -->
     <Border x:Name="Hint" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="24,24,24,90"
@@ -56,7 +128,7 @@
         </Transitions>
       </Border.Transitions>
       <TextBlock FontSize="11" Opacity="0.85"
-                 Text="Scroll to zoom · drag to pan · space to fit · ← → to browse · Esc to close" />
+                 Text="Scroll to zoom · drag to pan · space to fit · ← → to browse · \ RAW/JPEG · Esc to close" />
     </Border>
 
   </Panel>

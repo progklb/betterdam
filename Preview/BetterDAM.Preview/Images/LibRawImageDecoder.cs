@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
@@ -20,11 +21,13 @@ namespace BetterDAM.Preview.Images;
 public sealed class LibRawImageDecoder : IRawDecoder
 {
     private readonly ILibRawLocator _locator;
+    private readonly ISettingsService _settings;
     private readonly ILogger<LibRawImageDecoder> _logger;
 
-    public LibRawImageDecoder(ILibRawLocator locator, ILogger<LibRawImageDecoder> logger)
+    public LibRawImageDecoder(ILibRawLocator locator, ISettingsService settings, ILogger<LibRawImageDecoder> logger)
     {
         _locator = locator;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -37,9 +40,11 @@ public sealed class LibRawImageDecoder : IRawDecoder
             return null;
         }
 
+        Process? process = null;
+
         try
         {
-            using var process = Process.Start(BuildStartInfo(dcraw, file.FullPath));
+            process = Process.Start(BuildStartInfo(dcraw, file.FullPath, _settings.Current.RawDevelop));
             if (process is null)
             {
                 return null;
@@ -73,9 +78,31 @@ public sealed class LibRawImageDecoder : IRawDecoder
             _logger.LogWarning(ex, "Failed to develop {File}", file.FullPath);
             return null;
         }
+        finally
+        {
+            // Disposing a Process does not stop it. Without this, moving through a folder of RAWs
+            // leaves an abandoned develop running for every one passed over, each burning a core.
+            KillIfRunning(process);
+            process?.Dispose();
+        }
     }
 
-    internal static ProcessStartInfo BuildStartInfo(string dcraw, string path)
+    private void KillIfRunning(Process? process)
+    {
+        try
+        {
+            if (process is { HasExited: false })
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not stop the RAW develop");
+        }
+    }
+
+    internal static ProcessStartInfo BuildStartInfo(string dcraw, string path, RawDevelopSettings develop)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -86,31 +113,66 @@ public sealed class LibRawImageDecoder : IRawDecoder
             CreateNoWindow = true
         };
 
-        foreach (var argument in (string[])
-                 [
-                     // The camera's own white balance: the point of comparison is the photograph as
-                     // shot, not LibRaw's guess at neutral.
-                     "-w",
-
-                     // sRGB, matching what the display expects.
-                     "-o", "1",
-
-                     // AHD interpolation. Slower than bilinear and visibly better on fine detail,
-                     // which is the entire reason for developing the RAW at all.
-                     "-q", "3",
-
-                     // Straight to stdout. A 26MP develop is 78MB, and writing that to a temporary
-                     // file and reading it back on every image would cost more than the demosaic.
-                     // 8 bits a channel is the default, which is what a screen can show anyway.
-                     "-Z", "-",
-
-                     path
-                 ])
+        foreach (var argument in BuildArguments(path, develop))
         {
             startInfo.ArgumentList.Add(argument);
         }
 
         return startInfo;
+    }
+
+    /// <summary>
+    /// Translates the develop settings into dcraw_emu arguments. Kept apart from launching anything
+    /// so the mapping can be tested — a wrong flag here is a silently different photograph.
+    /// </summary>
+    internal static List<string> BuildArguments(string path, RawDevelopSettings develop)
+    {
+        var arguments = new List<string>();
+
+        // White balance. Camera is the picture as shot; auto is LibRaw averaging the frame.
+        arguments.Add(develop.WhiteBalance == RawWhiteBalance.Auto ? "-a" : "-w");
+
+        // Highlight handling: the main reason for opening the RAW rather than the JPEG.
+        arguments.Add("-H");
+        arguments.Add(((int)develop.Highlights).ToString(CultureInfo.InvariantCulture));
+
+        // sRGB, matching what the display expects. Wider spaces are deliberately not offered: with
+        // no colour management they would be shown as though they were sRGB, which misrepresents
+        // the colour rather than improving it.
+        arguments.Add("-o");
+        arguments.Add("1");
+
+        // Interpolation. The difference between culling a folder and judging a frame.
+        arguments.Add("-q");
+        arguments.Add(develop.InterpolationCode.ToString(CultureInfo.InvariantCulture));
+
+        if (develop.NoiseReduction != RawNoiseReduction.Off)
+        {
+            arguments.Add("-fbdd");
+            arguments.Add(((int)develop.NoiseReduction).ToString(CultureInfo.InvariantCulture));
+        }
+
+        // Only when asked for: passing an exposure shift of 1.0 is not quite a no-op in LibRaw, and
+        // "as shot" should mean exactly that.
+        if (Math.Abs(develop.ExposureStops) > 0.001)
+        {
+            arguments.Add("-aexpo");
+            arguments.Add(develop.ExposureMultiplier.ToString("0.###", CultureInfo.InvariantCulture));
+
+            // Highlight preservation, on the assumption that someone lifting exposure does not want
+            // the sky blown to do it.
+            arguments.Add("1");
+        }
+
+        // Straight to stdout. A 26MP develop is 78MB, and writing that to a temporary file and
+        // reading it back on every image would cost more than the demosaic. 8 bits a channel is the
+        // default, which is what a screen can show anyway.
+        arguments.Add("-Z");
+        arguments.Add("-");
+
+        arguments.Add(path);
+
+        return arguments;
     }
 
     /// <summary>

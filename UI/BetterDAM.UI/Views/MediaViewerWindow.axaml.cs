@@ -147,8 +147,8 @@ public partial class MediaViewerWindow : Window
         }
         else if (e.PropertyName == nameof(MainWindowViewModel.FullPreview) && _viewModel?.IsVideoSelected == false)
         {
-            // The full-size decode has landed; swap it in for the rendition.
-            ShowStill(_viewModel.FullPreview ?? _viewModel.Preview);
+            // The full-size decode has landed; swap it in without disturbing the view.
+            ShowStill(_viewModel.FullPreview ?? _viewModel.Preview, isNewItem: false);
             UpdateZoomLabel();
         }
     }
@@ -177,9 +177,10 @@ public partial class MediaViewerWindow : Window
         Surface.IsVisible = false;
         Still.IsVisible = true;
 
-        // The cached preview first, because it is already in memory and appears instantly. It is a
-        // 1600px JPEG rendition, so the full-size decode follows and replaces it.
-        ShowStill(viewModel.Preview);
+        // The full-size render if there is one for this file, otherwise the cached preview, which is
+        // already in memory and appears instantly. Preferring the full one is what stops a
+        // re-develop flashing back to a lower-quality rendition of the same picture.
+        ShowStill(viewModel.FullPreview ?? viewModel.Preview, isNewItem: true);
 
         _ = viewModel.EnsureFullPreviewAsync();
     }
@@ -188,7 +189,12 @@ public partial class MediaViewerWindow : Window
     /// Points the viewer at a bitmap and sizes it from that bitmap's pixels, so 100% means one image
     /// pixel per screen pixel — which is only true once the full-size decode has arrived.
     /// </summary>
-    private void ShowStill(Bitmap? image)
+    /// <param name="isNewItem">
+    /// True when this is a different photograph, which starts fitted. False when it is another
+    /// rendering of the same one — a finished develop, or a switch between RAW and embedded JPEG —
+    /// where the zoom and position are what the comparison is being made at and must survive.
+    /// </param>
+    private void ShowStill(Bitmap? image, bool isNewItem)
     {
         Still.Source = image;
 
@@ -206,9 +212,9 @@ public partial class MediaViewerWindow : Window
         var wasFitted = Viewer.IsFitted;
         Viewer.NaturalSize = size;
 
-        // Refit only if the view had not been adjusted: swapping in the full-size image must not
-        // throw away a zoom the user set while waiting for it.
-        if (wasFitted || _awaitingInitialFit)
+        // Fit a new picture, or one being looked at whole. Otherwise leave the view alone: the
+        // viewer keeps the same region framed across a change of resolution.
+        if (isNewItem && (wasFitted || _awaitingInitialFit))
         {
             Viewer.Fit();
         }
@@ -267,6 +273,12 @@ public partial class MediaViewerWindow : Window
 
             case Key.Right:
                 _viewModel?.SelectNextCommand.Execute(null);
+                break;
+
+            // Backslash flips between the developed RAW and the embedded JPEG, the way Lightroom
+            // uses it to compare two renderings. Reported under several names depending on layout.
+            case Key.OemBackslash or Key.OemPipe or Key.Oem5:
+                _viewModel?.ToggleRawDevelopmentCommand.Execute(null);
                 break;
 
             case Key.K or Key.Enter when _viewModel?.IsVideoSelected == true:

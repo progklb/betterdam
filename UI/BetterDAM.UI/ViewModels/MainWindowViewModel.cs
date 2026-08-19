@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using Avalonia.Platform.Storage;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
@@ -86,6 +87,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _viewerOpensFullscreen = _settings.Current.ViewerOpensFullscreen;
         _developRawFiles = _settings.Current.DevelopRawFiles;
 
+        var develop = _settings.Current.RawDevelop;
+        _highlights = develop.Highlights;
+        _whiteBalance = develop.WhiteBalance;
+        _exposureStops = develop.ExposureStops;
+        _noiseReduction = develop.NoiseReduction;
+        _rawQuality = develop.Quality;
+
         StatusText = _ffmpeg.IsAvailable
             ? "Ready. Choose a folder to begin."
             : "Ready. FFmpeg was not found — video thumbnails are unavailable.";
@@ -167,19 +175,54 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private CancellationTokenSource? _fullPreviewCts;
 
+    /// <summary>What the in-flight decode is for, so repeat requests for it are ignored.</summary>
+    private string? _fullPreviewRequest;
+
+    /// <summary>What the bitmap currently held in <see cref="FullPreview"/> was decoded from.</summary>
+    private string? _fullPreviewLoaded;
+
+    /// <summary>
+    /// Set while the full-size decode is running. Developing a RAW takes seconds, and without
+    /// saying so the viewer looks like it has simply decided the preview is as good as it gets.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isPreparingFullPreview;
+
+    [ObservableProperty]
+    private string? _fullPreviewStatus;
+
     /// <summary>
     /// Decodes the selection at full size if that has not already happened. Safe to call repeatedly;
     /// the viewer calls it whenever the selection changes.
     /// </summary>
     public async Task EnsureFullPreviewAsync()
     {
+        // Selecting an item raises several properties, each of which asks the viewer to refresh.
+        // Without this the same decode is started and cancelled two or three times, and a RAW
+        // develop is far too expensive to do that to.
+        var wanted = SelectedItem?.File.FullPath;
+        if (_fullPreviewRequest is not null && _fullPreviewRequest == wanted)
+        {
+            return;
+        }
+
+        // Re-rendering the same photograph is a comparison: the point is to see one version replace
+        // the other. Dropping back to the preview in between would put a different, lower-quality
+        // image on screen for several seconds, which is exactly what makes the comparison useless.
+        var changingFile = !string.Equals(_fullPreviewLoaded, wanted, StringComparison.Ordinal);
+
+        _fullPreviewRequest = wanted;
+
         if (_fullPreviewCts is { } previous)
         {
             await previous.CancelAsync().ConfigureAwait(true);
             previous.Dispose();
         }
 
-        DiscardFullPreview();
+        if (changingFile)
+        {
+            DiscardFullPreview();
+        }
 
         if (SelectedItem is not { } item || IsVideoSelected)
         {
@@ -188,6 +231,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         var cts = new CancellationTokenSource();
         _fullPreviewCts = cts;
+
+        var developing = DevelopRawFiles && MediaTypeRegistry.IsRaw(item.File.FullPath);
+        FullPreviewStatus = developing ? "Developing RAW…" : "Loading full resolution…";
+        IsPreparingFullPreview = true;
 
         try
         {
@@ -200,7 +247,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 return;
             }
 
+            // Swapped, then the old one released: assigning first means the UI is already showing
+            // the new bitmap before the previous one is disposed.
+            var replaced = FullPreview;
             FullPreview = ToBitmap(decoded);
+            _fullPreviewLoaded = item.File.FullPath;
+
+            if (replaced is not null)
+            {
+                Dispatcher.UIThread.Post(replaced.Dispose, DispatcherPriority.Background);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -209,14 +265,37 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             _logger.LogWarning(ex, "Failed to load {File} at full size", item.File.FullPath);
         }
+        finally
+        {
+            // Only the run that is still current may clear the indicator; an older one finishing
+            // late must not hide the wait for the image now on screen.
+            if (ReferenceEquals(_fullPreviewCts, cts))
+            {
+                IsPreparingFullPreview = false;
+            }
+        }
     }
+
+    /// <summary>
+    /// Switches between developing RAW files and showing their embedded preview. Bound to \ in the
+    /// viewer, the way Lightroom uses it to flip between two renderings of the same shot.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleRawDevelopment() => DevelopRawFiles = !DevelopRawFiles;
 
     /// <summary>Releases the full-size bitmap, which is far too large to keep around unseen.</summary>
     public void DiscardFullPreview()
     {
         FullPreview?.Dispose();
         FullPreview = null;
+        _fullPreviewLoaded = null;
     }
+
+    /// <summary>
+    /// Forgets what was last asked for, so the next request re-runs even for the same file. Needed
+    /// when the *way* it is decoded changes rather than which file it is.
+    /// </summary>
+    private void InvalidateFullPreviewRequest() => _fullPreviewRequest = null;
 
     private static Bitmap ToBitmap(DecodedImage image)
     {
@@ -255,7 +334,138 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnDevelopRawFilesChanged(bool value)
     {
         _ = _settings.SaveAsync(_settings.Current with { DevelopRawFiles = value });
+
+        // Same file, different rendering: the request guard has to be cleared or nothing happens.
+        InvalidateFullPreviewRequest();
         _ = EnsureFullPreviewAsync();
+    }
+
+    // ---- RAW develop controls -------------------------------------------------------------
+
+    public static IReadOnlyList<RawHighlightMode> HighlightModes { get; } = Enum.GetValues<RawHighlightMode>();
+
+    public static IReadOnlyList<RawWhiteBalance> WhiteBalanceModes { get; } = Enum.GetValues<RawWhiteBalance>();
+
+    public static IReadOnlyList<RawNoiseReduction> NoiseReductionLevels { get; } = Enum.GetValues<RawNoiseReduction>();
+
+    public static IReadOnlyList<RawQuality> RawQualities { get; } = Enum.GetValues<RawQuality>();
+
+    [ObservableProperty]
+    private RawHighlightMode _highlights;
+
+    [ObservableProperty]
+    private RawWhiteBalance _whiteBalance;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ExposureDisplay))]
+    private double _exposureStops;
+
+    [ObservableProperty]
+    private RawNoiseReduction _noiseReduction;
+
+    [ObservableProperty]
+    private RawQuality _rawQuality;
+
+    /// <summary>Signed, because "+1 stop" and "1 stop" read differently at a glance.</summary>
+    public string ExposureDisplay => Math.Abs(ExposureStops) < 0.01
+        ? "As shot"
+        : $"{ExposureStops:+0.0;-0.0} EV";
+
+    /// <summary>True when the develop is untouched, so a Reset can be offered only when it does something.</summary>
+    public bool HasDevelopAdjustments => !CurrentDevelop.IsDefault;
+
+    /// <summary>Whether the develop controls apply to what is on screen.</summary>
+    public bool IsRawSelected =>
+        SelectedItem is { } item && MediaTypeRegistry.IsRaw(item.File.FullPath);
+
+    private RawDevelopSettings CurrentDevelop => new()
+    {
+        Highlights = Highlights,
+        WhiteBalance = WhiteBalance,
+        ExposureStops = ExposureStops,
+        NoiseReduction = NoiseReduction,
+        Quality = RawQuality
+    };
+
+    partial void OnHighlightsChanged(RawHighlightMode value) => ApplyDevelopChange();
+
+    partial void OnWhiteBalanceChanged(RawWhiteBalance value) => ApplyDevelopChange();
+
+    partial void OnNoiseReductionChanged(RawNoiseReduction value) => ApplyDevelopChange();
+
+    partial void OnRawQualityChanged(RawQuality value) => ApplyDevelopChange();
+
+    // Dragged rather than picked, so it waits for the dragging to stop.
+    partial void OnExposureStopsChanged(double value) => ApplyDevelopChange(debounce: true);
+
+    [RelayCommand]
+    private void ResetDevelop()
+    {
+        var defaults = RawDevelopSettings.Default;
+
+        // Assigned through the properties so the UI follows, but the reload is left until the end
+        // rather than firing once per field.
+        _suppressDevelopReload = true;
+        Highlights = defaults.Highlights;
+        WhiteBalance = defaults.WhiteBalance;
+        ExposureStops = defaults.ExposureStops;
+        NoiseReduction = defaults.NoiseReduction;
+        _suppressDevelopReload = false;
+
+        ApplyDevelopChange();
+    }
+
+    private bool _suppressDevelopReload;
+    private CancellationTokenSource? _developDebounceCts;
+
+    /// <summary>
+    /// Saves the develop settings and re-renders what is on screen.
+    ///
+    /// Debounced for anything dragged: a develop takes seconds, and starting one per slider tick
+    /// would queue work faster than it could be cancelled.
+    /// </summary>
+    private void ApplyDevelopChange(bool debounce = false)
+    {
+        if (_suppressDevelopReload)
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(HasDevelopAdjustments));
+
+        _developDebounceCts?.Cancel();
+        _developDebounceCts?.Dispose();
+        _developDebounceCts = null;
+
+        if (!debounce)
+        {
+            _ = SaveAndReloadDevelopAsync();
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _developDebounceCts = cts;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(400), cts.Token).ConfigureAwait(false);
+                await Dispatcher.UIThread.InvokeAsync(SaveAndReloadDevelopAsync);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }, CancellationToken.None);
+    }
+
+    private async Task SaveAndReloadDevelopAsync()
+    {
+        await _settings.SaveAsync(_settings.Current with { RawDevelop = CurrentDevelop }).ConfigureAwait(true);
+
+        // Same file, different rendering: the request guard has to be cleared or nothing happens.
+        InvalidateFullPreviewRequest();
+        await EnsureFullPreviewAsync().ConfigureAwait(true);
     }
 
     /// <summary>
@@ -523,6 +733,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         ShowFfmpegNotice = value is { IsVideo: true } && !_ffmpeg.IsAvailable;
         IsVideoSelected = value is { IsVideo: true } && _ffmpeg.IsAvailable;
+        OnPropertyChanged(nameof(IsRawSelected));
 
         // A video is handed to the player; only stills use the static image preview, so the two
         // never fight over the same pane.

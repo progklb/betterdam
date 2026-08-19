@@ -168,23 +168,126 @@ public class RawDevelopmentTests
         CreatedUtc = DateTimeOffset.UnixEpoch
     };
 
-    [Fact]
-    public void The_camera_white_balance_is_used()
-    {
-        var args = LibRawImageDecoder.BuildStartInfo("/usr/bin/dcraw_emu", "/library/shot.raf").ArgumentList;
+    private static List<string> Arguments(RawDevelopSettings? develop = null)
+        => LibRawImageDecoder.BuildArguments("/library/shot.raf", develop ?? RawDevelopSettings.Default);
 
+    [Fact]
+    public void The_camera_white_balance_is_used_by_default()
+    {
         // Without -w the develop is LibRaw's guess at neutral, not the picture as shot.
-        Assert.Contains("-w", args);
+        Assert.Contains("-w", Arguments());
+        Assert.DoesNotContain("-a", Arguments());
     }
 
     [Fact]
-    public void Output_goes_to_stdout_in_srgb()
+    public void Auto_white_balance_swaps_the_flag_rather_than_adding_one()
     {
-        var args = LibRawImageDecoder.BuildStartInfo("/usr/bin/dcraw_emu", "/library/shot.raf").ArgumentList;
+        var args = Arguments(RawDevelopSettings.Default with { WhiteBalance = RawWhiteBalance.Auto });
+
+        // Passing both would let dcraw pick, which is not a choice the user made.
+        Assert.Contains("-a", args);
+        Assert.DoesNotContain("-w", args);
+    }
+
+    [Theory]
+    [InlineData(RawHighlightMode.Clip, "0")]
+    [InlineData(RawHighlightMode.Unclip, "1")]
+    [InlineData(RawHighlightMode.Blend, "2")]
+    [InlineData(RawHighlightMode.Rebuild, "3")]
+    public void Highlight_mode_maps_to_its_number(RawHighlightMode mode, string expected)
+    {
+        var args = Arguments(RawDevelopSettings.Default with { Highlights = mode });
+
+        Assert.Equal(expected, args[args.IndexOf("-H") + 1]);
+    }
+
+    [Theory]
+    [InlineData(RawQuality.Fast, "0")]
+    [InlineData(RawQuality.Balanced, "2")]
+    [InlineData(RawQuality.Best, "3")]
+    public void Quality_maps_to_an_interpolation(RawQuality quality, string expected)
+    {
+        var args = Arguments(RawDevelopSettings.Default with { Quality = quality });
+
+        Assert.Equal(expected, args[args.IndexOf("-q") + 1]);
+    }
+
+    [Fact]
+    public void Noise_reduction_is_absent_unless_asked_for()
+        => Assert.DoesNotContain("-fbdd", Arguments());
+
+    [Theory]
+    [InlineData(RawNoiseReduction.Light, "1")]
+    [InlineData(RawNoiseReduction.Full, "2")]
+    public void Noise_reduction_maps_to_fbdd(RawNoiseReduction level, string expected)
+    {
+        var args = Arguments(RawDevelopSettings.Default with { NoiseReduction = level });
+
+        Assert.Equal(expected, args[args.IndexOf("-fbdd") + 1]);
+    }
+
+    [Fact]
+    public void As_shot_passes_no_exposure_argument()
+    {
+        // An exposure shift of 1.0 is not quite a no-op in LibRaw, so "as shot" must mean silence.
+        Assert.DoesNotContain("-aexpo", Arguments());
+    }
+
+    [Theory]
+    [InlineData(1, "2")]
+    [InlineData(-1, "0.5")]
+    [InlineData(2, "4")]
+    public void Exposure_stops_become_a_linear_multiplier(double stops, string expected)
+    {
+        var args = Arguments(RawDevelopSettings.Default with { ExposureStops = stops });
+
+        Assert.Equal(expected, args[args.IndexOf("-aexpo") + 1]);
+    }
+
+    [Fact]
+    public void The_exposure_multiplier_stays_within_what_libraw_accepts()
+    {
+        // LibRaw takes 0.25 to 8; a slider must not be able to produce an argument it refuses.
+        Assert.Equal(8, (RawDevelopSettings.Default with { ExposureStops = 99 }).ExposureMultiplier);
+        Assert.Equal(0.25, (RawDevelopSettings.Default with { ExposureStops = -99 }).ExposureMultiplier);
+    }
+
+    [Fact]
+    public void Exposure_is_written_invariantly()
+    {
+        var previous = Thread.CurrentThread.CurrentCulture;
+        try
+        {
+            // A comma decimal separator would make dcraw reject the argument.
+            Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("nb-NO");
+            var args = Arguments(RawDevelopSettings.Default with { ExposureStops = -1 });
+            Assert.Equal("0.5", args[args.IndexOf("-aexpo") + 1]);
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = previous;
+        }
+    }
+
+    [Fact]
+    public void Output_goes_to_stdout_in_srgb_with_the_file_last()
+    {
+        var args = Arguments();
 
         Assert.Equal("1", args[args.IndexOf("-o") + 1]);
         Assert.Equal("-", args[args.IndexOf("-Z") + 1]);
         Assert.Equal("/library/shot.raf", args[^1]);
+    }
+
+    [Fact]
+    public void Defaults_are_the_file_as_the_camera_recorded_it()
+    {
+        var settings = RawDevelopSettings.Default;
+
+        Assert.True(settings.IsDefault);
+        Assert.Equal(RawWhiteBalance.Camera, settings.WhiteBalance);
+        Assert.Equal(0, settings.ExposureStops);
+        Assert.Equal(RawNoiseReduction.Off, settings.NoiseReduction);
     }
 
     [Fact]

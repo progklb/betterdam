@@ -121,15 +121,76 @@ public class ZoomStateTests
     }
 
     [Fact]
-    public void Loading_different_content_refits()
+    public void The_first_content_starts_fitted()
     {
-        var state = Create();
-        state.ActualSize();
+        var state = new ZoomState();
 
         state.SetContent(new Size(800, 600), new Size(1000, 1000));
 
         Assert.True(state.IsFitted);
         Assert.Equal(1.25, state.Scale, precision: 4);
+    }
+
+    [Fact]
+    public void Replacing_content_of_the_same_size_changes_nothing()
+    {
+        var state = Create();
+        state.ActualSize();
+        state.PanBy(new Vector(-500, -400));
+
+        var scale = state.Scale;
+        var offset = state.Offset;
+
+        // A re-developed RAW at the same resolution: only the pixels differ.
+        state.SetContent(new Size(4000, 3000), new Size(1000, 1000));
+
+        Assert.Equal(scale, state.Scale, precision: 6);
+        Assert.Equal(offset.X, state.Offset.X, precision: 6);
+        Assert.Equal(offset.Y, state.Offset.Y, precision: 6);
+    }
+
+    [Fact]
+    public void Replacing_content_of_a_different_size_keeps_the_same_region_framed()
+    {
+        var state = Create();
+        state.ActualSize();
+
+        // Look at a point three quarters across and a third down.
+        state.PanBy(new Vector(-(3000 - 500), -(1000 - 500)));
+
+        var before = CentreOfView(state);
+
+        // Switching between a developed RAW and its embedded JPEG: same scene, fewer pixels.
+        state.SetContent(new Size(2000, 1500), new Size(1000, 1000));
+
+        var after = CentreOfView(state);
+
+        Assert.Equal(before.X, after.X, precision: 2);
+        Assert.Equal(before.Y, after.Y, precision: 2);
+    }
+
+    [Fact]
+    public void Replacing_content_of_a_different_size_keeps_the_same_relative_zoom()
+    {
+        var state = Create();
+        state.ActualSize();
+
+        var relative = state.Scale / state.FitScale;
+
+        state.SetContent(new Size(2000, 1500), new Size(1000, 1000));
+
+        // Half the pixels, so 100% would show twice as much; staying at the same multiple of fit is
+        // what keeps the comparison honest.
+        Assert.Equal(relative, state.Scale / state.FitScale, precision: 4);
+    }
+
+    /// <summary>Where the middle of the viewport falls within the content, as a proportion.</summary>
+    private static (double X, double Y) CentreOfView(ZoomState state)
+    {
+        var centre = new Point(state.Viewport.Width / 2, state.Viewport.Height / 2);
+        return (
+            (centre.X - state.Offset.X) / state.Scale / state.Content.Width,
+            (centre.Y - state.Offset.Y) / state.Scale / state.Content.Height);
     }
 
     [Fact]

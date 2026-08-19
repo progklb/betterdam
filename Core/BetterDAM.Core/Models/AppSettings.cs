@@ -58,6 +58,13 @@ public sealed record AppSettings
     /// </summary>
     public bool DevelopRawFiles { get; init; } = true;
 
+    /// <summary>
+    /// How RAW files are developed. Persisted so a way of working survives a restart, and applied
+    /// to every RAW rather than stored per file — this is a viewer, not an editor, and nothing here
+    /// is written back to the photograph.
+    /// </summary>
+    public RawDevelopSettings RawDevelop { get; init; } = RawDevelopSettings.Default;
+
     /// <summary>Beyond this many entries, Open Recent stops being a shortcut and becomes a list.</summary>
     public const int MaxRecentWorkspaces = 10;
 

@@ -1849,3 +1849,131 @@ be unusable if every tile demosaiced.
 
 **LibRaw is LGPL-2.1 / CDDL**, used here as a separate executable, which keeps it at arm's length
 from the application's own licensing.
+
+### Follow-up — develop feedback and switching
+
+**A processing hint.** Developing takes seconds and the rendition on screen looks final, so the
+viewer said nothing was happening. A progress strip now reads *"Developing RAW…"* — or *"Loading full
+resolution…"* for ordinary images — and clears when the decode lands. Only the run that is still
+current may clear it, so an older decode finishing late cannot hide the wait for the image now on
+screen.
+
+**`\` switches between the developed RAW and the embedded JPEG**, the way Lightroom uses it to flip
+between two renderings of the same shot. The key is reported under three different names depending on
+keyboard layout (`OemBackslash`, `OemPipe`, `Oem5`), so all three are handled.
+
+### Two bugs the hint exposed
+
+**Cancelled develops were left running.** Disposing a `Process` does not stop it, so arrowing through
+a folder of RAWs would abandon a full develop for every file passed over, each burning a core while
+the one actually wanted competed for CPU. The decoder now kills the process in a `finally`, as the
+video frame source already did.
+
+**The same decode was started two or three times per selection.** Selecting an item raises
+`SelectedItem`, `Preview` and sometimes `IsVideoSelected`, and the viewer refreshed on each — so a
+four-second develop was started and cancelled repeatedly before the one that survived. The ViewModel
+now remembers what the in-flight decode is for and ignores repeat requests for the same file. The
+`\` toggle explicitly clears that guard, since it changes *how* the same file is rendered.
+
+### Verified
+
+- *"Developing RAW…"* appeared over the embedded preview and cleared when the develop landed.
+- `\` flipped the setting `True → False`, persisted.
+- No `dcraw_emu` processes left behind afterwards.
+- `dotnet test` — **358/358 passing**.
+
+---
+
+## Interlude — Develop controls ✅
+
+Four develop options exposed where they are used, and the speed/quality choice put where it can be
+switched mid-session.
+
+### A Develop panel in the viewer
+
+A **Develop** button beside the zoom controls, appearing only for RAW files and only when developing
+is on — a panel of adjustments that cannot do anything is worse than no panel.
+
+| Control | LibRaw | Why it is one of the four |
+| ------- | ------ | ------------------------- |
+| Highlights | `-H 0..3` | Clip / Unclip / Blend / **Rebuild**. Reconstructing a blown sky from the channels that did not clip is the main reason to open the RAW instead of the JPEG. |
+| White balance | `-w` / `-a` | Camera is the picture as shot; Auto averages the frame when the camera got it wrong. |
+| Exposure | `-aexpo` | In **stops**, applied during the develop, so it recovers detail rather than brightening a finished image. |
+| Noise reduction | `-fbdd 1\|2` | Applied before demosaicing, which is where it belongs. Off by default; it costs time and detail. |
+
+Plus **Reset to as shot**, disabled while there is nothing to reset, and a line making clear the
+settings apply to every RAW and nothing is written to the files. This is a viewer, not an editor.
+
+### Speed as a working mode, not a buried preference
+
+**RAW quality** — Fast / Balanced / Best — sits in **View options** rather than Settings. The request
+was framed as an app setting, but the use case given was *"sometimes I want to quickly browse for a
+first-pass accept/reject, sometimes a full quality inspection for final picks"*. That is something
+switched several times in a session, so it belongs one click away rather than two dialogs deep. It
+still persists like any other preference.
+
+Named for the decision rather than the algorithm, because the choice being made is "am I culling or
+judging", not "do I want AHD": Fast is `-q 0` linear, Balanced `-q 2` PPG, Best `-q 3` AHD.
+
+### Details worth their code
+
+**Exposure is debounced by 400ms.** A develop takes seconds; starting one per slider tick would queue
+work faster than it could be cancelled. Everything else applies immediately, being a discrete choice.
+
+**"As shot" passes no exposure argument at all**, rather than a multiplier of 1.0 — which is not
+quite a no-op in LibRaw. As shot should mean exactly that.
+
+**Stops are converted to LibRaw's linear multiplier and clamped** to the 0.25–8 it accepts, so a
+slider cannot produce an argument the tool refuses. Written invariantly, because a comma decimal
+separator would make dcraw reject it.
+
+**Auto white balance swaps the flag rather than adding one.** Passing `-w` and `-a` together would
+let dcraw pick, which is not a choice the user made.
+
+**Output colour space is still not offered.** With no colour management, a wider space would be shown
+as though it were sRGB — misrepresenting the colour rather than improving it. Worth revisiting
+properly, since the display is P3.
+
+### Verified in the running app
+
+- The Develop panel appeared for a RAF and not for JPEGs, with Reset correctly disabled until
+  something was changed.
+- Exposure moved to **+2,5 EV**, persisted as multiplier **5.657** — 2^2.5 — and the image visibly
+  brightened.
+- **Reset to as shot** returned it to `IsDefault: True`.
+- View options shows **RAW files** and **RAW quality** together.
+- `dotnet test` — **376/376 passing** (was 358). Eighteen new, covering every flag mapping: highlight
+  and quality codes, the white-balance swap, noise reduction only when asked for, silence at as-shot,
+  stops to multiplier, clamping, and invariant formatting.
+
+### Follow-up — re-rendering is a comparison
+
+Two changes, both from the same observation: when a develop setting changes, the *only* thing that
+should change is the pixels.
+
+**The preview no longer flashes back.** `EnsureFullPreviewAsync` discarded the current full-size
+render before starting the next one, so several seconds of lower-quality rendition appeared between
+two versions of the same photograph — which is precisely what makes a comparison useless. The
+existing render is now kept on screen until its replacement is ready, and only released once the new
+one has been assigned. It is still discarded immediately when moving to a *different* file, where the
+old picture would simply be wrong.
+
+**The view no longer resets.** Zoom and position survive a re-render, so a region can be examined
+while adjusting noise reduction or exposure — which is the only way to judge either.
+
+That needed `ZoomState.SetContent` to stop refitting whenever the content changed. Content changing
+does not mean a different photograph: re-developing produces different pixels of the same scene, and
+switching between the developed RAW and its embedded JPEG produces a **different resolution** of it.
+So it now preserves the view, keeping the same region framed and the same magnification *relative to
+fit* — which is what makes the comparison honest across 6252×4176 and 4416×2944. Fitting is left to
+the caller, which is the only thing that knows a new photograph has been opened.
+
+### Verified
+
+- Zoomed to **47%** on a detail, changed highlights and exposure: the zoom stayed at 47% throughout
+  the re-develop, and the framing came back pixel-identical — same subjects, same crop, only the
+  tone different.
+- `dotnet test` — **379/379 passing** (was 376). One existing test was rewritten rather than patched:
+  *"loading different content refits"* encoded the old contract, and the new one is that the caller
+  decides. Three added for the new behaviour: same-size replacement changes nothing, and a
+  different-size replacement keeps both the framed region and the relative zoom.

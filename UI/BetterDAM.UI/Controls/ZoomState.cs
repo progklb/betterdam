@@ -44,22 +44,49 @@ public sealed class ZoomState
 
     public Size ScaledContent => new(Content.Width * Scale, Content.Height * Scale);
 
+    /// <summary>
+    /// Points the view at new content while keeping the same part of the picture in view.
+    ///
+    /// The content changing does not always mean a different photograph: re-developing a RAW, or
+    /// switching between the developed file and its embedded JPEG, produces a different number of
+    /// pixels showing the same scene. Refitting there would throw away the region being examined,
+    /// which is the whole reason for having zoomed in. A genuinely new image is fitted by the
+    /// caller, which is the only thing that knows the difference.
+    /// </summary>
     public void SetContent(Size content, Size viewport)
     {
-        var changed = !Content.NearlyEquals(content);
+        var hadContent = HasContent;
+        var resized = !Content.NearlyEquals(content);
+
+        if (!hadContent)
+        {
+            Content = content;
+            Viewport = viewport;
+            Fit();
+            return;
+        }
+
+        if (!resized)
+        {
+            Viewport = viewport;
+            Offset = ClampOffset(Offset);
+            return;
+        }
+
+        // Where the middle of the view sits within the picture, and how far zoomed in relative to
+        // fitting — both proportions, so they survive a change of resolution.
+        var centre = new Point(Viewport.Width / 2, Viewport.Height / 2);
+        var relativeX = (centre.X - Offset.X) / Scale / Content.Width;
+        var relativeY = (centre.Y - Offset.Y) / Scale / Content.Height;
+        var relativeScale = Scale / FitScale;
 
         Content = content;
         Viewport = viewport;
 
-        // A new image starts fitted; a resized window keeps the magnification the user chose.
-        if (changed)
-        {
-            Fit();
-        }
-        else
-        {
-            Offset = ClampOffset(Offset);
-        }
+        Scale = Clamp(FitScale * relativeScale);
+        Offset = ClampOffset(new Point(
+            centre.X - (relativeX * Content.Width * Scale),
+            centre.Y - (relativeY * Content.Height * Scale)));
     }
 
     public void Fit()

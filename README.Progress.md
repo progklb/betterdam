@@ -2046,3 +2046,253 @@ attempt does not repeat the elimination:
 The next thing to check is the alpha handling — the image is drawn with
 `kCGImageAlphaPremultipliedFirst` into a DeviceRGB context, and premultiplied edge pixels being
 carried into a surface that expects something else would land exactly here.
+
+---
+
+## Interlude — developing when the embedded preview is too small ✅
+
+Reported: DNGs still had no real rendering in the **preview pane** when browsing, only in the
+fullscreen viewer. Proposed rule: if there is no suitably sized preview, develop the photo — and cache
+the reduced-size result so it is there next time.
+
+That is the right rule, and the measurements say exactly where to draw the line.
+
+### Why the viewer was fixed but browsing was not
+
+The previous interlude only touched `IFullImageDecoder`, which the fullscreen viewer uses. The grid and
+the preview pane go through `IThumbnailService` → `RawThumbnailGenerator`, which had one strategy:
+extract the embedded JPEG and render it. For a stitched DNG there is nothing worth extracting.
+
+Reading the actual IFD layout of `DSCF6386-Pano.dng`:
+
+| IFD | Size | Compression |
+| --- | --- | --- |
+| IFD0 (preview) | **256×125** | JPEG |
+| SubIFD (full) | 8062×3922 | JPEG XL |
+| SubIFD2 | 1024×498 | JPEG XL |
+| SubIFD3 | 2048×996 | JPEG XL |
+
+There are larger reduced-resolution images in there, but every one of them is JPEG XL — unreachable
+through ExifTool's `-b` extraction and undecodable by Skia. The only ordinary JPEG in the file is
+**256×125**. In a 1600px preview pane that is a 6× upscale, which is the mush that was on screen.
+
+### The rule: how far a preview may be stretched
+
+Developing is now the fallback, triggered by `RawThumbnailGenerator.IsPreviewAdequate`. The threshold
+is not "at least the requested size" — that choice matters more than it looks:
+
+```text
+MaxUpscale = 2   →   adequate when previewEdge × 2 ≥ requested
+```
+
+At 1 (insist on an exact fit) a 256px preview would fail the 320px grid tile too, and a folder of these
+panoramas would develop **every tile** — 3.5 s each — for a difference invisible at tile size. At 2 the
+split falls in exactly the right place:
+
+```text
+320px  grid tile      256x125 preview is adequate     145 ms   (unchanged)
+1600px preview pane   256px is not; develops        3 054 ms   → 1600x778
+```
+
+And the cost is paid once: the result goes through the ordinary thumbnail cache, keyed by file and
+size, so the second visit to that photo is a cache hit like any other.
+
+Non-RAW browsing is untouched, and RAW files with a real preview are untouched — an X-S20 RAF carries a
+4416×2944 JPEG, which is adequate at every size the app asks for:
+
+```text
+DSCF6496.RAF   320px → 182 ms    1600px → 165 ms    (no develop)
+```
+
+### Details worth recording
+
+- **Developing is now a route in its own right, not only a fallback.** `CanHandle` accepts a file when
+  *either* the extractor or a decoder is available, so a RAW with no embedded preview at all now
+  produces a thumbnail instead of a blank tile.
+- **A failed develop keeps the small preview.** Better a soft thumbnail than none.
+- **The developed pixels are wrapped, not copied.** `SkiaThumbnailRenderer.Render(DecodedImage, …)`
+  pins the BGRA array and hands Skia the pointer — a 71MP panorama is 286 MB, and copying it just to
+  shrink it would double that for no reason.
+- **Preview size is read from the header,** via `SKCodec.Info`, so judging a preview does not decode it.
+
+Worst case in the user's library, a 13355×5347 stitch: **3 490 ms**, then cached.
+
+### Verified
+
+- `dotnet test` — **400/400 passing** (was 388). Twelve new, the substantive ones being the threshold
+  table, develop-when-too-small, use-the-preview-at-grid-size, develop-when-there-is-no-preview, and
+  fall-back-when-the-develop-fails.
+- End-to-end against the real files through the real ExifTool and decoder chain, not stubs.
+
+---
+
+## Interlude — the loupe ✅
+
+Requested: press and hold on the inline preview to magnify, following the pointer, gone on release —
+Bridge's loupe rather than a scroll-zoom in the pane.
+
+### It renders whatever it has, at 1:1
+
+The one design decision that made the rest fall out: **the loupe does not wait for pixels, and it never
+upscales.** It draws its source at one source pixel per screen pixel, and its source is
+`FullPreview ?? Preview`.
+
+That single fallback does all the work:
+
+- A JPEG has its full decode ready before the loupe ever opens, so it is 100% immediately.
+- A RAW does not. The loupe opens anyway on the 1600px preview — a genuine ~2× magnification, sharp,
+  just not the photograph. When the develop lands seconds later the same spot simply becomes more
+  detailed, because the position is held as a **fraction** of the picture rather than a pixel
+  coordinate and so survives the change of resolution.
+
+The badge says which it is: `Preview · 2.0×` becomes `100% · 7.5×`. Calling the first one 100% would
+claim a pixel-level look at the photograph that it is not.
+
+### Decode policy
+
+| | When the full decode starts |
+| --- | --- |
+| JPEG, PNG, … | on selection, after the cheap preview is on screen |
+| RAW, DNG | on the first loupe press, with the existing "Developing RAW…" indicator |
+
+Developing every RAW passed over on the way to somewhere else would be seconds and hundreds of
+megabytes each for a look that may never happen.
+
+### Details that were not obvious
+
+- **The pane is letterboxed.** A panorama in a squarish pane leaves most of the pane empty, so pointer
+  positions map against `FitRect`, not the pane's own bounds — and a press in the margin does not open
+  the loupe at all, because there is nothing there to magnify.
+- **The loupe slides near edges** rather than showing a band of empty space. Checking a corner for
+  focus is precisely when it is wanted, and a quarter-full loupe would defeat that.
+- **A 150 ms hold delay.** Press-and-hold and double-click-to-open-fullscreen begin with the same
+  press; without the delay the loupe flashes on screen on every double-click. Short enough that a
+  deliberate hold still feels immediate.
+- **Drawn, not composed.** `Loupe.Render` blits one rectangle out of the source. Persuading an `Image`
+  and a transform not to scale anything would have been more code and would have put the magnified
+  region a pixel or two off the cursor.
+- **`ReleaseFullPreview`.** The viewer used to `DiscardFullPreview` on close, which nulls the bitmap
+  but leaves the request recorded — so the loupe would have been stuck on the preview for as long as
+  that file stayed selected. Closing now clears both.
+- **`x:Name` on a transform inside a property element generates no field**, the same trap as
+  `NativeMenuItem`. The transform is assigned from the constructor.
+
+### Verified
+
+- `dotnet test` — **419/419 passing** (was 400). Nineteen new, the load-bearing one being a round trip:
+  the point picked out of the letterboxed pane is the point that ends up under the cursor in the
+  loupe, at several positions including clamped edges.
+- **Not yet exercised in the GUI** — an instance of the app was running while this was written.
+
+---
+
+## Interlude — the loupe was not showing 100% ✅
+
+Reported: RAW looks right in the loupe, JPEG is noticeably grainy — suspected to be the preview rather
+than the full image.
+
+### It was the full image. The loupe was upscaling it
+
+The JPEG full decode was already wired and working — `SkiaFullImageDecoder` returns **6240×4160 in
+471 ms** for a camera JPEG, eagerly on selection. The fault was one level down, in what the loupe did
+with those pixels.
+
+Drawing coordinates in Avalonia are device-independent pixels. On a Retina display a 340 DIP loupe
+covers **680 physical pixels**, and the loupe was filling it with **340 source pixels** — a 2×
+magnification with interpolation, on every image, while claiming to be 100%.
+
+That explains the asymmetry exactly, and it is not really about JPEG versus RAW:
+
+- A camera JPEG carries 8×8 DCT blocks and subsampled chroma. Magnify that 2× and smear it and the
+  artefacts become the thing you are looking at — "grainy".
+- A developed RAW is demosaiced with no compression artefacts to magnify, so the same 2× upscale read
+  as merely soft, and nothing looked wrong.
+
+Reproduced outside the GUI by blitting both behaviours out of the same decoded frame:
+
+```text
+before   340 source px stretched over 680 physical px    soft, mushy
+fixed    680 source px onto 680 physical px              sharp, no resampling
+```
+
+### The fix
+
+`LoupeGeometry.SourceWindow(bounds, renderScaling)` converts the loupe's size in DIPs to the number of
+source pixels it should span, and `Loupe.DrawMagnified` divides back down when placing the result. At
+100% the source rectangle and the physical pixels it lands on are now the same count, so the draw is a
+copy rather than a resample — which is what "100%" means in Photoshop and Lightroom too.
+
+The badge divides by the same factor, so it reports what is on screen rather than a raw pixel ratio: a
+24MP frame in an 800 DIP pane now reads **3.75×** on this display, not 7.5×.
+
+One consequence worth knowing: the loupe now covers **four times the area** it did, at genuine
+per-pixel sharpness. It is less magnified and far more useful.
+
+### Verified
+
+- `dotnet test` — **425/425 passing** (was 419). Six new, covering the DIP-to-source-pixel conversion,
+  nonsense scaling values, and the on-screen magnification figure.
+- The before/after blits above, taken through the real decoder on a real camera JPEG.
+
+---
+
+## Interlude — locking the loupe to 100% of the developed image ✅
+
+Three things: the magnification jumped when a RAW develop landed, the badge could not be found, and
+Inspect was wanted as a pinned mode.
+
+### Why the magnification jumped
+
+The loupe drew whatever bitmap it had at one image pixel per physical pixel. For a RAW that meant the
+embedded preview first — **4416px against a developed 6240px** — so the picture was shown smaller,
+then resized the instant the develop finished, throwing away the spot being examined.
+
+The fix separates *what is being drawn* from *what 100% means*. `Loupe.TargetWidth` is the resolution
+the magnification is defined against, and `LoupeGeometry.SourceWindow` scales the window into whatever
+source is actually loaded:
+
+```text
+target 6240, source 6240   →  680 source px across 680 physical px   sharp, 100%
+target 6240, source 4416   →  481 source px across 680 physical px   soft, same framing
+```
+
+Same fraction of the picture either way, so the develop now sharpens the image without moving it.
+
+### Knowing the target before the develop finishes
+
+`LoupeTargetWidth` prefers the decoded width, and falls back to **`Composite:ImageSize`** from the
+metadata already read for the inspector — no extra work, since that read happens on selection anyway.
+
+Composite specifically. On a RAF, `File:ImageWidth` is **4416**, the embedded preview; the sensor image
+is **6240** wide. The obvious tag is the wrong one.
+
+It is not exact — ExifTool says 6240×4160 where LibRaw produces 6252×4176, a 0.2% difference — but it
+is corrected to the real value the moment the decode lands, and 0.2% is invisible.
+
+### The badge
+
+It existed, at 11px in the bottom-right corner, which is a corner nobody looks at. Now top-left where
+the eye already is, semibold at 12px, and saying what it means rather than only a number:
+
+```text
+Preview · 3.8×                 the stand-in, while the develop runs
+Developed · 100% · 3.8×        the photograph itself
+```
+
+The magnification figure is now computed from the target width, so it stays put across the transition —
+only the word in front of it changes.
+
+### Inspect
+
+Right-click the preview → **Inspect** pins the loupe: it stays open and follows the pointer with no
+button held, for working across a picture rather than glancing at one spot. Esc or **Stop Inspecting**
+ends it, and the badge grows an `· Esc` hint while pinned. Pinned, the loupe holds its position when
+the pointer crosses the letterbox instead of blinking out.
+
+### Verified
+
+- `dotnet test` — **432/432 passing** (was 425). Seven new, the load-bearing one being that the loupe
+  covers the same fraction of the picture at 1600, 3200 and 6400 px sources.
+- **Not verified in the GUI.** The app builds and runs — the window was confirmed present at 20,31,
+  1400×869 — but the screen was locked, so nothing could be captured. The badge change in particular
+  is unconfirmed visually.

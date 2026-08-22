@@ -132,9 +132,10 @@ public partial class MediaViewerWindow : Window
         viewModel.Player.FrameReady -= OnFrameReady;
         viewModel.Player.SurfaceCleared -= OnSurfaceCleared;
 
-        // Tens of megabytes; the inline preview does not need it and nothing else is holding it.
+        // Tens of megabytes, and nothing is looking at it now. Released rather than merely discarded
+        // so the main window's loupe can ask for it again on this same file.
         Still.Source = null;
-        viewModel.DiscardFullPreview();
+        viewModel.ReleaseFullPreview();
     }
 
     private void OnViewModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

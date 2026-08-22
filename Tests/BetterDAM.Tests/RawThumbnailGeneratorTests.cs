@@ -23,6 +23,30 @@ public class RawThumbnailGeneratorTests
         }
     }
 
+    /// <summary>Stands in for LibRaw/ImageIO: hands back flat BGRA of the requested size.</summary>
+    private sealed class StubDecoder(int width, int height, bool available = true) : IRawDecoder
+    {
+        public bool IsAvailable { get; } = available;
+
+        public int Calls { get; private set; }
+
+        public Task<DecodedImage?> DevelopAsync(MediaFile file, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+
+            if (width <= 0)
+            {
+                return Task.FromResult<DecodedImage?>(null);
+            }
+
+            var pixels = new byte[(long)width * height * 4];
+            Array.Fill(pixels, (byte)0x80);
+            return Task.FromResult<DecodedImage?>(new DecodedImage(pixels, width, height));
+        }
+    }
+
+    private static readonly StubDecoder NoDecoder = new(0, 0, available: false);
+
     private static byte[] EncodeJpeg(int width, int height)
     {
         using var bitmap = new SKBitmap(width, height);
@@ -46,8 +70,8 @@ public class RawThumbnailGeneratorTests
         CreatedUtc = DateTimeOffset.UnixEpoch
     };
 
-    private static RawThumbnailGenerator Create(IEmbeddedPreviewExtractor extractor)
-        => new(extractor, NullLogger<RawThumbnailGenerator>.Instance);
+    private static RawThumbnailGenerator Create(IEmbeddedPreviewExtractor extractor, IRawDecoder? raw = null)
+        => new(extractor, raw ?? NoDecoder, NullLogger<RawThumbnailGenerator>.Instance);
 
     [Theory]
     [InlineData("/library/IMG001.CR3", true)]
@@ -65,11 +89,105 @@ public class RawThumbnailGeneratorTests
         => Assert.Equal(expected, Create(new StubExtractor([])).CanHandle(RawFile(path)));
 
     [Fact]
-    public void Declines_everything_when_exiftool_is_unavailable()
+    public void Declines_everything_when_neither_route_is_available()
     {
         var generator = Create(new StubExtractor(null, available: false));
 
         Assert.False(generator.CanHandle(RawFile()));
+    }
+
+    /// <summary>Developing is a route in its own right, not only a fallback from an extraction.</summary>
+    [Fact]
+    public void Handles_raws_when_only_the_decoder_is_available()
+    {
+        var generator = Create(new StubExtractor(null, available: false), new StubDecoder(4000, 3000));
+
+        Assert.True(generator.CanHandle(RawFile()));
+    }
+
+    [Theory]
+    // Exactly the size asked for, and comfortably larger: no reason to develop.
+    [InlineData(320, 320, true)]
+    [InlineData(2400, 1600, true)]
+    // Short of the target but within the stretch allowance — a 256px preview is fine for a grid tile.
+    [InlineData(256, 320, true)]
+    [InlineData(800, 1600, true)]
+    // Beyond it. This is the stitched-panorama case: 256px asked to fill a 1600px preview pane.
+    [InlineData(256, 1600, false)]
+    [InlineData(799, 1600, false)]
+    [InlineData(0, 320, false)]
+    public void Judges_whether_a_preview_is_big_enough(int previewEdge, int requested, bool adequate)
+        => Assert.Equal(adequate, RawThumbnailGenerator.IsPreviewAdequate(previewEdge, requested));
+
+    /// <summary>
+    /// The reported case: a DNG whose only ordinary preview is 256x125, shown in the 1600px preview
+    /// pane. Upscaling that is the mush the develop exists to avoid.
+    /// </summary>
+    [Fact]
+    public async Task Develops_when_the_embedded_preview_is_too_small_for_the_requested_size()
+    {
+        var decoder = new StubDecoder(8062, 3922);
+        var generator = Create(new StubExtractor(EncodeJpeg(256, 125)), decoder);
+
+        var bytes = await generator.GenerateAsync(RawFile(), 1600);
+
+        Assert.NotNull(bytes);
+        Assert.Equal(1, decoder.Calls);
+
+        using var decoded = SKBitmap.Decode(bytes);
+        Assert.Equal(1600, decoded.Width);
+    }
+
+    /// <summary>
+    /// The same file at grid size must not develop: that is what keeps a folder of panoramas
+    /// browsable.
+    /// </summary>
+    [Fact]
+    public async Task Uses_a_slightly_small_preview_rather_than_developing()
+    {
+        var decoder = new StubDecoder(8062, 3922);
+        var generator = Create(new StubExtractor(EncodeJpeg(256, 125)), decoder);
+
+        var bytes = await generator.GenerateAsync(RawFile(), 320);
+
+        Assert.NotNull(bytes);
+        Assert.Equal(0, decoder.Calls);
+
+        // Never upscaled: the preview is rendered at the size it is.
+        using var decoded = SKBitmap.Decode(bytes);
+        Assert.Equal(256, decoded.Width);
+    }
+
+    [Fact]
+    public async Task Develops_when_there_is_no_embedded_preview_at_all()
+    {
+        var decoder = new StubDecoder(6000, 4000);
+        var generator = Create(new StubExtractor(null), decoder);
+
+        var bytes = await generator.GenerateAsync(RawFile(), 320);
+
+        Assert.NotNull(bytes);
+        Assert.Equal(1, decoder.Calls);
+
+        using var decoded = SKBitmap.Decode(bytes);
+        Assert.Equal(320, decoded.Width);
+        Assert.Equal(213, decoded.Height);
+    }
+
+    /// <summary>A failed develop must not lose the preview we already had, small though it is.</summary>
+    [Fact]
+    public async Task Falls_back_to_the_small_preview_when_developing_fails()
+    {
+        var decoder = new StubDecoder(0, 0);
+        var generator = Create(new StubExtractor(EncodeJpeg(256, 125)), decoder);
+
+        var bytes = await generator.GenerateAsync(RawFile(), 1600);
+
+        Assert.NotNull(bytes);
+        Assert.Equal(1, decoder.Calls);
+
+        using var decoded = SKBitmap.Decode(bytes);
+        Assert.Equal(256, decoded.Width);
     }
 
     [Fact]

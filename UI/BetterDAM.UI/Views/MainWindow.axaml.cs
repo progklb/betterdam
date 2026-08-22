@@ -1,8 +1,12 @@
 using System.Collections.Specialized;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Threading;
 using BetterDAM.Core.Models;
+using BetterDAM.UI.Controls;
 using BetterDAM.UI.Services;
 using BetterDAM.UI.ViewModels;
 
@@ -19,6 +23,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        // Assigned here rather than in the markup: x:Name inside a property element generates no
+        // field, so a named transform there cannot be reached from code.
+        PreviewLoupe.RenderTransform = _loupePosition;
 
         DataContextChanged += (_, _) =>
         {
@@ -126,6 +134,14 @@ public partial class MainWindow : Window
     {
         base.OnKeyDown(e);
 
+        // Esc leaves Inspect. Checked before F so a pinned loupe is what Esc acts on.
+        if (e.Key == Key.Escape && _loupePinned)
+        {
+            StopInspecting();
+            e.Handled = true;
+            return;
+        }
+
         // Ignored while typing: "f" belongs to the search box when it has focus.
         if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.None && FocusManager?.GetFocusedElement() is not TextBox)
         {
@@ -135,6 +151,220 @@ public partial class MainWindow : Window
     }
 
     private void OnPreviewDoubleTapped(object? sender, TappedEventArgs e) => OpenFullscreen();
+
+    // ---- Loupe --------------------------------------------------------------------------------
+
+    /// <summary>
+    /// How long the button must be down before the loupe opens.
+    ///
+    /// Not a throttle — it is what keeps press-and-hold and double-click-to-open-fullscreen out of
+    /// each other's way. Both gestures start with the same press, and without this the loupe flashes
+    /// on screen every time the preview is double-clicked. Short enough that a deliberate hold still
+    /// feels immediate.
+    /// </summary>
+    private static readonly TimeSpan LoupeHoldDelay = TimeSpan.FromMilliseconds(150);
+
+    private readonly TranslateTransform _loupePosition = new();
+
+    private DispatcherTimer? _loupeHoldTimer;
+
+    /// <summary>Where in the picture the pointer went down, kept while waiting out the hold delay.</summary>
+    private Point? _loupeRelative;
+
+    /// <summary>
+    /// True while Inspect is on: the loupe stays open and follows the pointer with no button held,
+    /// for working through a picture rather than glancing at one spot.
+    /// </summary>
+    private bool _loupePinned;
+
+    /// <summary>
+    /// Turns Inspect on or off. Pinning shows the loupe straight away, at the pointer if it is over
+    /// the picture and in the middle otherwise, so the menu selection has a visible result either way.
+    /// </summary>
+    private void OnToggleInspect(object? sender, RoutedEventArgs e)
+    {
+        if (_loupePinned)
+        {
+            StopInspecting();
+            return;
+        }
+
+        if (DataContext is not MainWindowViewModel viewModel || viewModel.LoupeSource is null)
+        {
+            return;
+        }
+
+        _loupePinned = true;
+        PreviewLoupe.IsPinned = true;
+        InspectMenuItem.Header = "Stop Inspecting";
+
+        // A RAW may not be decoded yet; Inspect is a deliberate request to look closely, so ask now.
+        _ = viewModel.EnsureFullPreviewAsync();
+
+        _loupeRelative ??= new Point(0.5, 0.5);
+        PreviewLoupe.Relative = _loupeRelative.Value;
+        PreviewLoupe.TargetWidth = viewModel.LoupeTargetWidth;
+        PlaceLoupe(new Point(
+            PreviewImage.Bounds.Width * _loupeRelative.Value.X,
+            PreviewImage.Bounds.Height * _loupeRelative.Value.Y));
+
+        PreviewLoupe.IsVisible = true;
+    }
+
+    private void StopInspecting()
+    {
+        _loupePinned = false;
+        PreviewLoupe.IsPinned = false;
+        InspectMenuItem.Header = "Inspect";
+        HideLoupe();
+    }
+
+    private void OnPreviewPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        // While pinned the loupe is already following the pointer; a click should not start a second,
+        // press-and-hold gesture on top of it.
+        if (_loupePinned)
+        {
+            return;
+        }
+
+        if (!e.GetCurrentPoint(PreviewImage).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        if (!TrackLoupe(e))
+        {
+            return;
+        }
+
+        // Held for the duration of the gesture, so sliding off the image — or off the window —
+        // still delivers the release that closes the loupe.
+        e.Pointer.Capture(PreviewImage);
+
+        // A RAW has not been decoded yet: ask now, and say so. Until it lands the loupe magnifies
+        // the preview, so there is something useful on screen throughout.
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            _ = viewModel.EnsureFullPreviewAsync();
+        }
+
+        _loupeHoldTimer?.Stop();
+        _loupeHoldTimer = new DispatcherTimer { Interval = LoupeHoldDelay };
+        _loupeHoldTimer.Tick += (_, _) =>
+        {
+            _loupeHoldTimer?.Stop();
+
+            if (_loupeRelative is not null)
+            {
+                PreviewLoupe.IsVisible = true;
+            }
+        };
+        _loupeHoldTimer.Start();
+    }
+
+    private void OnPreviewPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_loupePinned || _loupeRelative is not null)
+        {
+            TrackLoupe(e);
+        }
+    }
+
+    private void OnPreviewPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_loupePinned)
+        {
+            HideLoupe();
+        }
+    }
+
+    private void OnPreviewPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (!_loupePinned)
+        {
+            HideLoupe();
+        }
+    }
+
+    /// <summary>
+    /// Points the loupe at wherever the pointer is. Returns false when that is not over the picture —
+    /// the preview is letterboxed, and there is nothing to magnify in the margins.
+    /// </summary>
+    private bool TrackLoupe(PointerEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel
+            || viewModel.Preview is not { } preview
+            || PreviewImage.Bounds.Width <= 0)
+        {
+            return false;
+        }
+
+        var viewport = PreviewImage.Bounds.Size;
+        var content = new Size(preview.PixelSize.Width, preview.PixelSize.Height);
+        var pointer = e.GetPosition(PreviewImage);
+
+        if (LoupeGeometry.ToRelative(pointer, content, viewport) is not { } relative)
+        {
+            // Off the picture. While pinned the loupe stays where it was rather than blinking out
+            // every time the pointer crosses the letterbox on its way somewhere else.
+            if (!_loupePinned)
+            {
+                HideLoupe();
+            }
+
+            return false;
+        }
+
+        _loupeRelative = relative;
+        PreviewLoupe.Relative = relative;
+        PreviewLoupe.TargetWidth = viewModel.LoupeTargetWidth;
+
+        PlaceLoupe(pointer);
+
+        PreviewLoupe.Caption = DescribeMagnification(viewModel, content, viewport, RenderScaling);
+        return true;
+    }
+
+    /// <summary>Centred on the pointer, then kept inside the pane so it is never half off the edge.</summary>
+    private void PlaceLoupe(Point pointer)
+    {
+        var viewport = PreviewImage.Bounds.Size;
+
+        _loupePosition.X = Math.Clamp(pointer.X - PreviewLoupe.Width / 2, 0, Math.Max(0, viewport.Width - PreviewLoupe.Width));
+        _loupePosition.Y = Math.Clamp(pointer.Y - PreviewLoupe.Height / 2, 0, Math.Max(0, viewport.Height - PreviewLoupe.Height));
+    }
+
+    /// <summary>
+    /// "100%" only once the full-resolution decode is in hand. Before that the loupe is magnifying
+    /// the preview, and calling that 100% would claim a pixel-level look at the photograph that it
+    /// is not.
+    /// </summary>
+    private static string DescribeMagnification(
+        MainWindowViewModel viewModel, Size content, Size viewport, double renderScaling)
+    {
+        if (viewModel.LoupeSource is null)
+        {
+            return string.Empty;
+        }
+
+        // Against the target width, so the figure does not change when a develop lands — only the
+        // word in front of it does.
+        var magnification = LoupeGeometry.Magnification(
+            viewModel.LoupeTargetWidth, content, viewport, renderScaling);
+
+        return viewModel.IsLoupeFullResolution
+            ? $"Developed · 100% · {magnification:F1}×"
+            : $"Preview · {magnification:F1}×";
+    }
+
+    private void HideLoupe()
+    {
+        _loupeHoldTimer?.Stop();
+        _loupeHoldTimer = null;
+        _loupeRelative = null;
+        PreviewLoupe.IsVisible = false;
+    }
 
     /// <summary>
     /// Double-clicking a tile opens it, which is what double-clicking a thumbnail means everywhere

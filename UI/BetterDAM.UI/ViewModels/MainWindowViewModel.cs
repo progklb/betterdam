@@ -1,6 +1,7 @@
 using Avalonia;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -73,6 +74,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Player = player;
         Batch = batch;
 
+        // The full pixel size arrives with the metadata, and the loupe needs it to open a RAW at the
+        // right magnification before the develop has finished.
+        Inspector.RawTags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(LoupeTargetWidth));
+
         // A batch run marks many files at once; refresh whatever is on screen afterwards.
         Batch.Applied += () => PendingChangeCount = _pending.Count;
 
@@ -122,10 +127,63 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private MediaItemViewModel? _selectedItem;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LoupeSource))]
+    [NotifyPropertyChangedFor(nameof(LoupeTargetWidth))]
     private Bitmap? _preview;
 
     [ObservableProperty]
     private bool _isPreviewLoading;
+
+    /// <summary>
+    /// What the loupe magnifies: the full-resolution decode when there is one, otherwise the cached
+    /// preview.
+    ///
+    /// Falling back rather than waiting is the point. The loupe always shows real pixels at 1:1 —
+    /// before the decode lands that is the 1600px preview, which is a genuine if modest magnification
+    /// and perfectly sharp, and when the decode arrives the same spot simply becomes more detailed.
+    /// The alternative, an empty box for the several seconds a RAW takes, would make the feature
+    /// useless exactly when it is wanted.
+    /// </summary>
+    public Bitmap? LoupeSource => FullPreview ?? Preview;
+
+    /// <summary>Whether the loupe is showing the photograph itself rather than a rendition of it.</summary>
+    public bool IsLoupeFullResolution => FullPreview is not null;
+
+    /// <summary>
+    /// The pixel width that 100% in the loupe refers to.
+    ///
+    /// Known exactly once the file has been decoded. Before that it comes from the metadata already
+    /// read for the inspector, which matters because it is the only way the loupe can open at the
+    /// right magnification on a RAW whose develop has not finished — the embedded preview is a
+    /// quarter of the size, and scaling to that would make the picture jump when the develop landed.
+    /// Zero when nothing knows, which leaves the loupe at the source's own 1:1.
+    /// </summary>
+    public double LoupeTargetWidth
+        => FullPreview?.PixelSize.Width ?? MetadataPixelWidth() ?? Preview?.PixelSize.Width ?? 0;
+
+    /// <summary>
+    /// The full pixel width according to ExifTool's Composite:ImageSize.
+    ///
+    /// Composite deliberately: on a RAF, File:ImageWidth is 4416 — the embedded preview — while the
+    /// sensor image is 6240 wide. Reading the obvious tag would give exactly the wrong number.
+    /// </summary>
+    private double? MetadataPixelWidth()
+    {
+        var size = Inspector.RawTags
+            .FirstOrDefault(tag => tag.QualifiedName is "Composite:ImageSize")?.Value;
+
+        if (size is null)
+        {
+            return null;
+        }
+
+        var separator = size.IndexOf('x');
+        return separator > 0
+               && double.TryParse(size[..separator], NumberStyles.Float, CultureInfo.InvariantCulture, out var width)
+               && width > 0
+            ? width
+            : null;
+    }
 
     [ObservableProperty]
     private string _statusText = string.Empty;
@@ -171,6 +229,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// tens of megabytes and a decode, neither of which is worth spending on the inline preview.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LoupeSource))]
+    [NotifyPropertyChangedFor(nameof(IsLoupeFullResolution))]
+    [NotifyPropertyChangedFor(nameof(LoupeTargetWidth))]
     private Bitmap? _fullPreview;
 
     private CancellationTokenSource? _fullPreviewCts;
@@ -299,6 +360,48 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// </summary>
     [RelayCommand]
     private void ToggleRawDevelopment() => DevelopRawFiles = !DevelopRawFiles;
+
+    /// <summary>
+    /// Gives up the full-size bitmap and forgets that it was ever asked for, so a later request
+    /// decodes again rather than being swallowed by the guard.
+    ///
+    /// What the viewer calls when it closes. It cannot simply discard: the loupe in the main window
+    /// wants the same bitmap, and leaving the request recorded would leave the loupe stuck on the
+    /// preview for as long as that file stayed selected.
+    /// </summary>
+    public void ReleaseFullPreview()
+    {
+        DiscardFullPreview();
+        InvalidateFullPreviewRequest();
+    }
+
+    /// <summary>
+    /// Starts the full-resolution decode if it is cheap, so the loupe is sharp the moment it opens.
+    ///
+    /// Only for formats that decode quickly. Developing a RAW takes seconds and hundreds of megabytes,
+    /// which is not worth spending on every photograph passed over on the way to somewhere else — for
+    /// those the loupe asks when it is actually opened, and says what it is doing while it waits.
+    /// </summary>
+    private void PrepareLoupeSource()
+    {
+        var wanted = SelectedItem?.File.FullPath;
+
+        // A full-size bitmap of the photograph we have just moved away from must go, or the loupe
+        // would magnify the wrong picture. Skipped when a decode for this file is already in flight,
+        // which is the case whenever the viewer window is open — clearing the guard there would
+        // start a second develop of the same RAW.
+        if (_fullPreviewRequest != wanted && _fullPreviewLoaded != wanted)
+        {
+            ReleaseFullPreview();
+        }
+
+        if (SelectedItem is { } item
+            && !IsVideoSelected
+            && !MediaTypeRegistry.IsRaw(item.File.FullPath))
+        {
+            _ = EnsureFullPreviewAsync();
+        }
+    }
 
     /// <summary>Releases the full-size bitmap, which is far too large to keep around unseen.</summary>
     public void DiscardFullPreview()
@@ -1352,6 +1455,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 using var stream = new MemoryStream(bytes);
                 Preview = new Bitmap(stream);
             }
+
+            // After the pane has something in it, never before: the cheap preview is what makes
+            // browsing feel immediate, and the full decode is only ever an upgrade to it.
+            PrepareLoupeSource();
         }
         catch (OperationCanceledException)
         {

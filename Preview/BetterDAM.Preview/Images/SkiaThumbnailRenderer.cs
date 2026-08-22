@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using BetterDAM.Core.Interfaces;
 using SkiaSharp;
 
 namespace BetterDAM.Preview.Images;
@@ -24,6 +26,53 @@ internal static class SkiaThumbnailRenderer
     public static bool CanDecode(string filePath)
         => DecodableExtensions.Contains(Path.GetExtension(filePath));
 
+    /// <summary>
+    /// The pixel dimensions of an encoded image, read from its header without decoding it. Null when
+    /// it cannot be decoded at all.
+    /// </summary>
+    public static (int Width, int Height)? ReadSize(Stream source)
+    {
+        using var codec = SKCodec.Create(source);
+        return codec is null || codec.Info.Width <= 0 || codec.Info.Height <= 0
+            ? null
+            : (codec.Info.Width, codec.Info.Height);
+    }
+
+    /// <summary>
+    /// Renders already-decoded pixels, for the case where the picture came from a RAW develop rather
+    /// than an encoded file. The develop has applied the orientation, so there is none to correct.
+    /// </summary>
+    public static byte[]? Render(DecodedImage image, int maxEdgePixels, CancellationToken cancellationToken)
+    {
+        var info = new SKImageInfo(image.Width, image.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        if (image.Pixels.Length < info.BytesSize)
+        {
+            return null;
+        }
+
+        // Wrapped rather than copied: a developed panorama is well over 100 MB, and the resize that
+        // follows immediately is what actually needs the memory.
+        var pinned = GCHandle.Alloc(image.Pixels, GCHandleType.Pinned);
+
+        try
+        {
+            using var source = new SKBitmap();
+            if (!source.InstallPixels(info, pinned.AddrOfPinnedObject(), info.RowBytes))
+            {
+                return null;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using var resized = ResizeToFit(source, maxEdgePixels);
+            return Encode(resized);
+        }
+        finally
+        {
+            pinned.Free();
+        }
+    }
+
     /// <summary>Returns encoded JPEG bytes, or null when the source cannot be decoded.</summary>
     public static byte[]? Render(Stream source, int maxEdgePixels, CancellationToken cancellationToken)
     {
@@ -45,7 +94,12 @@ internal static class SkiaThumbnailRenderer
 
         using var oriented = ApplyOrientation(decoded, codec.EncodedOrigin);
         using var resized = ResizeToFit(oriented, maxEdgePixels);
-        using var image = SKImage.FromBitmap(resized);
+        return Encode(resized);
+    }
+
+    private static byte[] Encode(SKBitmap bitmap)
+    {
+        using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Jpeg, JpegQuality);
         return data.ToArray();
     }

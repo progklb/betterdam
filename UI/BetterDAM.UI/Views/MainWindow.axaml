@@ -396,9 +396,31 @@
             </Panel>
 
             <!-- ============ Still preview ============ -->
-            <Image Source="{Binding Preview}" Stretch="Uniform" Margin="8"
-                   IsVisible="{Binding !IsVideoSelected}"
-                   DoubleTapped="OnPreviewDoubleTapped" />
+            <!-- Image and loupe share this panel so they share a coordinate space: the pointer
+                 position that picks the magnified spot is the same one that places the loupe. -->
+            <Panel Margin="8" IsVisible="{Binding !IsVideoSelected}">
+
+              <Image x:Name="PreviewImage" Source="{Binding Preview}" Stretch="Uniform"
+                     DoubleTapped="OnPreviewDoubleTapped"
+                     PointerPressed="OnPreviewPointerPressed"
+                     PointerMoved="OnPreviewPointerMoved"
+                     PointerReleased="OnPreviewPointerReleased"
+                     PointerCaptureLost="OnPreviewPointerCaptureLost">
+                <Image.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem x:Name="InspectMenuItem" Header="Inspect" Click="OnToggleInspect"
+                              ToolTip.Tip="Keep the loupe open and follow the pointer. Esc to stop." />
+                    <MenuItem Header="Open Fullscreen" Click="OnFullscreen" />
+                  </ContextMenu>
+                </Image.ContextMenu>
+              </Image>
+
+              <!-- Press and hold to inspect at 1:1. Positioned by render transform, so following
+                   the pointer costs no layout. -->
+              <controls:Loupe x:Name="PreviewLoupe" IsVisible="False"
+                              HorizontalAlignment="Left" VerticalAlignment="Top"
+                              Source="{Binding LoupeSource}" />
+            </Panel>
 
             <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14"
                     Padding="8,4" Background="#99000000" Click="OnFullscreen"

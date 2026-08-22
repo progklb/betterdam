@@ -2296,3 +2296,65 @@ the pointer crosses the letterbox instead of blinking out.
 - **Not verified in the GUI.** The app builds and runs — the window was confirmed present at 20,31,
   1400×869 — but the screen was locked, so nothing could be captured. The badge change in particular
   is unconfirmed visually.
+
+---
+
+## Interlude — transport icons and Space to play ✅
+
+**Icons.** The step buttons used ⏮ and ⏭. On macOS those render as colour emoji with their own metrics,
+so they sat at a different weight and baseline from the drawn icons beside them and the row did not
+read as one set of controls. All three are now geometry on the same 24-unit grid as the volume glyph:
+
+```text
+play          M8 5v14l11-7z
+pause         M7 5h3.5v14H7z M13.5 5H17v14h-3.5z
+step back     M6 5h2v14H6z M20 5v14L9 12z
+step forward  M4 5v14l11-7z M16 5h2v14h-2z
+```
+
+The step pair is mirrored about the centre of the grid, so it reads as one control rather than two
+similar ones. `PlayGlyphConverter` returns a `Geometry` now, as `VolumeGlyphConverter` already did.
+
+**Space.** Plays and pauses the inline preview. Handled **tunnelling**, because the thumbnail grid is a
+`ListBox` and a `ListBox` treats Space as "toggle the focused item" — waiting for the key to bubble
+would mean never seeing it while the grid has focus, which is exactly where focus is during playback.
+Guarded so it only claims the key when a video is selected and never while typing in the search box.
+The fullscreen viewer keeps Space for Fit, where resetting the view is the constant need.
+
+### Verified
+
+- `dotnet test` — **432/432 passing**, unchanged; this is view-layer work with no logic to test.
+- **Not verified in the GUI**: an instance of the app was running throughout. It is on the previous
+  build, so a restart is needed to pick these up.
+
+---
+
+## Interlude — double-click and right-click for video ✅
+
+Reported: double-clicking a video does not open fullscreen the way a picture does, and video has no
+right-click → fullscreen.
+
+### Where the gap was
+
+The grid tiles were never the problem — `DoubleTapped` and the context menu live on the tile's
+`StackPanel`, which is the same template for both media types. The gap was the **preview pane**: the
+still image carried `DoubleTapped` and a `ContextMenu`, and the video area carried neither. Watching
+something in the pane and trying to enlarge it did nothing.
+
+### On the picture, not the transport
+
+The handlers go on a `Border` wrapping `VideoSurface` alone, inside the `DockPanel` but not around the
+transport. Putting them on the outer panel would have been fewer lines and wrong: double-clicking the
+scrub slider or a transport button would have thrown the window into fullscreen mid-scrub.
+
+The border is `Background="Transparent"` so the whole area is hit-testable, including the letterbox
+around a frame that does not fill the pane — otherwise right-clicking just beside a portrait video
+would find nothing.
+
+Both preview menus also gained **Reveal in Finder**, which the grid tiles already had; the two preview
+context menus now differ only by Inspect, which is meaningless for video.
+
+### Verified
+
+- `dotnet test` — **432/432 passing**, unchanged; view-layer wiring with no logic to test.
+- **Not verified in the GUI**: an instance of the app was running. Restart to pick this up.

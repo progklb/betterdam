@@ -28,6 +28,11 @@ public partial class MainWindow : Window
         // field, so a named transform there cannot be reached from code.
         PreviewLoupe.RenderTransform = _loupePosition;
 
+        // Tunnelled: the thumbnail grid is a ListBox, and a ListBox treats Space as "toggle the
+        // focused item". Waiting for the key to bubble up would mean never seeing it while the grid
+        // has focus, which is exactly where it is during playback.
+        AddHandler(KeyDownEvent, OnGlobalKeyDown, RoutingStrategies.Tunnel);
+
         DataContextChanged += (_, _) =>
         {
             if (DataContext is not MainWindowViewModel viewModel)
@@ -128,6 +133,26 @@ public partial class MainWindow : Window
         {
             _ = viewModel.CloseWorkspaceCommand.ExecuteAsync(null);
         }
+    }
+
+    /// <summary>
+    /// Space plays and pauses the inline preview, the way it does in every other video player.
+    ///
+    /// Tunnelled, so it beats the thumbnail grid's own use of Space — but only when a video is
+    /// selected, leaving the key to the grid the rest of the time, and never while typing.
+    /// </summary>
+    private void OnGlobalKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space
+            || e.KeyModifiers != KeyModifiers.None
+            || FocusManager?.GetFocusedElement() is TextBox
+            || DataContext is not MainWindowViewModel { IsVideoSelected: true } viewModel)
+        {
+            return;
+        }
+
+        viewModel.Player.TogglePlayCommand.Execute(null);
+        e.Handled = true;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

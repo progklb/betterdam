@@ -391,7 +391,23 @@
 
               <controls:VideoTransport x:Name="InlineTransport" DockPanel.Dock="Bottom"
                                        FullscreenRequested="OnTransportFullscreen" />
-              <controls:VideoSurface x:Name="VideoSurface" Margin="8" />
+
+              <!-- The picture only, not the transport: double-clicking the scrub slider or a
+                   transport button must not throw the window into fullscreen. A transparent
+                   background so the whole area is hit-testable, including the letterbox around a
+                   frame that does not fill it. -->
+              <Border Background="Transparent" Margin="8"
+                      DoubleTapped="OnPreviewDoubleTapped">
+                <Border.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Open Fullscreen" Click="OnFullscreen" />
+                    <Separator />
+                    <MenuItem Header="{x:Static svc:RevealInFileManager.MenuHeader}"
+                              Click="OnRevealInFileManager" />
+                  </ContextMenu>
+                </Border.ContextMenu>
+                <controls:VideoSurface x:Name="VideoSurface" />
+              </Border>
             </DockPanel>
             </Panel>
 
@@ -411,6 +427,9 @@
                     <MenuItem x:Name="InspectMenuItem" Header="Inspect" Click="OnToggleInspect"
                               ToolTip.Tip="Keep the loupe open and follow the pointer. Esc to stop." />
                     <MenuItem Header="Open Fullscreen" Click="OnFullscreen" />
+                    <Separator />
+                    <MenuItem Header="{x:Static svc:RevealInFileManager.MenuHeader}"
+                              Click="OnRevealInFileManager" />
                   </ContextMenu>
                 </Image.ContextMenu>
               </Image>

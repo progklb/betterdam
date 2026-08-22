@@ -2558,3 +2558,78 @@ fix and had not been seen on screen until now.
 
 - `dotnet test` — **461/461 passing**, unchanged; the fix is an ordering change with no new logic.
 - Driven through the real application against the real library, screenshots at each step.
+
+---
+
+## Phase — the Workspace menu and Prepare Workspace ✅
+
+A **Workspace** menu that appears once a folder is open, holding **Prepare Workspace…** and the
+**Close Workspace** item moved out of File.
+
+### Prepare
+
+`WorkspacePreparer` walks the workspace and produces what the caches would otherwise produce on
+demand: both thumbnail tiers for every photograph, a full-resolution rendition for every RAW, and —
+only if asked — a proxy for every clip.
+
+Deliberately not a new pipeline. It calls the same services the UI calls, so a file prepared here is
+the same file that would have been produced by looking at it, and anything already cached is a hit
+rather than repeated work. That is also why it is always safe to stop: nothing here is required, it is
+only early.
+
+Four photographs at a time. Capped low on purpose — each develop is an external process holding a full
+frame and the rendition is encoded from another copy, so four is already most of a gigabyte. Video runs
+afterwards and one at a time, behind the proxy service's own encode gate.
+
+### Saying what it will cost, before it starts
+
+The dialog counts the workspace and prices it from the constants this work has measured:
+
+```text
+rendition      6.6 MB per RAW        measured, quality 95 at 4:4:4
+develop        3.9 s per RAW         measured, RAF and DNG alike
+thumbnails     150 KB, 0.2 s         the 320px and 1600px tiers together
+```
+
+Which for the real workspace reads:
+
+```text
+1 450 RAW · 387 other images · 199 videos
+About 9,2 GB and roughly 25 minutes, 4 at a time.
+```
+
+That figure is the point of the dialog. Preparing a few hundred photographs is a coffee break;
+preparing a few thousand RAWs is an afternoon and tens of gigabytes, and nobody should find out which
+one they started by watching it run. The dialog says the numbers are estimates, because they are.
+
+**Video is opt-in and priced only by size.** Encoding time depends on running time, and finding that
+out means probing every file — which would make the dialog slow in order to answer a question it can
+still only answer roughly. So it says "considerably longer" and gives a size, rather than inventing a
+number.
+
+The dialog also warns when **Keep developed RAW files** is off, because developing every RAW in a
+workspace and then discarding each result is pure waste.
+
+### The menu
+
+`NativeMenuItem` has no DataContext, so its visibility cannot be bound — the same constraint that made
+Open Recent a code-built menu. `UpdateWorkspaceMenu` finds it by header and sets `IsVisible` when
+`HasWorkspace` changes. A menu of things that cannot be done is worse than no menu.
+
+### Verified in the GUI
+
+```text
+workspace open      Workspace menu present beside File
+Workspace menu      Prepare Workspace… · Close Workspace ⇧⌘W
+Prepare…            counts and estimate as above, video opt-in disabled until ticked
+Prepare             Photographs — 25 of 1 837 · DSCF7773.RAF, with a progress bar
+Stop                "Stopped. 140 prepared." — and Prepare offered again
+⇧⌘W                 workspace closed, Workspace menu gone, File now only Open Folder/Open Recent
+```
+
+### Verified
+
+- `dotnet test` — **470/470 passing** (was 461). Nine new on the estimate arithmetic, including that
+  renditions dominate disk by more than forty times, that only RAWs carry develop time, and that the
+  reference library lands in the range the render cache work measured.
+- Driven through the real application against the real library, screenshots at each step.

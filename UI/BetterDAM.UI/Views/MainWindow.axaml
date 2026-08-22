@@ -56,15 +56,28 @@
                 <NativeMenu />
               </NativeMenuItem.Menu>
             </NativeMenuItem>
-            <NativeMenuItemSeparator />
-            <NativeMenuItem Header="Close Workspace"
-                            Gesture="{x:Static svc:MenuConventions.CloseWorkspace}"
-                            Click="OnCloseWorkspace" />
             <NativeMenuItemSeparator IsVisible="{x:Static svc:MenuConventions.ShowSettingsInFileMenu}" />
             <NativeMenuItem Header="Settings…"
                             IsVisible="{x:Static svc:MenuConventions.ShowSettingsInFileMenu}"
                             Gesture="{x:Static svc:MenuConventions.Settings}"
                             Click="OnOpenSettings" />
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+
+      <!--
+        Everything that acts on the open workspace. Hidden until one is open, from code — a
+        NativeMenuItem has no DataContext, so its visibility cannot be bound; see
+        MainWindow.UpdateWorkspaceMenu.
+      -->
+      <NativeMenuItem Header="{x:Static svc:MenuConventions.WorkspaceHeader}" IsVisible="False">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Prepare Workspace…" Click="OnPrepareWorkspace" />
+            <NativeMenuItemSeparator />
+            <NativeMenuItem Header="Close Workspace"
+                            Gesture="{x:Static svc:MenuConventions.CloseWorkspace}"
+                            Click="OnCloseWorkspace" />
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>

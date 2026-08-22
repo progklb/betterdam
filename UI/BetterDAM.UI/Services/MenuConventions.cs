@@ -22,6 +22,12 @@ public static class MenuConventions
     public const string OpenRecentHeader = "Open Recent";
 
     /// <summary>
+    /// The workspace menu's header, shared between the markup that declares it and the code that
+    /// finds it again to show or hide it.
+    /// </summary>
+    public const string WorkspaceHeader = "Workspace";
+
+    /// <summary>
     /// True everywhere except macOS, where Settings already appears in the application menu and
     /// listing it again under File would just be a duplicate.
     /// </summary>

@@ -44,6 +44,7 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IThumbnailGenerator, RawThumbnailGenerator>();
         services.AddSingleton<IThumbnailGenerator, FfmpegVideoThumbnailGenerator>();
         services.AddSingleton<IThumbnailService, ThumbnailService>();
+        services.AddSingleton<IWorkspacePreparer, WorkspacePreparer>();
         services.AddSingleton<ILibRawLocator, LibRawLocator>();
 
         // LibRaw first because it is the one the develop settings drive; the platform decoder picks
@@ -85,6 +86,7 @@ internal static class ServiceCollectionExtensions
         services.AddTransient<VideoPlayerViewModel>();
         services.AddTransient<BatchEditViewModel>();
         services.AddTransient<SyncViewModel>();
+        services.AddTransient<PrepareWorkspaceViewModel>();
         services.AddTransient<MainWindowViewModel>();
 
         return services;

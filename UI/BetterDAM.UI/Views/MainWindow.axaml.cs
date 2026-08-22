@@ -20,6 +20,9 @@ public partial class MainWindow : Window
     /// <summary>Likewise for sync: each dialog re-plans against the current pending changes.</summary>
     public Func<SyncViewModel>? SyncViewModelFactory { get; set; }
 
+    /// <summary>And for Prepare Workspace, which re-counts the workspace each time it is opened.</summary>
+    public Func<PrepareWorkspaceViewModel>? PrepareWorkspaceViewModelFactory { get; set; }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -46,6 +49,11 @@ public partial class MainWindow : Window
             viewModel.RecentWorkspaces.CollectionChanged += OnRecentChanged;
             RebuildRecentMenu();
 
+            // The Workspace menu appears and disappears with the workspace itself.
+            viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            UpdateWorkspaceMenu();
+
             // Frames are pushed rather than bound: a binding would mean allocating a bitmap per
             // frame, where the surface reuses one and blits into it.
             viewModel.Player.FrameReady -= OnFrameReady;
@@ -53,6 +61,14 @@ public partial class MainWindow : Window
             viewModel.Player.SurfaceCleared -= OnSurfaceCleared;
             viewModel.Player.SurfaceCleared += OnSurfaceCleared;
         };
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainWindowViewModel.WorkspacePath) or nameof(MainWindowViewModel.HasWorkspace))
+        {
+            UpdateWorkspaceMenu();
+        }
     }
 
     private void OnGridSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -125,6 +141,43 @@ public partial class MainWindow : Window
         {
             menu.Items.Add(new NativeMenuItem { Header = "No recent workspaces", IsEnabled = false });
         }
+    }
+
+    /// <summary>
+    /// Finds a top-level menu by header. Necessary for the same reason as
+    /// <see cref="FindRecentMenu"/>: x:Name generates no field for a NativeMenuItem, because it is
+    /// not part of the visual tree.
+    /// </summary>
+    private NativeMenuItem? FindTopLevelMenu(string header)
+        => NativeMenu.GetMenu(this)?
+            .Items.OfType<NativeMenuItem>()
+            .FirstOrDefault(item => item.Header == header);
+
+    /// <summary>
+    /// Shows the Workspace menu only while a workspace is open. A menu of things that cannot be done
+    /// is worse than no menu: it invites a click and then explains itself with a disabled item.
+    /// </summary>
+    private void UpdateWorkspaceMenu()
+    {
+        if (FindTopLevelMenu(MenuConventions.WorkspaceHeader) is { } menu &&
+            DataContext is MainWindowViewModel viewModel)
+        {
+            menu.IsVisible = viewModel.HasWorkspace;
+        }
+    }
+
+    private async void OnPrepareWorkspace(object? sender, EventArgs e)
+    {
+        if (PrepareWorkspaceViewModelFactory is not { } factory ||
+            DataContext is not MainWindowViewModel { WorkspacePath: { } workspace })
+        {
+            return;
+        }
+
+        var viewModel = factory();
+        viewModel.WorkspacePath = workspace;
+
+        await new PrepareWorkspaceWindow { DataContext = viewModel }.ShowDialog(this);
     }
 
     private void OnCloseWorkspace(object? sender, EventArgs e)

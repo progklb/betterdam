@@ -56,6 +56,7 @@ public partial class App : Application
             {
                 DataContext = viewModel,
                 SettingsViewModelFactory = services.GetRequiredService<SettingsViewModel>,
+                PrepareWorkspaceViewModelFactory = services.GetRequiredService<PrepareWorkspaceViewModel>,
                 SyncViewModelFactory = services.GetRequiredService<SyncViewModel>
             };
 

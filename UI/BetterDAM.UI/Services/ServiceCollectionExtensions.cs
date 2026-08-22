@@ -40,7 +40,17 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IThumbnailGenerator, FfmpegVideoThumbnailGenerator>();
         services.AddSingleton<IThumbnailService, ThumbnailService>();
         services.AddSingleton<ILibRawLocator, LibRawLocator>();
-        services.AddSingleton<IRawDecoder, LibRawImageDecoder>();
+
+        // LibRaw first because it is the one the develop settings drive; the platform decoder picks
+        // up the files it cannot unpack, which is mostly JPEG XL compressed DNG.
+        services.AddSingleton<IRawDecoder>(sp => new CompositeRawDecoder(
+            OperatingSystem.IsMacOS()
+                ? [
+                    ActivatorUtilities.CreateInstance<LibRawImageDecoder>(sp),
+                    ActivatorUtilities.CreateInstance<ImageIoRawDecoder>(sp)
+                  ]
+                : (IRawDecoder[])[ActivatorUtilities.CreateInstance<LibRawImageDecoder>(sp)],
+            sp.GetRequiredService<ILogger<CompositeRawDecoder>>()));
         services.AddSingleton<IFullImageDecoder, SkiaFullImageDecoder>();
 
         services.AddSingleton<IVideoInfoProvider, FfprobeVideoInfoProvider>();

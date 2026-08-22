@@ -182,6 +182,22 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private string? _fullPreviewLoaded;
 
     /// <summary>
+    /// Which decoder produced what is on screen. Only a LibRaw develop answers to the develop
+    /// settings, so the panel has to be able to say when it does not.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DevelopSettingsApply))]
+    [NotifyPropertyChangedFor(nameof(RendererNote))]
+    private string? _fullPreviewRenderer;
+
+    public bool DevelopSettingsApply => FullPreviewRenderer is null or DecodedImage.LibRaw;
+
+    /// <summary>Says why the controls are doing nothing, rather than leaving them looking broken.</summary>
+    public string? RendererNote => DevelopSettingsApply
+        ? null
+        : "This file was rendered by macOS — LibRaw cannot unpack it, so these settings do not apply.";
+
+    /// <summary>
     /// Set while the full-size decode is running. Developing a RAW takes seconds, and without
     /// saying so the viewer looks like it has simply decided the preview is as good as it gets.
     /// </summary>
@@ -251,6 +267,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             // the new bitmap before the previous one is disposed.
             var replaced = FullPreview;
             FullPreview = ToBitmap(decoded);
+            FullPreviewRenderer = decoded.Renderer;
             _fullPreviewLoaded = item.File.FullPath;
 
             if (replaced is not null)

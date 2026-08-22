@@ -67,7 +67,9 @@ public sealed class LibRawImageDecoder : IRawDecoder
                 return null;
             }
 
-            return ParsePpm(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
+            return ParsePpm(buffer.GetBuffer().AsSpan(0, (int)buffer.Length)) is { } image
+                ? image with { Renderer = DecodedImage.LibRaw }
+                : null;
         }
         catch (OperationCanceledException)
         {

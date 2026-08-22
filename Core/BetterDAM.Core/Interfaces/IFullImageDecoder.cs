@@ -9,8 +9,15 @@ namespace BetterDAM.Core.Interfaces;
 /// to hand it over would defeat the point. Large — a 24MP frame is around 96 MB — so it is loaded on
 /// demand and released as soon as something else is being looked at.
 /// </summary>
-public sealed record DecodedImage(byte[] Pixels, int Width, int Height)
+/// <param name="Renderer">
+/// What produced the pixels, for the UI to be honest about. Only a LibRaw develop answers to the
+/// develop settings; anything else is that renderer's own interpretation of the file.
+/// </param>
+public sealed record DecodedImage(byte[] Pixels, int Width, int Height, string? Renderer = null)
 {
+    public const string LibRaw = "LibRaw";
+    public const string Platform = "macOS";
+
     public long SizeBytes => (long)Width * Height * 4;
 }
 

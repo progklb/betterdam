@@ -79,6 +79,11 @@
                         IsEnabled="{Binding HasDevelopAdjustments}"
                         Command="{Binding ResetDevelopCommand}" />
 
+                <!-- Some files only the platform decoder can open, and it takes no settings. -->
+                <TextBlock FontSize="10" Foreground="#FFC107" TextWrapping="Wrap"
+                           IsVisible="{Binding !DevelopSettingsApply}"
+                           Text="{Binding RendererNote}" />
+
                 <TextBlock FontSize="10" Opacity="0.45" TextWrapping="Wrap"
                            Text="Applies to every RAW. Nothing is written to your files." />
               </StackPanel>

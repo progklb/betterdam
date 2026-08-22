@@ -1977,3 +1977,72 @@ the caller, which is the only thing that knows a new photograph has been opened.
   *"loading different content refits"* encoded the old contract, and the new one is that the caller
   decides. Three added for the new behaviour: same-size replacement changes nothing, and a
   different-size replacement keeps both the framed region and the relative zoom.
+
+---
+
+## Interlude — DNG support ✅
+
+Reported: DNG files showed as a heavily compressed thumbnail blown up to fullscreen.
+
+### What was actually wrong
+
+The file in question was a stitched panorama from Lightroom:
+
+- **8062×3922**, `Photometric Interpretation: Linear Raw`
+- **Compression: JPEG XL** — DNG 1.7
+- Embedded preview: **11 KB**
+
+That 11 KB preview was what was on screen. LibRaw could not unpack the file — `Cannot unpack` — because
+JPEG XL support needs libjxl linked in, and the Homebrew build has no such dependency. So the develop
+failed and the fallback did exactly what it was designed to do, with nothing better to fall back to.
+
+### Two decoders, because neither is enough alone
+
+macOS ImageIO decodes this DNG perfectly — **8062×3922 at 16 bits a component**. It was ruled out for
+RAW in Phase 12 because it cannot decode a Fujifilm X-S20 RAF at all. So the two fail on *different*
+files, and together they cover both:
+
+| | X-S20 RAF | JPEG XL DNG |
+| --- | --- | --- |
+| LibRaw | ✅ | ❌ cannot unpack |
+| macOS ImageIO | ❌ cannot decode | ✅ |
+
+`CompositeRawDecoder` tries each in turn. **LibRaw first**, because it is the one the develop settings
+drive; ImageIO renders the file its own way and takes no settings. A file only falls back to its
+embedded preview when both fail.
+
+Measured through the real chain:
+
+```text
+DSCF6386-Pano.dng   8062x3922   via macOS    3021 ms
+DSCF7759.RAF        6252x4176   via LibRaw   4170 ms
+```
+
+### Saying so when the controls do nothing
+
+`DecodedImage` now records which decoder produced it, and the develop panel shows a line when that was
+not LibRaw: *"This file was rendered by macOS — LibRaw cannot unpack it, so these settings do not
+apply."* A panel of controls that silently does nothing is worse than one that explains itself.
+
+### Verified
+
+- The panorama renders at full resolution in the viewer, where it was previously an 11 KB thumbnail.
+- `dotnet test` — **388/388 passing** (was 379). Nine new: first-decoder-wins, fall-through when one
+  cannot open the file, null when all fail, unavailable decoders dropped, and the pixel budget.
+
+### Open — edge artefacts on stitched panoramas
+
+Coloured vertical streaks appear along the left and bottom edges of this DNG, where the stitch
+boundary is ragged and transparent. **Deferred at the user's request**; recorded here so the next
+attempt does not repeat the elimination:
+
+- **Not row stride.** Rewritten to let Core Graphics use its own aligned stride with the rows copied
+  out afterwards; no change.
+- **Not an uninitialised buffer.** The context is now allocated zeroed rather than merely allocated;
+  no change.
+- Apple's own render of the same file has clean transparent edges there, so the artefact is in this
+  decoder rather than in the file.
+
+The next thing to check is the alpha handling — the image is drawn with
+`kCGImageAlphaPremultipliedFirst` into a DeviceRGB context, and premultiplied edge pixels being
+carried into a surface that expects something else would land exactly here.

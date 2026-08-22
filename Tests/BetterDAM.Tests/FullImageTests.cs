@@ -337,3 +337,94 @@ public class RawDevelopmentTests
     public void Zero_dimensions_are_rejected()
         => Assert.Null(LibRawImageDecoder.ParsePpm("P6\n0 0\n255\n"u8));
 }
+
+public class CompositeRawDecoderTests
+{
+    private sealed class Stub(DecodedImage? result, bool available = true) : IRawDecoder
+    {
+        public int Calls { get; private set; }
+
+        public bool IsAvailable => available;
+
+        public Task<DecodedImage?> DevelopAsync(MediaFile file, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(result);
+        }
+    }
+
+    private static readonly MediaFile Raw = new()
+    {
+        FullPath = "/library/shot.dng",
+        FileName = "shot.dng",
+        MediaType = MediaType.Image,
+        SizeBytes = 1,
+        ModifiedUtc = DateTimeOffset.UnixEpoch,
+        CreatedUtc = DateTimeOffset.UnixEpoch
+    };
+
+    private static DecodedImage Image(string renderer) => new([0, 0, 0, 0], 1, 1, renderer);
+
+    private static CompositeRawDecoder Create(params IRawDecoder[] decoders)
+        => new(decoders, NullLogger<CompositeRawDecoder>.Instance);
+
+    [Fact]
+    public async Task The_first_decoder_that_succeeds_wins()
+    {
+        var second = new Stub(Image("second"));
+        var decoded = await Create(new Stub(Image(DecodedImage.LibRaw)), second).DevelopAsync(Raw);
+
+        // LibRaw is first because it is the one the develop settings drive.
+        Assert.Equal(DecodedImage.LibRaw, decoded!.Renderer);
+        Assert.Equal(0, second.Calls);
+    }
+
+    [Fact]
+    public async Task A_decoder_that_cannot_open_the_file_falls_through()
+    {
+        // The JPEG XL DNG case: LibRaw cannot unpack it, the platform can.
+        var decoded = await Create(new Stub(null), new Stub(Image(DecodedImage.Platform))).DevelopAsync(Raw);
+
+        Assert.Equal(DecodedImage.Platform, decoded!.Renderer);
+    }
+
+    [Fact]
+    public async Task Nothing_is_returned_when_every_decoder_fails()
+    {
+        // The caller then falls back to the embedded preview rather than showing nothing.
+        Assert.Null(await Create(new Stub(null), new Stub(null)).DevelopAsync(Raw));
+    }
+
+    [Fact]
+    public void Unavailable_decoders_are_dropped_rather_than_tried()
+    {
+        var unavailable = new Stub(Image("no"), available: false);
+
+        Assert.False(Create(unavailable).IsAvailable);
+    }
+
+    [Fact]
+    public void With_no_decoders_at_all_raw_development_is_unavailable()
+        => Assert.False(Create().IsAvailable);
+
+    [Theory]
+    [InlineData(6000, 4000)]     // 24MP
+    [InlineData(8062, 3922)]     // the stitched panorama that prompted all this
+    [InlineData(10000, 8000)]    // 80MP, exactly the ceiling
+    public void Images_within_budget_are_rendered_at_full_size(int w, int h)
+    {
+        var (width, height) = ImageIoRawDecoder.FitWithinBudget(w, h);
+
+        Assert.Equal(w, width);
+        Assert.Equal(h, height);
+    }
+
+    [Fact]
+    public void An_enormous_image_is_scaled_down_keeping_its_shape()
+    {
+        var (width, height) = ImageIoRawDecoder.FitWithinBudget(40000, 20000);
+
+        Assert.True((long)width * height <= 80_000_000);
+        Assert.Equal(2.0, width / (double)height, precision: 2);
+    }
+}

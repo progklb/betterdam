@@ -509,6 +509,8 @@ public class CatalogManagementTests
         public string DefaultCacheRoot => Path.Combine(AppDataRoot, "Cache");
         public string ThumbnailCacheRoot => Path.Combine(CacheRoot, "Thumbnails");
         public string VideoProxyCacheRoot => Path.Combine(CacheRoot, "VideoProxy");
+
+        public string RenderCacheRoot => Path.Combine(CacheRoot, "Renders");
         public string LogRoot => Path.Combine(AppDataRoot, "Logs");
         public string DefaultCatalogPath => Path.Combine(AppDataRoot, "catalog.db");
         public string? Override { get; set; }

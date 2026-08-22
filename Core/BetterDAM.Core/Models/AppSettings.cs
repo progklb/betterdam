@@ -65,6 +65,30 @@ public sealed record AppSettings
     /// </summary>
     public RawDevelopSettings RawDevelop { get; init; } = RawDevelopSettings.Default;
 
+    /// <summary>
+    /// Whether developed RAW files are kept on disk so that opening the same photograph again is
+    /// instant rather than another few seconds of demosaicing.
+    ///
+    /// A setting because the storage cost is real and unevenly wanted: a rendition of a 26MP frame is
+    /// around 6.5 MB where its thumbnail is around 50 KB, so a library of a few thousand RAWs implies
+    /// tens of gigabytes. Bounded by <see cref="RenderCacheSizeLimitBytes"/> rather than left to grow,
+    /// and disposable — turning it off costs nothing but the time to develop again.
+    /// </summary>
+    public bool RenderCacheEnabled { get; init; } = true;
+
+    /// <summary>
+    /// Size ceiling for the render cache, evicted least-recently-used like the thumbnail cache but
+    /// against its own budget. <see cref="UnlimitedCache"/> disables trimming.
+    ///
+    /// The default holds roughly fifteen hundred renditions of 26MP frames — a generous working set,
+    /// and well short of what a whole library would need.
+    /// </summary>
+    public long RenderCacheSizeLimitBytes { get; init; } = DefaultRenderCacheLimit;
+
+    public const long DefaultRenderCacheLimit = 10L * 1024 * 1024 * 1024;
+
+    public bool IsRenderCacheLimited => RenderCacheSizeLimitBytes > UnlimitedCache;
+
     /// <summary>Beyond this many entries, Open Recent stops being a shortcut and becomes a list.</summary>
     public const int MaxRecentWorkspaces = 10;
 

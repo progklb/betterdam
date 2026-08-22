@@ -27,3 +27,12 @@ public interface ICacheMaintenance
     /// </summary>
     void NotifyBytesWritten(long bytes);
 }
+
+/// <summary>
+/// The same housekeeping for the full-resolution render cache, which has its own size budget.
+///
+/// A distinct interface rather than a second registration of the same one so that the two pools
+/// cannot be confused at an injection site — clearing the wrong one would throw away either a
+/// library of thumbnails or hours of developing.
+/// </summary>
+public interface IRenderCacheMaintenance : ICacheMaintenance;

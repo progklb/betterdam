@@ -232,15 +232,18 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(LoupeSource))]
     [NotifyPropertyChangedFor(nameof(IsLoupeFullResolution))]
     [NotifyPropertyChangedFor(nameof(LoupeTargetWidth))]
+    [NotifyPropertyChangedFor(nameof(PreviewSourceLabel))]
+    [NotifyPropertyChangedFor(nameof(IsShowingDevelopedRaw))]
     private Bitmap? _fullPreview;
 
     private CancellationTokenSource? _fullPreviewCts;
 
-    /// <summary>What the in-flight decode is for, so repeat requests for it are ignored.</summary>
-    private string? _fullPreviewRequest;
-
-    /// <summary>What the bitmap currently held in <see cref="FullPreview"/> was decoded from.</summary>
-    private string? _fullPreviewLoaded;
+    /// <summary>
+    /// What has been asked for, delivered, and is held. See <see cref="FullPreviewTracker"/> — this
+    /// used to be a single "last requested" field, which latched whenever a run ended without
+    /// producing anything and left the picture stuck on its embedded JPEG.
+    /// </summary>
+    private readonly FullPreviewTracker _fullPreviewState = new();
 
     /// <summary>
     /// Which decoder produced what is on screen. Only a LibRaw develop answers to the develop
@@ -249,9 +252,42 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DevelopSettingsApply))]
     [NotifyPropertyChangedFor(nameof(RendererNote))]
+    [NotifyPropertyChangedFor(nameof(PreviewSourceLabel))]
+    [NotifyPropertyChangedFor(nameof(IsShowingDevelopedRaw))]
     private string? _fullPreviewRenderer;
 
     public bool DevelopSettingsApply => FullPreviewRenderer is null or DecodedImage.LibRaw;
+
+    /// <summary>
+    /// What is actually on screen in the viewer: the demosaiced sensor data, the JPEG the camera
+    /// embedded in the RAW, or an ordinary image file.
+    ///
+    /// Worth stating rather than leaving to be inferred. The two renderings of a RAW can look similar
+    /// at a glance and are not remotely the same thing to judge a photograph by, and which one you get
+    /// depends on a setting, a keystroke, and whether the develop succeeded.
+    /// </summary>
+    public string PreviewSourceLabel
+    {
+        get
+        {
+            if (FullPreview is null)
+            {
+                return "Preview";
+            }
+
+            if (!IsRawSelected)
+            {
+                return "Full resolution";
+            }
+
+            // A develop is the only thing that sets a renderer. Falling back to the embedded preview
+            // goes through the ordinary image path, which does not.
+            return FullPreviewRenderer is null ? "JPEG" : "RAW";
+        }
+    }
+
+    /// <summary>True while the viewer is showing developed sensor data, for the badge to colour by.</summary>
+    public bool IsShowingDevelopedRaw => FullPreview is not null && IsRawSelected && FullPreviewRenderer is not null;
 
     /// <summary>Says why the controls are doing nothing, rather than leaving them looking broken.</summary>
     public string? RendererNote => DevelopSettingsApply
@@ -278,7 +314,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         // Without this the same decode is started and cancelled two or three times, and a RAW
         // develop is far too expensive to do that to.
         var wanted = SelectedItem?.File.FullPath;
-        if (_fullPreviewRequest is not null && _fullPreviewRequest == wanted)
+        if (!_fullPreviewState.ShouldStart(wanted))
         {
             return;
         }
@@ -286,9 +322,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         // Re-rendering the same photograph is a comparison: the point is to see one version replace
         // the other. Dropping back to the preview in between would put a different, lower-quality
         // image on screen for several seconds, which is exactly what makes the comparison useless.
-        var changingFile = !string.Equals(_fullPreviewLoaded, wanted, StringComparison.Ordinal);
+        var changingFile = _fullPreviewState.IsChangingFile(wanted);
 
-        _fullPreviewRequest = wanted;
+        _fullPreviewState.Begin(wanted);
 
         if (_fullPreviewCts is { } previous)
         {
@@ -303,6 +339,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         if (SelectedItem is not { } item || IsVideoSelected)
         {
+            // Nothing to decode. The marker has to come off or every later request for this file
+            // would be dismissed as already running.
+            _fullPreviewState.Ended(wanted);
             return;
         }
 
@@ -329,7 +368,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             var replaced = FullPreview;
             FullPreview = ToBitmap(decoded);
             FullPreviewRenderer = decoded.Renderer;
-            _fullPreviewLoaded = item.File.FullPath;
+            _fullPreviewState.Delivering(item.File.FullPath);
 
             if (replaced is not null)
             {
@@ -351,6 +390,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
             {
                 IsPreparingFullPreview = false;
             }
+
+            // Unconditionally, and whatever happened above: a run that returned early, threw, or was
+            // cancelled must not leave this file looking like one already being worked on.
+            _fullPreviewState.Ended(wanted);
         }
     }
 
@@ -390,7 +433,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         // would magnify the wrong picture. Skipped when a decode for this file is already in flight,
         // which is the case whenever the viewer window is open — clearing the guard there would
         // start a second develop of the same RAW.
-        if (_fullPreviewRequest != wanted && _fullPreviewLoaded != wanted)
+        if (_fullPreviewState.InFlight != wanted && _fullPreviewState.Held != wanted)
         {
             ReleaseFullPreview();
         }
@@ -408,14 +451,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         FullPreview?.Dispose();
         FullPreview = null;
-        _fullPreviewLoaded = null;
+        _fullPreviewState.Forget();
     }
 
     /// <summary>
     /// Forgets what was last asked for, so the next request re-runs even for the same file. Needed
     /// when the *way* it is decoded changes rather than which file it is.
     /// </summary>
-    private void InvalidateFullPreviewRequest() => _fullPreviewRequest = null;
+    private void InvalidateFullPreviewRequest() => _fullPreviewState.Invalidate();
 
     private static Bitmap ToBitmap(DecodedImage image)
     {
@@ -451,13 +494,28 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _developRawFiles = true;
 
-    partial void OnDevelopRawFilesChanged(bool value)
+    partial void OnDevelopRawFilesChanged(bool value) => _ = ApplyDevelopRawFilesAsync(value);
+
+    /// <summary>
+    /// Saves the choice and re-renders what is on screen with it.
+    ///
+    /// The save has to be awaited. The decoder reads this from the settings service, and the service
+    /// only publishes a new value once it has finished writing the file — so starting the decode
+    /// without waiting raced the write and, about half the time, developed the file again with the
+    /// value the toggle had just replaced. That was the "\ does not consistently toggle" bug: the
+    /// picture and its badge would keep describing the old rendering while the controls showed the
+    /// new one.
+    ///
+    /// This is what <see cref="SaveAndReloadDevelopAsync"/> already did for the develop settings; the
+    /// two now behave the same way.
+    /// </summary>
+    private async Task ApplyDevelopRawFilesAsync(bool value)
     {
-        _ = _settings.SaveAsync(_settings.Current with { DevelopRawFiles = value });
+        await _settings.SaveAsync(_settings.Current with { DevelopRawFiles = value }).ConfigureAwait(true);
 
         // Same file, different rendering: the request guard has to be cleared or nothing happens.
         InvalidateFullPreviewRequest();
-        _ = EnsureFullPreviewAsync();
+        await EnsureFullPreviewAsync().ConfigureAwait(true);
     }
 
     // ---- RAW develop controls -------------------------------------------------------------
@@ -854,6 +912,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         ShowFfmpegNotice = value is { IsVideo: true } && !_ffmpeg.IsAvailable;
         IsVideoSelected = value is { IsVideo: true } && _ffmpeg.IsAvailable;
         OnPropertyChanged(nameof(IsRawSelected));
+        OnPropertyChanged(nameof(PreviewSourceLabel));
+        OnPropertyChanged(nameof(IsShowingDevelopedRaw));
 
         // A video is handed to the player; only stills use the static image preview, so the two
         // never fight over the same pane.

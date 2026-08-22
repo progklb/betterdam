@@ -28,6 +28,11 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<ISettingsService>(settings);
         services.AddSingleton<ICacheMaintenance, ThumbnailCacheMaintenance>();
 
+        // Its own pool and its own budget: renditions are megabytes, thumbnails kilobytes, and one
+        // shared limit would let a pass through a RAW folder evict the whole thumbnail library.
+        services.AddSingleton<IRenderCacheMaintenance, RenderCacheMaintenance>();
+        services.AddSingleton<RenderCache>();
+
         services.AddSingleton<IMediaScanner, MediaScanner>();
         services.AddSingleton<IFolderBrowser, FolderBrowser>();
         services.AddSingleton<IFfmpegLocator, FfmpegLocator>();

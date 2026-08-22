@@ -25,6 +25,7 @@
     <conv:StatusBrushConverter x:Key="StatusBrush" />
     <conv:PlayGlyphConverter x:Key="PlayGlyph" />
     <conv:VolumeGlyphConverter x:Key="VolumeGlyph" />
+    <conv:SourceBadgeBrushConverter x:Key="SourceBadgeBrush" />
     <conv:KeywordHeadingConverter x:Key="KeywordHeading" />
   </Application.Resources>
 

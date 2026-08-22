@@ -111,6 +111,45 @@
               </StackPanel>
             </Border>
 
+            <!-- Developed RAW files -->
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Developed RAW files" Classes="section" />
+                <TextBlock Classes="hint"
+                           Text="Developing a RAW takes several seconds. Keeping the result means opening the same photograph again is instant — at a cost of tens of megabytes each, against tens of kilobytes for a thumbnail. This has its own budget, so it can never evict your thumbnails." />
+
+                <CheckBox Content="Keep developed RAW files on disk" IsChecked="{Binding RenderCacheEnabled}" />
+
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshCommand}" />
+                  <TextBlock Text="{Binding RenderCacheSizeDisplay}" Classes="value" FontSize="15"
+                             VerticalAlignment="Center" />
+                </DockPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8"
+                            IsEnabled="{Binding RenderCacheEnabled}">
+                  <TextBlock Text="Maximum" VerticalAlignment="Center" Opacity="0.7" />
+                  <ComboBox ItemsSource="{Binding LimitChoices}"
+                            SelectedIndex="{Binding SelectedRenderLimitIndex}"
+                            MinWidth="110" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding RenderLimitSummary}" Classes="hint" />
+
+                <Button Content="Release developed files…"
+                        Command="{Binding BeginClearRenderCacheCommand}"
+                        IsVisible="{Binding !IsConfirmingRenderClear}"
+                        IsEnabled="{Binding !IsBusy}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsConfirmingRenderClear}">
+                  <TextBlock Text="Delete all developed RAW files?" VerticalAlignment="Center" />
+                  <Button Content="Release" Command="{Binding ConfirmClearRenderCacheCommand}"
+                          Background="#33FF6B6B" BorderBrush="#66FF6B6B" />
+                  <Button Content="Cancel" Command="{Binding CancelClearRenderCacheCommand}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
             <!-- Clear -->
             <Border Classes="card">
               <StackPanel Spacing="8">

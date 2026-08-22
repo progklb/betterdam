@@ -5,37 +5,36 @@ using Microsoft.Extensions.Logging;
 namespace BetterDAM.Preview.Cache;
 
 /// <summary>
-/// Statistics, clearing, and rolling size-cap eviction for the derived-data cache — both thumbnails
-/// and video proxies, since both are disposable and both compete for the same disk budget.
+/// Housekeeping for the render cache, against its own budget.
 ///
-/// Eviction is safe to do bluntly: entries are content-addressed and independent, so deleting any
-/// of them only costs regenerating it if it is wanted again.
+/// Separate from the thumbnail and proxy pool rather than sharing one limit. Entries here are tens of
+/// megabytes where a thumbnail is tens of kilobytes, so a single pass through a folder of RAWs would
+/// otherwise evict every thumbnail in the library — turning a feature meant to make browsing faster
+/// into one that makes it slower.
 /// </summary>
-public sealed class ThumbnailCacheMaintenance : ICacheMaintenance
+public sealed class RenderCacheMaintenance : IRenderCacheMaintenance
 {
     /// <summary>
-    /// Bytes written before a trim is considered. Trimming enumerates the whole cache directory, so
-    /// doing it after every thumbnail would cost more than it saves.
+    /// Bytes written before a trim is considered. Larger than the thumbnail pool's interval in
+    /// proportion to the entries: a single rendition can be 20 MB, and trimming after each one would
+    /// mean enumerating the whole cache directory on every photograph.
     /// </summary>
-    private const long TrimCheckInterval = 32L * 1024 * 1024;
+    private const long TrimCheckInterval = 256L * 1024 * 1024;
 
     private readonly IAppPaths _paths;
     private readonly ISettingsService _settings;
-    private readonly ILogger<ThumbnailCacheMaintenance> _logger;
-
+    private readonly ILogger<RenderCacheMaintenance> _logger;
     private readonly CachePool _pool;
 
     private long _bytesSinceTrim;
     private int _trimInFlight;
 
-    public ThumbnailCacheMaintenance(IAppPaths paths, ISettingsService settings, ILogger<ThumbnailCacheMaintenance> logger)
+    public RenderCacheMaintenance(IAppPaths paths, ISettingsService settings, ILogger<RenderCacheMaintenance> logger)
     {
         _paths = paths;
         _settings = settings;
         _logger = logger;
-
-        // Renders are deliberately absent: they are a separate pool with a separate budget.
-        _pool = new CachePool(() => [_paths.ThumbnailCacheRoot, _paths.VideoProxyCacheRoot], logger);
+        _pool = new CachePool(() => [_paths.RenderCacheRoot], logger);
     }
 
     public Task<CacheStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default)
@@ -47,27 +46,35 @@ public sealed class ThumbnailCacheMaintenance : ICacheMaintenance
             var freed = _pool.Clear(cancellationToken);
             Interlocked.Exchange(ref _bytesSinceTrim, 0);
 
-            _logger.LogInformation("Cleared the cache, freeing {Bytes}", ByteSize.Format(freed));
+            _logger.LogInformation("Cleared the render cache, freeing {Bytes}", ByteSize.Format(freed));
             return freed;
         }, cancellationToken);
 
     public Task<long> TrimAsync(CancellationToken cancellationToken = default)
         => Task.Run(() =>
         {
-            var limit = _settings.Current.CacheSizeLimitBytes;
-            if (limit <= AppSettings.UnlimitedCache)
+            var settings = _settings.Current;
+
+            // Switching the cache off is a request to stop spending disk, so the trim empties it
+            // rather than merely halting new writes.
+            if (!settings.RenderCacheEnabled)
+            {
+                return _pool.Clear(cancellationToken);
+            }
+
+            if (!settings.IsRenderCacheLimited)
             {
                 return 0L;
             }
 
-            var freed = _pool.TrimTo(limit, cancellationToken);
+            var freed = _pool.TrimTo(settings.RenderCacheSizeLimitBytes, cancellationToken);
             Interlocked.Exchange(ref _bytesSinceTrim, 0);
 
             if (freed > 0)
             {
                 _logger.LogInformation(
-                    "Trimmed the cache to its {Limit} limit, freeing {Freed}",
-                    ByteSize.Format(limit), ByteSize.Format(freed));
+                    "Trimmed the render cache to its {Limit} limit, freeing {Freed}",
+                    ByteSize.Format(settings.RenderCacheSizeLimitBytes), ByteSize.Format(freed));
             }
 
             return freed;
@@ -75,7 +82,7 @@ public sealed class ThumbnailCacheMaintenance : ICacheMaintenance
 
     public void NotifyBytesWritten(long bytes)
     {
-        if (!_settings.Current.IsCacheLimited)
+        if (!_settings.Current.IsRenderCacheLimited)
         {
             return;
         }
@@ -101,7 +108,7 @@ public sealed class ThumbnailCacheMaintenance : ICacheMaintenance
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Background cache trim failed");
+                _logger.LogWarning(ex, "Background render cache trim failed");
             }
             finally
             {
@@ -109,5 +116,4 @@ public sealed class ThumbnailCacheMaintenance : ICacheMaintenance
             }
         });
     }
-
 }

@@ -17,6 +17,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private readonly ISettingsService _settings;
     private readonly ICacheMaintenance _maintenance;
+    private readonly IRenderCacheMaintenance _renderMaintenance;
     private readonly ICatalog _catalog;
     private readonly IAppPaths _paths;
     private readonly ILogger<SettingsViewModel> _logger;
@@ -24,12 +25,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     public SettingsViewModel(
         ISettingsService settings,
         ICacheMaintenance maintenance,
+        IRenderCacheMaintenance renderMaintenance,
         ICatalog catalog,
         IAppPaths paths,
         ILogger<SettingsViewModel> logger)
     {
         _settings = settings;
         _maintenance = maintenance;
+        _renderMaintenance = renderMaintenance;
         _catalog = catalog;
         _paths = paths;
         _logger = logger;
@@ -39,6 +42,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         _selectedLimitIndex = current.IsCacheLimited
             ? NearestChoice(current.CacheSizeLimitBytes)
             : DefaultChoiceIndex;
+
+        _renderCacheEnabled = current.RenderCacheEnabled;
+        _selectedRenderLimitIndex = current.IsRenderCacheLimited
+            ? NearestChoice(current.RenderCacheSizeLimitBytes)
+            : DefaultRenderChoiceIndex;
 
         CachePath = paths.CacheRoot;
         IsUsingDefaultCachePath = string.IsNullOrWhiteSpace(current.CacheDirectoryOverride);
@@ -137,6 +145,11 @@ public sealed partial class SettingsViewModel : ObservableObject
                 ? "Empty"
                 : $"{ByteSize.Format(stats.TotalBytes)} in {stats.FileCount:N0} files";
             CachePath = _paths.CacheRoot;
+
+            var renders = await _renderMaintenance.GetStatisticsAsync().ConfigureAwait(true);
+            RenderCacheSizeDisplay = renders.FileCount == 0
+                ? "Empty"
+                : $"{ByteSize.Format(renders.TotalBytes)} in {renders.FileCount:N0} renditions";
 
             var catalog = await _catalog.GetStatisticsAsync().ConfigureAwait(true);
             CatalogSizeDisplay = catalog.FileCount == 0
@@ -312,6 +325,106 @@ public sealed partial class SettingsViewModel : ObservableObject
         IsUsingDefaultCatalogPath = true;
         StatusMessage = "Using the default catalog location.";
         await RefreshAsync().ConfigureAwait(true);
+    }
+
+    // ---- Render cache -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Whether developed RAW files are kept on disk. Off by choice for anyone short of space: a
+    /// rendition is tens of megabytes against a thumbnail's tens of kilobytes.
+    /// </summary>
+    [ObservableProperty]
+    private bool _renderCacheEnabled;
+
+    [ObservableProperty]
+    private int _selectedRenderLimitIndex;
+
+    [ObservableProperty]
+    private string _renderCacheSizeDisplay = "—";
+
+    [ObservableProperty]
+    private bool _isConfirmingRenderClear;
+
+    /// <summary>10 GB — roughly fifteen hundred 26MP renditions, a working set rather than a library.</summary>
+    private static readonly int DefaultRenderChoiceIndex = Array.IndexOf(LimitChoicesMb, 10240);
+
+    private long SelectedRenderLimitBytes
+        => LimitChoicesMb[Math.Clamp(SelectedRenderLimitIndex, 0, LimitChoicesMb.Length - 1)] * 1024L * 1024L;
+
+    public string RenderLimitSummary => RenderCacheEnabled
+        ? $"Least recently opened renditions are removed once they pass {ByteSize.Format(SelectedRenderLimitBytes)}."
+        : "RAW files are developed afresh every time they are opened.";
+
+    partial void OnRenderCacheEnabledChanged(bool value)
+    {
+        OnPropertyChanged(nameof(RenderLimitSummary));
+        _ = ApplyRenderCacheAsync(clearWhenDisabled: true);
+    }
+
+    partial void OnSelectedRenderLimitIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(RenderLimitSummary));
+        _ = ApplyRenderCacheAsync(clearWhenDisabled: false);
+    }
+
+    private async Task ApplyRenderCacheAsync(bool clearWhenDisabled)
+    {
+        var limit = SelectedRenderLimitBytes;
+
+        if (_settings.Current.RenderCacheEnabled == RenderCacheEnabled &&
+            _settings.Current.RenderCacheSizeLimitBytes == limit)
+        {
+            return;
+        }
+
+        await SaveAsync(_settings.Current with
+        {
+            RenderCacheEnabled = RenderCacheEnabled,
+            RenderCacheSizeLimitBytes = limit
+        }).ConfigureAwait(true);
+
+        // Turning it off is a request to stop spending disk, so the space comes back now rather than
+        // sitting there unused. Trimming handles both cases: it empties a disabled cache.
+        if (clearWhenDisabled || RenderCacheEnabled)
+        {
+            var freed = await _renderMaintenance.TrimAsync().ConfigureAwait(true);
+            if (freed > 0)
+            {
+                StatusMessage = $"Released {ByteSize.Format(freed)} of developed RAW files.";
+            }
+        }
+
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private void BeginClearRenderCache() => IsConfirmingRenderClear = true;
+
+    [RelayCommand]
+    private void CancelClearRenderCache() => IsConfirmingRenderClear = false;
+
+    [RelayCommand]
+    private async Task ConfirmClearRenderCacheAsync()
+    {
+        IsConfirmingRenderClear = false;
+        IsBusy = true;
+        StatusMessage = null;
+
+        try
+        {
+            var freed = await _renderMaintenance.ClearAsync().ConfigureAwait(true);
+            StatusMessage = $"Released {ByteSize.Format(freed)}. RAW files develop again on first view.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clear the render cache");
+            StatusMessage = $"Could not clear the render cache: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            await RefreshAsync().ConfigureAwait(true);
+        }
     }
 
     private async Task ApplyLimitAsync()

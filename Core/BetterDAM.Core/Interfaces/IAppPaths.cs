@@ -20,6 +20,16 @@ public interface IAppPaths
     /// <summary>Generated low-resolution video stand-ins. Disposable like everything under the cache.</summary>
     string VideoProxyCacheRoot { get; }
 
+    /// <summary>
+    /// Full-resolution renditions of developed RAW files.
+    ///
+    /// Kept apart from the thumbnail cache rather than mixed in with it, because the two have
+    /// nothing in common but disposability: entries here are megabytes rather than kilobytes, and
+    /// sharing one size budget would mean a single pass through a RAW folder evicting every
+    /// thumbnail in the library.
+    /// </summary>
+    string RenderCacheRoot { get; }
+
     string LogRoot { get; }
 
     /// <summary>

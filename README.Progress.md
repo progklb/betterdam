@@ -2358,3 +2358,203 @@ context menus now differ only by Inspect, which is meaningless for video.
 
 - `dotnet test` — **432/432 passing**, unchanged; view-layer wiring with no logic to test.
 - **Not verified in the GUI**: an instance of the app was running. Restart to pick this up.
+
+---
+
+## Phase — the render cache ✅
+
+Developed RAW files are now kept on disk, so opening the same photograph again is a decode instead of
+another develop. Controlled from Settings, because the storage cost is real.
+
+### Measured, through the real decoder on a real RAF
+
+```text
+pass 1   6252x4176 via LibRaw   3883 ms    cold — developed
+pass 2   6252x4176 via LibRaw    305 ms    served from the cache        12.7× faster
+         exposure changed to +1.0 stop
+pass 3   6252x4176 via LibRaw   3842 ms    correctly missed, stored as a second entry
+```
+
+### Develop settings are part of a rendition's identity
+
+The key is `path | size | mtime | formatVersion | developSettings`. Without the last part, nudging the
+exposure would keep serving a picture the application would no longer produce, silently, until the
+cache was cleared by hand. Including it also means switching a setting *back* finds the earlier
+renditions still there.
+
+The whole `RawDevelopSettings` record goes into the key via its own `ToString`, so a setting added
+later is covered without anyone remembering to update the key.
+
+### Only what is expensive
+
+RAW only, and only while developing is switched on. Re-encoding a camera JPEG would spend megabytes to
+save about 400 ms against decoding the original, which is already on the disk. Verified: a JPEG passed
+through the decoder writes no entry.
+
+### Its own pool, its own budget
+
+`Cache/Renders/` sits outside the thumbnail and proxy budget. Sharing one limit would mean a pass
+through a folder of RAWs evicting every thumbnail in the library — a feature meant to make browsing
+faster making it slower instead. `CachePool` holds the shared housekeeping so the two pools do not
+duplicate it, and resolves its roots lazily so relocating the cache still takes effect without a
+restart.
+
+Entries are touched when served, so least-recently-used ordering tracks *use*: a rendition opened daily
+outlives one developed once and never looked at again.
+
+### Storage, and the one real compromise
+
+JPEG at quality 95. Lossless would be 104 MB an entry for a 26MP frame and seconds to encode — eating
+the time this exists to save.
+
+Skia's default is **4:2:0 chroma**, which throws away three quarters of the colour resolution. Fine in
+a thumbnail, exactly the wrong trade for something examined at 100%, and it took looking at a stored
+file to notice:
+
+```text
+before   YCbCr4:2:0   4.4 MB
+after    YCbCr4:4:4   6.6 MB     via SKJpegEncoderOptions(95, Downsample444, Ignore)
+```
+
+At 6.6 MB an entry the 10 GB default holds roughly 1,500 renditions. For a library of 2,235 RAWs the
+full set would be about **15 GB** — a correction to the ~38 GB estimated before measuring, which
+assumed a much larger entry.
+
+The renderer travels with each entry, encoded as one letter in the file name, so a cache hit still
+knows to warn that a platform-decoded file does not answer to the develop controls.
+
+### Settings
+
+A card of its own: keep on or off, current size, a maximum, and **Release developed files**. Turning it
+off frees the space rather than merely halting new writes — switching it off is a request to stop
+spending disk, not to leave what was already spent lying there.
+
+### Verified
+
+- `dotnet test` — **451/451 passing** (was 432). Nineteen new: what is worth caching, settings as part
+  of identity, a changed file missing, the renderer surviving the round trip, an unrecognised renderer
+  being refused, and — the load-bearing one — that clearing the render cache leaves thumbnails alone.
+- The timings above, end to end through `SkiaFullImageDecoder`.
+- **Not verified in the GUI**: the settings card has not been seen on screen.
+
+---
+
+## Fix — RAW files stopped developing on open ✅
+
+Reported: opening a RAF or DNG showed the embedded JPEG and never developed. Pressing `\` twice — off
+and back on — made it develop properly.
+
+### The guard was a latch
+
+`EnsureFullPreviewAsync` kept one field, "what did we last ask for", and returned early when a request
+matched it. That single field was answering two different questions:
+
+- *Is a decode already running for this file?* — which it must, or selecting an item would start and
+  cancel the same four-second develop two or three times, since a selection raises several properties
+  and each one asks the viewer to refresh.
+- *Do we already have this file?* — which it must not, because a run can end **without producing
+  anything**: the selection moved mid-decode, the decode was cancelled by the next one, the file
+  turned out to be a video, or it simply failed.
+
+Every one of those paths returned with the field still set. From then on, every request for that file
+was dismissed as redundant and nothing ever tried again. Only `\` cleared it, because
+`OnDevelopRawFilesChanged` explicitly invalidates the request before re-asking — which is exactly why
+that was the workaround that worked.
+
+### Three pieces of state instead of one
+
+`FullPreviewTracker` splits it so no field means two things:
+
+| | |
+| --- | --- |
+| `InFlight` | a decode is running for this file — cleared when the run ends, **however it ends** |
+| `Delivered` | pixels arrived for this file under the current rendering — cleared when the rendering changes |
+| `Held` | which file the bitmap in hand belongs to — decides whether to throw it away first |
+
+`Ended` is now called unconditionally in the `finally`, and on every early return. A run that produces
+nothing leaves no trace to suppress the next attempt, so the guard heals itself whatever went wrong.
+
+`Held` is deliberately untouched by `Invalidate`: re-developing the same photograph is a comparison,
+and the pixels must stay on screen while the new rendering is produced.
+
+Honest note: this fixes the mechanism and every path that could latch it, but I did not reproduce the
+exact interleaving that triggered it — the app was in use throughout, so this was diagnosed by reading
+rather than by catching it in the act. The suspect paths are the two early returns and the
+cancellation branch, all of which are now covered.
+
+### RAW or JPEG, said out loud
+
+The viewer gained a badge beside the counter:
+
+```text
+RAW               developed sensor data
+JPEG              the JPEG the camera embedded in the RAW
+Full resolution   an ordinary image file, decoded whole
+Preview           the cached 1600px rendition, while the decode runs
+```
+
+A develop is the only thing that records a renderer, so the fallback to an embedded preview — whether
+by setting, by keystroke, or because the develop failed — is distinguishable from a real one. The badge
+is tinted green when it is genuinely developed: the word confirms, but the colour is what registers
+while working through a set.
+
+### Verified
+
+- `dotnet test` — **461/461 passing** (was 451). Ten new, on the tracker: that a run delivering nothing
+  does not block the next attempt (the regression itself), that repeat requests during a decode still
+  collapse to one, that a late finish does not disturb the run that replaced it, and that changing the
+  rendering keeps the pixels while allowing a new decode.
+- **Not verified in the GUI**: the app was running throughout.
+
+---
+
+## Fix — `\` toggled inconsistently, and the badge drifted out of sync ✅
+
+Reported: `\` did not reliably change the image, and the picture, the RAW/JPEG badge and the Develop
+button could disagree.
+
+### A race with the settings file
+
+```csharp
+partial void OnDevelopRawFilesChanged(bool value)
+{
+    _ = _settings.SaveAsync(...);   // fire and forget
+    InvalidateFullPreviewRequest();
+    _ = EnsureFullPreviewAsync();   // starts decoding immediately
+}
+```
+
+`JsonSettingsService` publishes a new `Current` **after** it has finished writing the file, under a
+write lock. The decoder reads `DevelopRawFiles` from that service. So the re-decode raced the disk
+write and, when it won, developed the file again with the value the toggle had just replaced.
+
+That is the whole reported symptom. The *button* is bound to the ViewModel property, which flips
+instantly; the *image* and its *badge* describe what was actually decoded, which was sometimes the old
+value. Nothing was out of sync in the UI — the UI was faithfully reporting an image rendered from
+stale state.
+
+Awaiting the save before invalidating and re-decoding fixes it. `SaveAndReloadDevelopAsync` already did
+this for the develop settings, which is why the sliders never showed the bug; the two now behave the
+same way.
+
+### Verified in the GUI
+
+```text
+open DSCF6387.RAF fullscreen     RAW badge, developed        ← the earlier fix, confirmed
+\                                JPEG badge, embedded preview
+\                                RAW badge, developed
+→ to DSCF6392-Pano.dng           RAW badge, developed via the platform decoder
+\ \ \  (rapid)                   JPEG — the odd number, correctly
+\                                RAW, Develop button enabled, image developed
+```
+
+Rapid toggling settles on the right rendering now, and the badge, the picture and the Develop button
+agree at every step.
+
+Also confirmed in passing: a RAW opened in the viewer **develops on its own**, which was the previous
+fix and had not been seen on screen until now.
+
+### Verified
+
+- `dotnet test` — **461/461 passing**, unchanged; the fix is an ordering change with no new logic.
+- Driven through the real application against the real library, screenshots at each step.

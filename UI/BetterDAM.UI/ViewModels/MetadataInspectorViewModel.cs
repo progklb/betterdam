@@ -19,6 +19,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     private readonly IMetadataProvider _metadata;
     private readonly IMetadataWriter _writer;
     private readonly IPendingChangeStore _pending;
+    private readonly IKeywordLibraryService _library;
     private readonly ILogger<MetadataInspectorViewModel> _logger;
 
     private CancellationTokenSource? _loadCts;
@@ -36,12 +37,109 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         IMetadataProvider metadata,
         IMetadataWriter writer,
         IPendingChangeStore pending,
+        IKeywordLibraryService library,
         ILogger<MetadataInspectorViewModel> logger)
     {
         _metadata = metadata;
         _writer = writer;
         _pending = pending;
+        _library = library;
         _logger = logger;
+
+        // Rebuilt rather than patched: editing the library in Settings can change anything about it,
+        // and the tick list is cheap to make.
+        _library.Changed += (_, library) => BuildPicker(library);
+        BuildPicker(_library.Current);
+    }
+
+    // ---- Keyword library ------------------------------------------------------------------------
+
+    public ObservableCollection<KeywordPickerNodeViewModel> KeywordPicker { get; } = [];
+
+    /// <summary>
+    /// Whether the tick list is showing.
+    ///
+    /// Deliberately not reset when the selection changes. Working through a folder of untagged media
+    /// means tagging one, moving to the next and tagging that — a panel that folded itself away each
+    /// time would have to be reopened for every photograph. It starts closed on launch, because most
+    /// sessions are not tagging sessions and the panel is calmer without it.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isKeywordLibraryOpen;
+
+    public bool HasKeywordLibrary => KeywordPicker.Count > 0;
+
+    private void BuildPicker(KeywordLibrary library)
+    {
+        KeywordPicker.Clear();
+
+        foreach (var root in library.Roots)
+        {
+            KeywordPicker.Add(KeywordPickerNodeViewModel.FromModel(root, OnKeywordToggled));
+        }
+
+        SyncPicker();
+        OnPropertyChanged(nameof(HasKeywordLibrary));
+    }
+
+    /// <summary>
+    /// Brings every tick in line with the keywords on the file.
+    ///
+    /// Matched by name, which is what a keyword is — so the same word filed in two groups ticks in
+    /// both places, and a keyword typed by hand ticks wherever it appears in the library.
+    /// </summary>
+    private void SyncPicker()
+    {
+        var applied = Keywords.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var node in KeywordPicker.SelectMany(root => root.SelfAndDescendants()))
+        {
+            node.SyncChecked(applied.Contains(node.Name));
+        }
+    }
+
+    /// <summary>
+    /// Applies or removes a keyword. Ticking is exactly equivalent to typing the name into the box:
+    /// the same bare word goes to the file, and the grouping stays behind in the library.
+    /// </summary>
+    private void OnKeywordToggled(KeywordPickerNodeViewModel node, bool isChecked)
+    {
+        if (_suppressEdits)
+        {
+            return;
+        }
+
+        var changed = isChecked
+            ? AddKeywordNamed(node.Name)
+            : RemoveKeywordNamed(node.Name);
+
+        if (!changed)
+        {
+            return;
+        }
+
+        // The same name can appear in more than one group; they all describe one keyword, so they
+        // all have to move together.
+        SyncPicker();
+        RecordEdit();
+    }
+
+    private bool AddKeywordNamed(string keyword)
+    {
+        if (Keywords.Contains(keyword, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        Keywords.Add(keyword);
+        return true;
+    }
+
+    private bool RemoveKeywordNamed(string keyword)
+    {
+        var existing = Keywords.FirstOrDefault(k => string.Equals(k, keyword, StringComparison.OrdinalIgnoreCase));
+
+        return existing is not null && Keywords.Remove(existing);
     }
 
     public ObservableCollection<string> Keywords { get; } = [];
@@ -247,6 +345,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         }
 
         NewKeyword = string.Empty;
+        SyncPicker();
         RecordEdit();
     }
 
@@ -255,6 +354,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     {
         if (keyword is not null && Keywords.Remove(keyword))
         {
+            SyncPicker();
             RecordEdit();
         }
     }
@@ -377,6 +477,8 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
             {
                 Keywords.Add(keyword);
             }
+
+            SyncPicker();
         }
         finally
         {

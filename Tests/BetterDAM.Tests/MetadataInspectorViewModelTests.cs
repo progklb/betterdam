@@ -79,7 +79,7 @@ public class MetadataInspectorViewModelTests
     }
 
     private static (MetadataInspectorViewModel Inspector, PendingChangeStore Store, StubMetadataWriter Writer)
-        Create(MediaMetadata? metadata)
+        Create(MediaMetadata? metadata, KeywordLibrary? library = null)
     {
         var store = new PendingChangeStore();
         var writer = new StubMetadataWriter();
@@ -87,9 +87,24 @@ public class MetadataInspectorViewModelTests
             new StubMetadataProvider(metadata),
             writer,
             store,
+            new StubKeywordLibrary(library ?? KeywordLibrary.Empty),
             NullLogger<MetadataInspectorViewModel>.Instance);
 
         return (inspector, store, writer);
+    }
+
+    private sealed class StubKeywordLibrary(KeywordLibrary library) : IKeywordLibraryService
+    {
+        public KeywordLibrary Current { get; private set; } = library;
+
+        public event EventHandler<KeywordLibrary>? Changed;
+
+        public Task SaveAsync(KeywordLibrary library, CancellationToken cancellationToken = default)
+        {
+            Current = library;
+            Changed?.Invoke(this, library);
+            return Task.CompletedTask;
+        }
     }
 
     [Fact]
@@ -405,5 +420,217 @@ public class MetadataInspectorViewModelTests
         Assert.False(inspector.HasItem);
         Assert.Null(inspector.Title);
         Assert.Empty(inspector.Keywords);
+    }
+}
+
+/// <summary>
+/// The tick list on the metadata panel. What is written is the keyword's own bare name — the grouping
+/// is an organising device and never reaches the file.
+/// </summary>
+public class KeywordPickerTests
+{
+    private static MetadataInspectorViewModel Create(KeywordLibrary library, params string[] existing)
+        => new(
+            new StubProvider(existing),
+            new StubWriter(),
+            new PendingChangeStore(),
+            new StubLibrary(library),
+            NullLogger<MetadataInspectorViewModel>.Instance);
+
+    private static KeywordPickerNodeViewModel Node(MetadataInspectorViewModel inspector, string name)
+        => inspector.KeywordPicker.SelectMany(root => root.SelfAndDescendants()).First(n => n.Name == name);
+
+    [Fact]
+    public void The_library_becomes_a_tick_list()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["Shot type|wide", "Shot type|close"]));
+
+        Assert.True(inspector.HasKeywordLibrary);
+
+        var group = Assert.Single(inspector.KeywordPicker);
+        Assert.Equal("Shot type", group.Name);
+        Assert.Equal(2, group.Children.Count);
+    }
+
+    [Fact]
+    public void An_empty_library_has_nothing_to_show()
+        => Assert.False(Create(KeywordLibrary.Empty).HasKeywordLibrary);
+
+    /// <summary>Ticking writes the bare name, never the path it is filed under.</summary>
+    [Fact]
+    public void Ticking_applies_the_bare_name()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["Shot type|wide"]));
+
+        Node(inspector, "wide").IsChecked = true;
+
+        Assert.Equal(["wide"], inspector.Keywords);
+    }
+
+    [Fact]
+    public void Unticking_removes_it_again()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["Shot type|wide"]));
+        var node = Node(inspector, "wide");
+
+        node.IsChecked = true;
+        node.IsChecked = false;
+
+        Assert.Empty(inspector.Keywords);
+    }
+
+    /// <summary>A group is a keyword in its own right, so it can be applied like any other.</summary>
+    [Fact]
+    public void A_group_can_be_ticked_too()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["Mood|warm"]));
+
+        Node(inspector, "Mood").IsChecked = true;
+
+        Assert.Equal(["Mood"], inspector.Keywords);
+    }
+
+    /// <summary>
+    /// The consequence of names being the identity: the same word filed in two groups is one keyword,
+    /// so ticking it in one place must show it ticked in the other.
+    /// </summary>
+    [Fact]
+    public void The_same_name_in_two_groups_ticks_in_both()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["Shot type|wide", "Landscape|wide"]));
+
+        var nodes = inspector.KeywordPicker
+            .SelectMany(root => root.SelfAndDescendants())
+            .Where(n => n.Name == "wide")
+            .ToList();
+
+        Assert.Equal(2, nodes.Count);
+
+        nodes[0].IsChecked = true;
+
+        Assert.True(nodes[1].IsChecked);
+        Assert.Single(inspector.Keywords);
+    }
+
+    /// <summary>Typing a keyword by hand must tick it wherever the library offers it.</summary>
+    [Fact]
+    public void Typing_a_keyword_ticks_it_in_the_library()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["Shot type|wide"]));
+
+        inspector.NewKeyword = "wide";
+        inspector.AddKeywordCommand.Execute(null);
+
+        Assert.True(Node(inspector, "wide").IsChecked);
+    }
+
+    [Fact]
+    public void Removing_a_chip_unticks_it()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["Shot type|wide"]));
+        Node(inspector, "wide").IsChecked = true;
+
+        inspector.RemoveKeywordCommand.Execute("wide");
+
+        Assert.False(Node(inspector, "wide").IsChecked);
+    }
+
+    /// <summary>Case is not a difference: "Wide" on the file ticks "wide" in the library.</summary>
+    [Fact]
+    public void Ticking_matches_regardless_of_case()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["wide"]));
+
+        inspector.NewKeyword = "WIDE";
+        inspector.AddKeywordCommand.Execute(null);
+
+        Assert.True(Node(inspector, "wide").IsChecked);
+        Assert.Single(inspector.Keywords);
+    }
+
+    /// <summary>Editing the library in Settings rebuilds the list without a restart.</summary>
+    [Fact]
+    public async Task The_list_follows_the_library()
+    {
+        var service = new StubLibrary(KeywordLibrary.Empty);
+        var inspector = new MetadataInspectorViewModel(
+            new StubProvider([]), new StubWriter(), new PendingChangeStore(), service,
+            NullLogger<MetadataInspectorViewModel>.Instance);
+
+        Assert.False(inspector.HasKeywordLibrary);
+
+        await service.SaveAsync(KeywordLibrary.FromFlat(["Mood|warm"]));
+
+        Assert.True(inspector.HasKeywordLibrary);
+        Assert.Equal("Mood", inspector.KeywordPicker.Single().Name);
+    }
+
+    /// <summary>
+    /// The panel must not fold itself away between photographs: tagging a folder means tagging one and
+    /// moving to the next, and reopening it each time would make the feature not worth using.
+    /// </summary>
+    [Fact]
+    public async Task The_open_state_survives_a_change_of_selection()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["Mood|warm"]));
+        inspector.IsKeywordLibraryOpen = true;
+
+        await inspector.LoadAsync(null);
+
+        Assert.True(inspector.IsKeywordLibraryOpen);
+    }
+
+    [Fact]
+    public void It_starts_closed()
+        => Assert.False(Create(KeywordLibrary.FromFlat(["Mood|warm"])).IsKeywordLibraryOpen);
+
+    private sealed class StubProvider(string[] keywords) : IMetadataProvider
+    {
+        public bool IsAvailable => true;
+
+        public Task<MediaMetadata> ReadAsync(MediaFile file, CancellationToken cancellationToken = default)
+            => Task.FromResult(new MediaMetadata
+            {
+                Embedded = new EditableMetadata { Keywords = [.. keywords] }
+            });
+
+        public Task<IReadOnlyDictionary<string, MediaMetadata>> ReadManyAsync(
+            IReadOnlyList<MediaFile> files,
+            IProgress<int>? progress = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<string, MediaMetadata>>(new Dictionary<string, MediaMetadata>());
+    }
+
+    private sealed class StubWriter : IMetadataWriter
+    {
+        public bool IsAvailable => true;
+
+        public Task<SidecarWriteResult> WriteSidecarAsync(
+            MediaFile file,
+            EditableMetadata metadata,
+            SidecarWriteOptions options,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new SidecarWriteResult(file.FullPath, true, file.FullPath + ".xmp"));
+
+        public Task<EmbedWriteResult> WriteEmbeddedAsync(
+            MediaFile file,
+            EditableMetadata metadata,
+            EmbedWriteOptions options,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new EmbedWriteResult(file.FullPath, true));
+    }
+
+    private sealed class StubLibrary(KeywordLibrary library) : IKeywordLibraryService
+    {
+        public KeywordLibrary Current { get; private set; } = library;
+
+        public event EventHandler<KeywordLibrary>? Changed;
+
+        public Task SaveAsync(KeywordLibrary library, CancellationToken cancellationToken = default)
+        {
+            Current = library;
+            Changed?.Invoke(this, library);
+            return Task.CompletedTask;
+        }
     }
 }

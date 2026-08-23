@@ -2820,3 +2820,62 @@ on disk       keywords.json in alphabetical order after closing the window
 - `dotnet test` — **511/511 passing** (was 503). Eight new: order at every level, case-insensitive
   ordering, a moved keyword landing in place, a rename reordering its level, the move list being in
   order, and that sorting leaves the tree still listening.
+
+---
+
+## Phase 2 — the keyword picker ✅
+
+The library from Phase 1 is now a tick list on the metadata panel.
+
+### Folded away by default, and it stays how you leave it
+
+The expander's open state is bound to the ViewModel rather than kept by the control, which is what
+lets it survive a change of selection. That is the whole point: tagging a folder means tagging one
+photograph and moving to the next, and a panel that refolded itself each time would have to be
+reopened once per file.
+
+It starts closed on launch, because most sessions are not tagging sessions and the panel is calmer
+without it.
+
+### Ticking is exactly equivalent to typing
+
+The keyword applied is the node's own bare name — the decision made in the Phase 1 revision, now
+acted on. Ticking "wide" under "Shot type" puts `wide` on the file, the same as typing it into the
+box, and the grouping stays behind in the library.
+
+The two directions stay in step: typing a keyword ticks it wherever the library offers it, removing a
+chip unticks it, and matching ignores case, so `Wide` on a file ticks `wide` in the library.
+
+**The same name in two groups ticks in both**, which follows from names being the identity — there is
+nothing in a file to tell two identically-named entries apart, so they describe one keyword and must
+move together.
+
+### Not opening Settings unasked
+
+With no library, the panel shows a bubble saying what to do and offering a button. Opening Settings on
+its own would take the window away from whoever was in the middle of something else — most sessions
+are not tagging sessions, and the offer is enough.
+
+### A small trap
+
+Loading a photograph sets every tick that matches its keywords, which looks exactly like the user
+ticking them — and would have recorded a pending change for a file nobody had touched.
+`KeywordPickerNodeViewModel` distinguishes the two with a syncing flag, so only a real click reports
+itself.
+
+### Verified in the GUI
+
+```text
+select a photo      "Keyword library" expander present, collapsed
+expand              Animal · Audio · Audio Only · Bird · Blue Hour · Bush · Calm · Camp …
+tick "Bird"         chip appears, pending change registered
+change selection    panel still open, ticks reset for the new photograph
+discard             pending change cleared, nothing written
+```
+
+### Verified
+
+- `dotnet test` — **523/523 passing** (was 511). Twelve new: that ticking applies the bare name, that
+  a group can be ticked, that the same name ticks in both places, that typing and removing keep the
+  ticks in step, case-insensitive matching, the list following the library without a restart, and
+  that the open state survives a change of selection while starting closed.

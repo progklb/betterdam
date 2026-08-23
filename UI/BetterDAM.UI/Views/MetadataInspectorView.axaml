@@ -206,6 +206,55 @@
                 </TextBox>
               </DockPanel>
 
+              <!--
+                The library, folded away by default so the panel stays about this photograph. Its
+                open state is bound to the ViewModel rather than kept by the Expander, which is what
+                lets it stay open across a change of selection — tagging a folder means tagging one
+                and moving to the next, and a panel that refolded itself each time would be reopened
+                once per photograph.
+              -->
+              <Expander Margin="0,6,0,0" IsExpanded="{Binding IsKeywordLibraryOpen}"
+                        IsVisible="{Binding HasKeywordLibrary}"
+                        HorizontalAlignment="Stretch">
+                <Expander.Header>
+                  <TextBlock Text="Keyword library" FontSize="12" />
+                </Expander.Header>
+
+                <ScrollViewer MaxHeight="280" HorizontalScrollBarVisibility="Disabled">
+                  <TreeView ItemsSource="{Binding KeywordPicker}"
+                            Background="Transparent" BorderThickness="0">
+                    <TreeView.Styles>
+                      <Style Selector="TreeViewItem" x:DataType="vm:KeywordPickerNodeViewModel">
+                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                      </Style>
+                    </TreeView.Styles>
+                    <TreeView.ItemTemplate>
+                      <TreeDataTemplate x:DataType="vm:KeywordPickerNodeViewModel" ItemsSource="{Binding Children}">
+                        <CheckBox IsChecked="{Binding IsChecked}" Margin="0,-2">
+                          <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
+                        </CheckBox>
+                      </TreeDataTemplate>
+                    </TreeView.ItemTemplate>
+                  </TreeView>
+                </ScrollViewer>
+              </Expander>
+
+              <!--
+                Nothing to tick from yet. Says what to do and offers to take them there, rather than
+                opening Settings unasked in the middle of whatever they were doing.
+              -->
+              <Border IsVisible="{Binding !HasKeywordLibrary}" Margin="0,6,0,0"
+                      Background="#2622A0F2" BorderBrush="#6622A0F2" BorderThickness="1"
+                      CornerRadius="6" Padding="10,8">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="No keyword library yet" FontWeight="SemiBold" FontSize="12" />
+                  <TextBlock TextWrapping="Wrap" FontSize="11" Opacity="0.8"
+                             Text="Set up your own keywords once and they become a tick list here — far quicker than typing them for every photograph." />
+                  <Button Content="Set up keywords…" FontSize="11" HorizontalAlignment="Left"
+                          Click="OnSetUpKeywords" />
+                </StackPanel>
+              </Border>
+
               <TextBlock Text="Label" Classes="label" />
               <TextBox Text="{Binding Label}" />
 

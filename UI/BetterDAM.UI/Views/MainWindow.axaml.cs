@@ -533,7 +533,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new SettingsWindow { DataContext = factory() };
-        await window.ShowDialog(this);
+        var viewModel = factory();
+
+        // So importing keywords can be scoped to what is open rather than the whole catalog.
+        viewModel.WorkspacePath = (DataContext as MainWindowViewModel)?.WorkspacePath;
+
+        await new SettingsWindow { DataContext = viewModel }.ShowDialog(this);
     }
 }

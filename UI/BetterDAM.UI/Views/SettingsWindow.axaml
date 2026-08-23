@@ -176,6 +176,109 @@
       </TabItem>
 
 
+      <TabItem Header="Keywords">
+        <DockPanel Margin="10,8">
+
+          <!-- Actions stay put at the bottom, so they do not scroll away with a long vocabulary. -->
+          <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,10,0,0"
+                      DataContext="{Binding Keywords}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Add group" Command="{Binding AddGroupCommand}" />
+              <Button Content="Import from workspace…" Command="{Binding ImportCommand}"
+                      IsEnabled="{Binding !IsImporting}"
+                      ToolTip.Tip="Reads the keywords already on the files in the open workspace and adds any that are missing. Your arrangement is kept." />
+              <ProgressBar IsIndeterminate="True" Width="60" Height="3" VerticalAlignment="Center"
+                           IsVisible="{Binding IsImporting}" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding StatusMessage}" Classes="hint"
+                       IsVisible="{Binding StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Text="{Binding CountSummary}" Classes="hint" />
+          </StackPanel>
+
+          <StackPanel Spacing="8" DataContext="{Binding Keywords}">
+            <TextBlock Classes="hint"
+                       Text="Your own vocabulary, arranged however you think about your work — Shot type, Subject, Mood. It becomes a tick list on the metadata panel." />
+            <TextBlock Classes="hint"
+                       Text="The grouping is only for your own sanity. Each keyword is written to your files on its own — ticking “wide” under “Shot type” writes “wide”, never “Shot type|wide” — so what you tag stays readable by any other tool." />
+
+            <Border Classes="card" Padding="0" Height="330">
+              <Panel>
+                <TextBlock Text="Nothing here yet. Add a group, or import from the workspace."
+                           Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsVisible="{Binding IsEmpty}" />
+
+                <TreeView ItemsSource="{Binding Roots}"
+                          SelectedItem="{Binding Selected}"
+                          IsVisible="{Binding !IsEmpty}"
+                          Background="Transparent" BorderThickness="0">
+                  <TreeView.Styles>
+                    <Style Selector="TreeViewItem" x:DataType="vm:KeywordNodeViewModel">
+                      <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                    </Style>
+                  </TreeView.Styles>
+                  <TreeView.ItemTemplate>
+                    <TreeDataTemplate x:DataType="vm:KeywordNodeViewModel" ItemsSource="{Binding Children}">
+                      <!-- The right margin clears the scroll bar, which would otherwise sit on top
+                           of the last button and make it unclickable. -->
+                      <DockPanel MinWidth="330" Margin="0,1,16,1">
+                        <Button DockPanel.Dock="Right" Content="✕" FontSize="10" Padding="6,2"
+                                Background="Transparent" BorderThickness="0"
+                                ToolTip.Tip="Remove this keyword and anything under it"
+                                Command="{Binding $parent[TreeView].((vm:KeywordLibraryEditorViewModel)DataContext).RemoveCommand}"
+                                CommandParameter="{Binding}" />
+
+                        <!-- Move by picking the destination. Selecting the row is what fills the
+                             list, and clicking this button selects the row first. -->
+                        <Button DockPanel.Dock="Right" FontSize="11" Padding="6,2"
+                                Background="Transparent" BorderThickness="0"
+                                ToolTip.Tip="File this keyword under another one">
+                          <PathIcon Width="11" Height="11"
+                                    Data="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6h-2v6H4V6h6V4zm4 0v2h3.6l-8.3 8.3 1.4 1.4L19 7.4V11h2V4h-7z" />
+                          <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedRight">
+                              <StackPanel Width="240" Spacing="6" Margin="4">
+                                <TextBlock Text="Move under" FontSize="11" Opacity="0.6" />
+                                <!-- Bound through the node, not $parent[TreeView]: this content lives
+                                     in a popup root, which such a binding cannot walk out of. -->
+                                <ListBox MaxHeight="260" FontSize="12"
+                                         ItemsSource="{Binding MoveTargets}"
+                                         SelectionChanged="OnMoveTargetChosen">
+                                  <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:KeywordMoveTarget">
+                                      <TextBlock Text="{Binding Label}" FontFamily="monospace" FontSize="12" />
+                                    </DataTemplate>
+                                  </ListBox.ItemTemplate>
+                                </ListBox>
+                                <TextBlock Classes="hint"
+                                           Text="Nothing is written to your photographs — this only changes how the list is arranged." />
+                              </StackPanel>
+                            </Flyout>
+                          </Button.Flyout>
+                        </Button>
+
+                        <Button DockPanel.Dock="Right" Content="+" FontSize="12" Padding="7,2"
+                                Background="Transparent" BorderThickness="0"
+                                ToolTip.Tip="Add a keyword under this one"
+                                Command="{Binding $parent[TreeView].((vm:KeywordLibraryEditorViewModel)DataContext).AddChildCommand}"
+                                CommandParameter="{Binding}" />
+
+                        <!-- Edited in place: renaming is the commonest change by far. Re-sorted when
+                             the edit finishes, not while typing, or the row would jump under the
+                             cursor after every keystroke. -->
+                        <TextBox Text="{Binding Name}" FontSize="12" Padding="6,2"
+                                 Background="Transparent" BorderThickness="0"
+                                 LostFocus="OnKeywordNameCommitted" />
+                      </DockPanel>
+                    </TreeDataTemplate>
+                  </TreeView.ItemTemplate>
+                </TreeView>
+              </Panel>
+            </Border>
+          </StackPanel>
+        </DockPanel>
+      </TabItem>
+
       <TabItem Header="Catalog">
         <ScrollViewer>
           <StackPanel Margin="4,10" Spacing="12">

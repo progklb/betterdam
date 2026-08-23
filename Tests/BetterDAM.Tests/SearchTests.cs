@@ -828,3 +828,110 @@ public class WorkspaceLabelTests
         Assert.True(abbreviated.Length <= 46, $"still {abbreviated.Length} characters");
     }
 }
+
+/// <summary>
+/// The keyword query behind "Import from workspace". Exercised against a real SQLite catalog because
+/// the first version passed its unit tests and then failed on contact with the database: SQLite
+/// returns COUNT(*) as Int64, which Dapper would not bind to a record taking an int.
+/// </summary>
+public class CatalogKeywordTests
+{
+    private static SqliteCatalog Create(TempFolder temp)
+        => new(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+
+    private static CatalogEntry Entry(string path, params string[] keywords)
+        => new(
+            new MediaFile
+            {
+                FullPath = path,
+                FileName = Path.GetFileName(path),
+                MediaType = MediaType.Image,
+                SizeBytes = 100,
+                ModifiedUtc = DateTimeOffset.UnixEpoch,
+                CreatedUtc = DateTimeOffset.UnixEpoch
+            },
+            new EditableMetadata { Keywords = [.. keywords] },
+            CameraInfo.Empty,
+            HasSidecar: false,
+            null);
+
+    [Fact]
+    public async Task Returns_distinct_keywords_with_their_counts()
+    {
+        using var temp = new TempFolder();
+        var catalog = Create(temp);
+
+        await catalog.UpsertAsync([
+            Entry("/library/a.jpg", "animal", "warm"),
+            Entry("/library/b.jpg", "animal"),
+            Entry("/library/c.jpg", "plant")
+        ]);
+
+        var keywords = await catalog.GetKeywordsAsync();
+
+        Assert.Equal(3, keywords.Count);
+
+        // Most used first: that ordering is what makes a long vocabulary usable.
+        Assert.Equal("animal", keywords[0].Value);
+        Assert.Equal(2, keywords[0].Count);
+    }
+
+    [Fact]
+    public async Task Scopes_to_a_workspace()
+    {
+        using var temp = new TempFolder();
+        var catalog = Create(temp);
+
+        await catalog.UpsertAsync([
+            Entry(Path.Combine(temp.Path, "trip", "a.jpg"), "animal"),
+            Entry(Path.Combine(temp.Path, "other", "b.jpg"), "architecture")
+        ]);
+
+        var keywords = await catalog.GetKeywordsAsync(Path.Combine(temp.Path, "trip"));
+
+        Assert.Equal("animal", Assert.Single(keywords).Value);
+    }
+
+    /// <summary>
+    /// The prefix must not run past a folder boundary — the same trap the search scoping avoids, and
+    /// worth pinning here too since this query builds its own WHERE clause.
+    /// </summary>
+    [Fact]
+    public async Task A_root_does_not_match_a_longer_sibling_folder()
+    {
+        using var temp = new TempFolder();
+        var catalog = Create(temp);
+
+        await catalog.UpsertAsync([
+            Entry(Path.Combine(temp.Path, "nam", "a.jpg"), "wanted"),
+            Entry(Path.Combine(temp.Path, "namibia", "b.jpg"), "unwanted")
+        ]);
+
+        var keywords = await catalog.GetKeywordsAsync(Path.Combine(temp.Path, "nam"));
+
+        Assert.Equal("wanted", Assert.Single(keywords).Value);
+    }
+
+    [Fact]
+    public async Task An_empty_catalog_returns_nothing()
+    {
+        using var temp = new TempFolder();
+
+        Assert.Empty(await Create(temp).GetKeywordsAsync());
+    }
+
+    /// <summary>The whole point: what comes out can be turned straight into a library.</summary>
+    [Fact]
+    public async Task The_result_builds_a_library()
+    {
+        using var temp = new TempFolder();
+        var catalog = Create(temp);
+
+        await catalog.UpsertAsync([Entry("/library/a.jpg", "Subject|animal", "Mood|warm")]);
+
+        var library = KeywordLibrary.FromFlat((await catalog.GetKeywordsAsync()).Select(k => k.Value));
+
+        Assert.Equal(2, library.Roots.Length);
+        Assert.Equal("animal", library.Roots.Single(r => r.Name == "Subject").Children.Single().Name);
+    }
+}

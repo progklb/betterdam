@@ -2633,3 +2633,190 @@ Stop                "Stopped. 140 prepared." — and Prepare offered again
   renditions dominate disk by more than forty times, that only RAWs carry develop time, and that the
   reference library lands in the range the render cache work measured.
 - Driven through the real application against the real library, screenshots at each step.
+
+---
+
+## Phase — keyword library, part 1 of 3 ✅
+
+Requested: a keyword hierarchy that can be ticked on and off, defined by the user, importable from
+their files, with copy and paste onto a selection. Split into three so each part can be tested and
+committed:
+
+| Phase | |
+| --- | --- |
+| **1 — this one** | the library: model, storage, a Settings tab to build it, import from the workspace |
+| 2 | the tick-to-toggle picker in the metadata panel |
+| 3 | copy a set of keywords and paste onto a selection |
+
+### The model
+
+`KeywordNode` is a name plus children, to any depth. **Every node is a keyword, including one with
+children** — a two-level library reads as categories and keywords ("Subject" → "animal"), but nothing
+enforces that, because the useful cases do not divide cleanly: "Golden hour" is both a heading for
+"sunrise" and "sunset" and a perfectly good keyword on its own.
+
+The library is kept firmly apart from the keywords written to files. It is a palette to pick from: the
+photographs stay authoritative, a keyword can still be typed by hand, and deleting the library changes
+no metadata.
+
+Stored as `keywords.json` beside settings and outside the cache — it is the user's own work, not
+derived data.
+
+### Import
+
+`ICatalog.GetKeywordsAsync` returns distinct keywords with usage counts, scoped to a folder by the same
+`substr` prefix trick search uses. `KeywordLibrary.FromFlat` files hierarchical keywords under their
+parents, accepting both `|` (what Lightroom writes) and `/` (what people type).
+
+Importing **merges** rather than replaces, by flattening both sides to paths and rebuilding. Someone
+who has arranged their groups by hand and then imports should gain what they were missing, not have
+their arrangement flattened.
+
+### A bug the tests did not catch
+
+The first import failed on contact with the database:
+
+```text
+Import failed: A parameterless default constructor or one matching signature
+(System.String Value, System.Int64 Count) is required for KeywordUsage materialization
+```
+
+SQLite returns `COUNT(*)` as **Int64**, and Dapper will not bind that to a record whose constructor
+takes an `int` — it fails at materialisation rather than converting. Now read into a row type with a
+`long` and projected, with the catalog tests running against a real SQLite file so the next one of
+these is caught before the GUI.
+
+### Verified in the GUI
+
+```text
+Settings → Keywords     empty state, Add group, Import from workspace…
+Import                  "Imported 35 new keyword(s) from 35 found."
+tree                    Bush · Calm · Medium · People · Static · Wide · Tree · Landscape · Movement …
+close and reopen        keywords.json holds 35 roots
+```
+
+The user's own keywords are flat, so they arrive as 35 groups — the honest outcome for a flat
+vocabulary, and they can now be dragged into shape by hand. (Rearranging is by add/remove for now;
+drag to re-parent is not in this phase.)
+
+Edits save on a 400 ms debounce and are flushed when the window closes, so nothing is lost by closing
+straight after typing.
+
+### Verified
+
+- `dotnet test` — **494/494 passing** (was 470). Twenty-four new: nineteen on the library model
+  (paths, merging, case handling, round trips) and five on the catalog query, including that a root
+  does not match a longer sibling folder.
+
+---
+
+## Phase 1 revision — arranging keywords, and what actually gets written ✅
+
+### The scroll bar was sitting on the delete button
+
+The row now carries a 16px right margin, clearing the scroll bar's track. The buttons were reachable
+in principle and unclickable in practice.
+
+### Moving keywords
+
+Each row gained a **move** button: a list of every place the keyword could be filed instead, plus
+"Top level". Picking one refiles it, and the subtree travels with it.
+
+A list rather than drag and drop, deliberately. Dragging is the obvious gesture and the wrong one
+here: the tree scrolls, the destination is usually off screen, and dropping *between* two rows means
+something different from dropping *onto* one. Picking a destination by name is unambiguous and works
+the same whether the target is the next row or four hundred rows away. Drag and drop could be added on
+top later; it would not replace this.
+
+Two things are never offered: the keyword's own subtree — moving a group under its own child would
+detach it from the roots and lose it — and the parent it is already under.
+
+### A binding that silently resolved to nothing
+
+The move list came up empty the first time. The flyout's content lives in **its own popup root**, and
+`$parent[TreeView]` cannot walk out of one — the binding resolved to nothing and the list was empty,
+with no error anywhere. The node now carries a reference to its editor, so the list is reachable from
+inside the popup. Worth remembering: `$parent[…]` and flyouts do not mix.
+
+### Keywords are written flat — the user was right to ask
+
+Adopted, and now written into the model rather than left as an assumption, because Phase 2 is what
+will act on it.
+
+**A keyword is written to a file as its own bare name.** Ticking "wide" under "Shot type" writes
+`wide`, never `Shot type|wide`. The hierarchy is an organising device inside this application and
+nothing else — the same as Bridge, and what keeps the tags readable by any other tool.
+
+`ToPaths()` still exists and still uses `|`, but only as the form the *library file* takes and the way
+merging works. It is now documented as explicitly not a keyword format.
+
+Two consequences follow, both from names being the identity, and both now pinned by tests:
+
+- **The same name in two groups is one keyword.** There is nothing in a file to tell the two apart, so
+  ticking either applies the same tag — and Phase 2's picker must tick both.
+- **Renaming a group renames a keyword**, but does not re-tag anything already written. Files keep
+  whatever name was current when they were tagged.
+
+The tab now says this in as many words, so the behaviour is not a surprise discovered later.
+
+### Verified in the GUI
+
+```text
+scroll bar         delete button clear of the track
+move "Wide"        list shows Bush · Calm · Medium · People …
+picked "Bush"      Wide nested under Bush, expanded and selected
+move again         "Top level" offered; "Bush" absent as its current parent
+picked "Top level" Wide back at the top; keywords.json shows 36 roots
+```
+
+### Verified
+
+- `dotnet test` — **503/503 passing** (was 494). Nine new: three pinning that a keyword is its own
+  bare name and that a repeated name is one keyword, and six on moving — promotion to the top level,
+  that a subtree travels with its parent, that a keyword is never offered its own subtree, and that
+  the current parent is not offered.
+
+---
+
+## Phase 1 revision — alphabetical order ✅
+
+Requested: keywords listed alphabetically in the tree and in the move list.
+
+### Roots were the level nobody sorted
+
+`FromFlat` sorted children but not roots, so an import came out in whatever order the source produced
+— for the catalog, usage counts, which reads as no order at all. Roots are sorted the same way now,
+and the tree is sorted again on load as cheap insurance against a library saved by an earlier build.
+
+The move list walks the same roots, so it inherits the order rather than sorting separately.
+
+### Sorted in place, not rebuilt
+
+Levels are reordered with `ObservableCollection.Move` rather than cleared and refilled, so nodes keep
+their identity — a rebuild would drop the selection and the expanded state.
+
+That turned out to matter more than expected. A `Move` reports the same node as **both added and
+removed**, and the existing handler would have attached it and then immediately detached it: since
+sorting is entirely Moves, every sort would have quietly left the tree with nothing listening to it,
+and later edits would never have been saved. `Move` is now handled explicitly, with a test that pins
+it by checking a node still knows its editor after a sort.
+
+### Renames sort when the edit finishes
+
+On `LostFocus`, not on every keystroke. Sorting as the user types would send the row they are editing
+jumping around under the cursor after every letter.
+
+### Verified in the GUI
+
+```text
+tree          Animal · Audio · Audio Only · Bird · Blue Hour · Bush · Calm · Camp …
+move list     Audio · Audio Only · Bird · Blue Hour · Bush · Calm · Camp · Chaos …
+              with "Animal" — the keyword being moved — correctly absent
+on disk       keywords.json in alphabetical order after closing the window
+```
+
+### Verified
+
+- `dotnet test` — **511/511 passing** (was 503). Eight new: order at every level, case-insensitive
+  ordering, a moved keyword landing in place, a rename reordering its level, the move list being in
+  order, and that sorting leaves the tree still listening.

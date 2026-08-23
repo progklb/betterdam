@@ -253,6 +253,60 @@ public sealed class SqliteCatalog : ICatalog
     }
 
     /// <summary>
+    /// Distinct keywords in use, most used first, optionally scoped to a folder.
+    ///
+    /// Scoped the same way search is — substr rather than LIKE, because a path may contain % or _
+    /// and LIKE would read those as wildcards.
+    /// </summary>
+    public async Task<IReadOnlyList<KeywordUsage>> GetKeywordsAsync(
+        string? rootPath = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var root = NormaliseRoot(rootPath);
+
+        var sql = root is null
+            ? """
+              SELECT k.Value AS Value, COUNT(*) AS Count
+              FROM MediaKeyword mk
+              JOIN Keyword k ON k.Id = mk.KeywordId
+              GROUP BY k.Id
+              ORDER BY Count DESC, k.Value COLLATE NOCASE;
+              """
+            : """
+              SELECT k.Value AS Value, COUNT(*) AS Count
+              FROM MediaKeyword mk
+              JOIN Keyword k ON k.Id = mk.KeywordId
+              JOIN Media m ON m.Id = mk.MediaId
+              WHERE substr(m.Path, 1, @rootLength) = @root
+              GROUP BY k.Id
+              ORDER BY Count DESC, k.Value COLLATE NOCASE;
+              """;
+
+        // Read into a row type with a long count, then project. SQLite returns COUNT(*) as INTEGER,
+        // which is Int64, and Dapper will not bind that to a record whose constructor takes an int —
+        // it fails at materialisation rather than converting.
+        var rows = await connection
+            .QueryAsync<KeywordRow>(new CommandDefinition(
+                sql,
+                new { root, rootLength = root?.Length ?? 0 },
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        return rows
+            .Select(row => new KeywordUsage(row.Value, (int)Math.Min(row.Count, int.MaxValue)))
+            .ToList();
+    }
+
+    private sealed class KeywordRow
+    {
+        public string Value { get; init; } = string.Empty;
+
+        public long Count { get; init; }
+    }
+
+    /// <summary>
     /// Normalises a workspace root for prefix matching, or returns null when the search is not
     /// scoped. The trailing separator is the whole point: without it a root of "/photos/nam" would
     /// also match "/photos/namibia".

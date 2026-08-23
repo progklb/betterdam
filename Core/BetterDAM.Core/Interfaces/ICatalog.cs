@@ -2,6 +2,9 @@ using BetterDAM.Core.Models;
 
 namespace BetterDAM.Core.Interfaces;
 
+/// <summary>A keyword in the catalog, and how many files carry it.</summary>
+public sealed record KeywordUsage(string Value, int Count);
+
 /// <summary>One file's searchable facts, ready to be written to the catalog.</summary>
 public sealed record CatalogEntry(
     MediaFile File,
@@ -34,6 +37,17 @@ public readonly record struct IndexedStamp(long SizeBytes, long ModifiedUtc);
 public interface ICatalog
 {
     Task<CatalogStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Distinct keywords already in use, most used first, optionally scoped to a folder.
+    ///
+    /// For building a keyword library out of what the photographs already say rather than typing it
+    /// out again. Counts are included because they are what makes the list usable: a vocabulary of
+    /// four hundred keywords is mostly one-offs and typos, and the frequent ones are the real ones.
+    /// </summary>
+    Task<IReadOnlyList<KeywordUsage>> GetKeywordsAsync(
+        string? rootPath = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Inserts or updates entries, keyed by path.</summary>
     Task UpsertAsync(IReadOnlyList<CatalogEntry> entries, CancellationToken cancellationToken = default);

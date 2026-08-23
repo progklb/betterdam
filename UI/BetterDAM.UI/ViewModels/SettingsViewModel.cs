@@ -27,6 +27,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         ICacheMaintenance maintenance,
         IRenderCacheMaintenance renderMaintenance,
         ICatalog catalog,
+        KeywordLibraryEditorViewModel keywords,
         IAppPaths paths,
         ILogger<SettingsViewModel> logger)
     {
@@ -36,6 +37,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _catalog = catalog;
         _paths = paths;
         _logger = logger;
+        Keywords = keywords;
 
         var current = settings.Current;
         _isCacheLimited = current.IsCacheLimited;
@@ -56,6 +58,19 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>Supplied by the view; the ViewModel does not reach for the window itself.</summary>
     public IStorageProvider? StorageProvider { get; set; }
+
+    /// <summary>The Keywords tab. Its own ViewModel — it shares nothing with cache housekeeping.</summary>
+    public KeywordLibraryEditorViewModel Keywords { get; }
+
+    /// <summary>
+    /// The open workspace, so importing keywords can be scoped to it. Passed through rather than
+    /// looked up: the settings dialog has no business knowing about the main window.
+    /// </summary>
+    public string? WorkspacePath
+    {
+        get => Keywords.WorkspacePath;
+        set => Keywords.WorkspacePath = value;
+    }
 
     public static IReadOnlyList<string> LimitChoices { get; } =
         LimitChoicesMb.Select(mb => mb < 1024 ? $"{mb} MB" : $"{mb / 1024} GB").ToList();

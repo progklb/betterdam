@@ -340,6 +340,17 @@
                   <ContextMenu>
                     <MenuItem Header="Open Fullscreen" Click="OnFullscreenFromMenu" />
                     <Separator />
+                    <!--
+                      Copy and paste together, because they are two halves of one action and having
+                      them in different places was confusing. Copy takes the clicked tile's keywords;
+                      paste applies to everything selected.
+                    -->
+                    <MenuItem Header="Keywords">
+                      <MenuItem Header="Copy" Click="OnCopyKeywords" />
+                      <MenuItem Header="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).Batch.PasteKeywordsSummary}"
+                                Command="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).Batch.PasteKeywordsCommand}" />
+                    </MenuItem>
+                    <Separator />
                     <MenuItem Header="{x:Static svc:RevealInFileManager.MenuHeader}"
                               Click="OnRevealInFileManager" />
                   </ContextMenu>

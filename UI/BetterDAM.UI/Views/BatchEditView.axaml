@@ -82,7 +82,14 @@
         <!-- Keywords -->
         <Border Classes="card">
           <StackPanel Spacing="6">
-            <TextBlock Text="Keywords" FontWeight="SemiBold" FontSize="12" />
+            <DockPanel>
+              <Button DockPanel.Dock="Right" FontSize="11" Padding="8,2"
+                      Content="Paste copied"
+                      IsEnabled="{Binding CanPasteKeywords}"
+                      ToolTip.Tip="{Binding PasteKeywordsSummary}"
+                      Command="{Binding PasteKeywordsCommand}" />
+              <TextBlock Text="Keywords" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+            </DockPanel>
 
             <CheckBox Content="Replace all keywords" IsChecked="{Binding ReplaceKeywords}"
                       ToolTip.Tip="Discards each file's existing keywords. Off by default because that is rarely what a mixed selection needs." />

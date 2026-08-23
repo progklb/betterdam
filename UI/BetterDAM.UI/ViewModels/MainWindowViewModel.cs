@@ -79,7 +79,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Inspector.RawTags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(LoupeTargetWidth));
 
         // A batch run marks many files at once; refresh whatever is on screen afterwards.
-        Batch.Applied += () => PendingChangeCount = _pending.Count;
+        // A batch run edits the pending store behind the inspector's back, so the panel has to be
+        // told to re-read. Without this, pasting keywords onto the selected file left the old ones on
+        // screen until something else happened to reload it.
+        Batch.Applied += () =>
+        {
+            PendingChangeCount = _pending.Count;
+            _ = Inspector.LoadAsync(SelectedItem);
+        };
 
         _pending.Changed += (_, _) => PendingChangeCount = _pending.Count;
 

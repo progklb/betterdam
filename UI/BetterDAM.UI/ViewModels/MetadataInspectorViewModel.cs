@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
+using BetterDAM.UI.Services;
 using BetterDAM.Core.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -17,7 +18,17 @@ namespace BetterDAM.UI.ViewModels;
 /// False for keywords that arrived with the file — from a camera, or another tool. The chip offers to
 /// adopt those, so a vocabulary can be reconciled where the gap is noticed.
 /// </param>
-public sealed record AppliedKeyword(string Name, bool IsInLibrary);
+/// <param name="IsCopyAction">
+/// True for the single trailing pill that copies the set.
+///
+/// Carried in the same collection rather than placed beside it so that it wraps with the keywords
+/// instead of being pushed onto a line of its own: two elements in one wrap panel would each be
+/// measured as a block, and a long list would either overflow or strand the button.
+/// </param>
+public sealed record AppliedKeyword(string Name, bool IsInLibrary, bool IsCopyAction = false)
+{
+    public static readonly AppliedKeyword Copy = new("Copy", true, IsCopyAction: true);
+}
 
 /// <summary>
 /// The metadata inspector. Edits made here never touch the media file — they are written to the
@@ -30,6 +41,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     private readonly IPendingChangeStore _pending;
     private readonly IKeywordLibraryService _library;
     private readonly ISettingsService _settings;
+    private readonly IKeywordClipboard _clipboard;
     private readonly ILogger<MetadataInspectorViewModel> _logger;
 
     private CancellationTokenSource? _loadCts;
@@ -49,6 +61,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         IPendingChangeStore pending,
         IKeywordLibraryService library,
         ISettingsService settings,
+        IKeywordClipboard clipboard,
         ILogger<MetadataInspectorViewModel> logger)
     {
         _metadata = metadata;
@@ -56,6 +69,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         _pending = pending;
         _library = library;
         _settings = settings;
+        _clipboard = clipboard;
         _logger = logger;
 
         // Rebuilt rather than patched: editing the library in Settings can change anything about it,
@@ -63,6 +77,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         _library.Changed += (_, library) => BuildPicker(library);
         BuildPicker(_library.Current);
         _settings.Changed += (_, _) => OnPropertyChanged(nameof(IsRestrictedToLibrary));
+        _clipboard.Changed += (_, _) => OnPropertyChanged(nameof(CopiedKeywordsSummary));
     }
 
     // ---- Keyword library ------------------------------------------------------------------------
@@ -219,10 +234,18 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
 
         var known = _library.Current.AllNames();
 
+        OnPropertyChanged(nameof(HasKeywords));
+
         AppliedKeywords.Clear();
         foreach (var keyword in Keywords)
         {
             AppliedKeywords.Add(new AppliedKeyword(keyword, known.Contains(keyword)));
+        }
+
+        // Trails the keywords it would copy. Nothing to copy, nothing to show.
+        if (AppliedKeywords.Count > 0)
+        {
+            AppliedKeywords.Add(AppliedKeyword.Copy);
         }
     }
 
@@ -499,6 +522,55 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         SyncKeywordState();
         RecordEdit();
     }
+
+    /// <summary>
+    /// Copies this photograph's keywords, ready to be applied to a selection.
+    ///
+    /// The copy is taken here rather than from a tile because this is the one place the keywords are
+    /// visible — copying from something you cannot see would be a guess.
+    /// </summary>
+    [RelayCommand]
+    private void CopyKeywords() => _clipboard.Copy(Keywords);
+
+    /// <summary>
+    /// Copies the keywords of a file that may not be the one on screen — what the grid's right-click
+    /// menu needs.
+    ///
+    /// Reads through the pending store first, so copying picks up edits that have not been written
+    /// yet. Copying what is on disk while the panel shows something else would be a quiet way to
+    /// spread stale tags.
+    /// </summary>
+    public async Task CopyKeywordsFromAsync(MediaFile file)
+    {
+        if (_item?.File.FullPath == file.FullPath)
+        {
+            _clipboard.Copy(Keywords);
+            return;
+        }
+
+        if (_pending.GetEdited(file.FullPath) is { } edited)
+        {
+            _clipboard.Copy(edited.Keywords);
+            return;
+        }
+
+        try
+        {
+            var metadata = await _metadata.ReadAsync(file).ConfigureAwait(true);
+            _clipboard.Copy(metadata.Effective.Keywords);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read keywords from {File}", file.FullPath);
+        }
+    }
+
+    public bool HasKeywords => Keywords.Count > 0;
+
+    /// <summary>What is on the keyword clipboard, for the paste control to describe itself.</summary>
+    public string CopiedKeywordsSummary => _clipboard.HasKeywords
+        ? string.Join(", ", _clipboard.Keywords)
+        : "Nothing copied";
 
     /// <summary>Applies a keyword chosen from the library and clears the search.</summary>
     [RelayCommand]

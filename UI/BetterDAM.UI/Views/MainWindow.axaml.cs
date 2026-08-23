@@ -474,6 +474,18 @@ public partial class MainWindow : Window
            ?? (DataContext as MainWindowViewModel)?.SelectedItem;
 
     /// <summary>
+    /// Copies the right-clicked tile's keywords, which need not be the selected one — the menu
+    /// carries its own DataContext, so it works on a tile that was never clicked.
+    /// </summary>
+    private async void OnCopyKeywords(object? sender, RoutedEventArgs e)
+    {
+        if (ItemFor(sender) is { } item && DataContext is MainWindowViewModel viewModel)
+        {
+            await viewModel.Inspector.CopyKeywordsFromAsync(item.File);
+        }
+    }
+
+    /// <summary>
     /// Reveals the right-clicked item, which is not necessarily the selected one — the context menu
     /// carries its own DataContext, so it works even on a tile that was never clicked.
     /// </summary>

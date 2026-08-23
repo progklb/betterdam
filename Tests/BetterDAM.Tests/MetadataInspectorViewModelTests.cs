@@ -1,6 +1,7 @@
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
 using BetterDAM.Core.Services;
+using BetterDAM.UI.Services;
 using BetterDAM.UI.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -89,6 +90,7 @@ public class MetadataInspectorViewModelTests
             store,
             new StubKeywordLibrary(library ?? KeywordLibrary.Empty),
             new StubSettings(AppSettings.Default),
+            new KeywordClipboard(),
             NullLogger<MetadataInspectorViewModel>.Instance);
 
         return (inspector, store, writer);
@@ -458,6 +460,7 @@ public class KeywordPickerTests
             new PendingChangeStore(),
             new StubLibrary(library),
             new StubSettingsService(settings),
+            new KeywordClipboard(),
             NullLogger<MetadataInspectorViewModel>.Instance);
 
     private sealed class StubSettingsService(AppSettings settings) : ISettingsService
@@ -596,6 +599,7 @@ public class KeywordPickerTests
         var inspector = new MetadataInspectorViewModel(
             new StubProvider([]), new StubWriter(), new PendingChangeStore(), service,
             new StubSettingsService(AppSettings.Default),
+            new KeywordClipboard(),
             NullLogger<MetadataInspectorViewModel>.Instance);
 
         Assert.False(inspector.HasKeywordLibrary);
@@ -695,6 +699,7 @@ public class KeywordSearchTests
             new PendingChangeStore(),
             new SearchStubLibrary(library ?? Library),
             new SearchStubSettings(AppSettings.Default with { RestrictKeywordsToLibrary = restrict }),
+            new KeywordClipboard(),
             NullLogger<MetadataInspectorViewModel>.Instance);
 
     [Fact]
@@ -782,6 +787,7 @@ public class KeywordSearchTests
         var inspector = new MetadataInspectorViewModel(
             new SearchStubProvider([]), new SearchStubWriter(), new PendingChangeStore(), service,
             new SearchStubSettings(AppSettings.Default),
+            new KeywordClipboard(),
             NullLogger<MetadataInspectorViewModel>.Instance);
 
         inspector.NewKeyword = "texture";
@@ -851,8 +857,8 @@ public class KeywordSearchTests
         unrestricted.NewKeyword = "dirt";
         unrestricted.AddKeywordCommand.Execute(null);
 
-        Assert.True(inspector.AppliedKeywords.Single().IsInLibrary);
-        Assert.False(unrestricted.AppliedKeywords.Single().IsInLibrary);
+        Assert.True(inspector.AppliedKeywords.First(k => !k.IsCopyAction).IsInLibrary);
+        Assert.False(unrestricted.AppliedKeywords.First(k => !k.IsCopyAction).IsInLibrary);
 
         await Task.CompletedTask;
     }
@@ -864,6 +870,7 @@ public class KeywordSearchTests
         var inspector = new MetadataInspectorViewModel(
             new SearchStubProvider([]), new SearchStubWriter(), new PendingChangeStore(), service,
             new SearchStubSettings(AppSettings.Default with { RestrictKeywordsToLibrary = false }),
+            new KeywordClipboard(),
             NullLogger<MetadataInspectorViewModel>.Instance);
 
         inspector.NewKeyword = "dirt";
@@ -872,8 +879,116 @@ public class KeywordSearchTests
         await inspector.AdoptKeywordCommand.ExecuteAsync("dirt");
 
         Assert.Contains("dirt", service.Current.AllNames());
-        Assert.True(inspector.AppliedKeywords.Single().IsInLibrary);
+        Assert.True(inspector.AppliedKeywords.First(k => !k.IsCopyAction).IsInLibrary);
     }
+
+    // ---- The copy pill ----------------------------------------------------------------------------
+
+    /// <summary>
+    /// The copy control rides in the same collection as the keywords so it wraps with them. Two
+    /// elements in one wrap panel would each be measured as a block, and a long list would either
+    /// overflow or strand the button on a line of its own.
+    /// </summary>
+    [Fact]
+    public void The_copy_pill_trails_the_keywords()
+    {
+        var inspector = Create();
+
+        inspector.NewKeyword = "Ground";
+        inspector.AddKeywordCommand.Execute(null);
+
+        Assert.Equal(2, inspector.AppliedKeywords.Count);
+        Assert.False(inspector.AppliedKeywords[0].IsCopyAction);
+        Assert.True(inspector.AppliedKeywords[1].IsCopyAction);
+    }
+
+    [Fact]
+    public void There_is_nothing_to_copy_when_there_are_no_keywords()
+        => Assert.Empty(Create().AppliedKeywords);
+
+    // ---- Copying from another file ------------------------------------------------------------------
+
+    /// <summary>
+    /// Copying the file already on screen uses what is on screen — including an edit made a moment
+    /// ago and not yet written anywhere.
+    /// </summary>
+    [Fact]
+    public async Task Copying_the_current_file_uses_what_is_shown()
+    {
+        var clipboard = new KeywordClipboard();
+        var inspector = new MetadataInspectorViewModel(
+            new SearchStubProvider(["Sand"]), new SearchStubWriter(), new PendingChangeStore(),
+            new SearchStubLibrary(Library), new SearchStubSettings(AppSettings.Default), clipboard,
+            NullLogger<MetadataInspectorViewModel>.Instance);
+
+        await inspector.LoadAsync(new MediaItemViewModel(File("/library/a.jpg"), new NoThumbnails()));
+
+        inspector.NewKeyword = "Ground";
+        inspector.AddKeywordCommand.Execute(null);
+
+        await inspector.CopyKeywordsFromAsync(File("/library/a.jpg"));
+
+        Assert.Equal(["Sand", "Ground"], clipboard.Keywords.ToArray());
+    }
+
+    private sealed class NoThumbnails : IThumbnailService
+    {
+        public Task<byte[]?> GetThumbnailAsync(
+            MediaFile file,
+            int maxEdgePixels,
+            ThumbnailPriority priority = ThumbnailPriority.Background,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<byte[]?>(null);
+    }
+
+    /// <summary>
+    /// Copying a tile that is not selected reads that file — and reads the pending store first, so it
+    /// picks up edits that have not been written yet rather than spreading stale tags.
+    /// </summary>
+    [Fact]
+    public async Task Copying_another_file_prefers_its_pending_edit()
+    {
+        var clipboard = new KeywordClipboard();
+        var pending = new PendingChangeStore();
+
+        pending.Set(
+            "/library/other.jpg",
+            EditableMetadata.Empty,
+            new EditableMetadata { Keywords = ["edited"] });
+
+        var inspector = new MetadataInspectorViewModel(
+            new SearchStubProvider(["onDisk"]), new SearchStubWriter(), pending,
+            new SearchStubLibrary(Library), new SearchStubSettings(AppSettings.Default), clipboard,
+            NullLogger<MetadataInspectorViewModel>.Instance);
+
+        await inspector.CopyKeywordsFromAsync(File("/library/other.jpg"));
+
+        Assert.Equal(["edited"], clipboard.Keywords.ToArray());
+    }
+
+    [Fact]
+    public async Task Copying_another_file_falls_back_to_what_is_on_disk()
+    {
+        var clipboard = new KeywordClipboard();
+        var inspector = new MetadataInspectorViewModel(
+            new SearchStubProvider(["onDisk"]), new SearchStubWriter(), new PendingChangeStore(),
+            new SearchStubLibrary(Library), new SearchStubSettings(AppSettings.Default), clipboard,
+            NullLogger<MetadataInspectorViewModel>.Instance);
+
+        await inspector.CopyKeywordsFromAsync(File("/library/other.jpg"));
+
+        Assert.Equal(["onDisk"], clipboard.Keywords.ToArray());
+    }
+
+    private static MediaFile File(string path) => new()
+    {
+        FullPath = path,
+        FileName = Path.GetFileName(path),
+        MediaType = MediaType.Image,
+        SizeBytes = 1,
+        ModifiedUtc = DateTimeOffset.UnixEpoch,
+        CreatedUtc = DateTimeOffset.UnixEpoch
+    };
 
     private sealed class SearchStubProvider(string[] keywords) : IMetadataProvider
     {

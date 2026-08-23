@@ -3,6 +3,7 @@ using BetterDAM.Core.Models;
 using BetterDAM.Core.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using BetterDAM.UI.Services;
 
 namespace BetterDAM.Tests;
 
@@ -397,7 +398,7 @@ public class BatchEditViewModelTests
     }
 
     private static BetterDAM.UI.ViewModels.BatchEditViewModel Create()
-        => new(new NoopBatchService(), NullLogger<BetterDAM.UI.ViewModels.BatchEditViewModel>.Instance);
+        => new(new NoopBatchService(), new KeywordClipboard(), NullLogger<BetterDAM.UI.ViewModels.BatchEditViewModel>.Instance);
 
     [Fact]
     public void Clicking_a_star_opts_the_rating_in()
@@ -480,5 +481,185 @@ public class BatchEditViewModelTests
 
         Assert.False(vm.BuildEdit().HasAnyChange);
         Assert.Empty(vm.KeywordsToAdd);
+    }
+}
+
+/// <summary>
+/// Copying a set of keywords from one photograph and applying it to a selection.
+/// </summary>
+public class KeywordClipboardTests
+{
+    [Fact]
+    public void Copying_keeps_what_was_copied()
+    {
+        var clipboard = new KeywordClipboard();
+
+        clipboard.Copy(["wide", "Golden Hour"]);
+
+        Assert.True(clipboard.HasKeywords);
+        Assert.Equal(["wide", "Golden Hour"], clipboard.Keywords.ToArray());
+    }
+
+    /// <summary>Blank entries and repeats would become blank and repeated tags on every file.</summary>
+    [Fact]
+    public void Copying_tidies_what_it_is_given()
+    {
+        var clipboard = new KeywordClipboard();
+
+        clipboard.Copy([" wide ", "", "   ", "WIDE", "sand"]);
+
+        Assert.Equal(["wide", "sand"], clipboard.Keywords.ToArray());
+    }
+
+    [Fact]
+    public void An_empty_copy_leaves_nothing_to_paste()
+    {
+        var clipboard = new KeywordClipboard();
+        clipboard.Copy(["wide"]);
+
+        clipboard.Copy([]);
+
+        Assert.False(clipboard.HasKeywords);
+    }
+
+    [Fact]
+    public void Copying_announces_itself()
+    {
+        var clipboard = new KeywordClipboard();
+        var raised = 0;
+        clipboard.Changed += (_, _) => raised++;
+
+        clipboard.Copy(["wide"]);
+        clipboard.Clear();
+
+        Assert.Equal(2, raised);
+    }
+
+    // ---- Pasting ---------------------------------------------------------------------------------
+
+    [Fact]
+    public void Nothing_copied_means_nothing_to_paste()
+    {
+        var (batch, _) = CreateBatch();
+
+        Assert.False(batch.CanPasteKeywords);
+    }
+
+    [Fact]
+    public void Nothing_selected_means_nothing_to_paste()
+    {
+        var clipboard = new KeywordClipboard();
+        clipboard.Copy(["wide"]);
+
+        var batch = new BetterDAM.UI.ViewModels.BatchEditViewModel(
+            new RecordingBatchService(), clipboard,
+            NullLogger<BetterDAM.UI.ViewModels.BatchEditViewModel>.Instance);
+
+        Assert.False(batch.CanPasteKeywords);
+    }
+
+    /// <summary>
+    /// Added, not replacing. "Give these the same tags as that one" is what copying keywords means
+    /// nearly always, and a paste that discarded what was already there would be noticed a hundred
+    /// files later.
+    /// </summary>
+    [Fact]
+    public async Task Pasting_adds_the_copied_keywords_to_every_selected_file()
+    {
+        var (batch, service) = CreateBatch("wide", "sand");
+        batch.SetSelection([Item("/library/a.jpg"), Item("/library/b.jpg")]);
+
+        Assert.True(batch.CanPasteKeywords);
+
+        await batch.PasteKeywordsCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, service.Files.Count);
+        Assert.Equal(["wide", "sand"], service.Edit!.KeywordsToAdd.ToArray());
+        Assert.False(service.Edit.ReplaceKeywords);
+        Assert.Empty(service.Edit.KeywordsToRemove);
+    }
+
+    [Fact]
+    public async Task Pasting_says_how_many_keywords_it_applied()
+    {
+        var (batch, _) = CreateBatch("wide", "sand");
+        batch.SetSelection([Item("/library/a.jpg")]);
+
+        await batch.PasteKeywordsCommand.ExecuteAsync(null);
+
+        Assert.Contains("2 keyword(s)", batch.ResultMessage);
+    }
+
+    /// <summary>The menu label has to say what will be pasted, or it is a leap of faith.</summary>
+    [Fact]
+    public void The_paste_label_names_the_keywords()
+    {
+        var (batch, _) = CreateBatch("wide", "sand");
+
+        Assert.Equal("Paste wide, sand", batch.PasteKeywordsSummary);
+    }
+
+    [Fact]
+    public void The_paste_label_says_so_when_nothing_is_copied()
+    {
+        var (batch, _) = CreateBatch();
+
+        Assert.Equal("Nothing copied", batch.PasteKeywordsSummary);
+    }
+
+    private static (BetterDAM.UI.ViewModels.BatchEditViewModel Batch, RecordingBatchService Service)
+        CreateBatch(params string[] copied)
+    {
+        var clipboard = new KeywordClipboard();
+        if (copied.Length > 0)
+        {
+            clipboard.Copy(copied);
+        }
+
+        var service = new RecordingBatchService();
+
+        return (new BetterDAM.UI.ViewModels.BatchEditViewModel(
+            service, clipboard, NullLogger<BetterDAM.UI.ViewModels.BatchEditViewModel>.Instance), service);
+    }
+
+    private static BetterDAM.UI.ViewModels.MediaItemViewModel Item(string path)
+        => new(
+            new MediaFile
+            {
+                FullPath = path,
+                FileName = Path.GetFileName(path),
+                MediaType = MediaType.Image,
+                SizeBytes = 1,
+                ModifiedUtc = DateTimeOffset.UnixEpoch,
+                CreatedUtc = DateTimeOffset.UnixEpoch
+            },
+            new NoopThumbnails());
+
+    private sealed class RecordingBatchService : IBatchMetadataService
+    {
+        public IReadOnlyList<MediaFile> Files { get; private set; } = [];
+
+        public BatchMetadataEdit? Edit { get; private set; }
+
+        public Task<BatchResult> ApplyAsync(
+            IReadOnlyList<MediaFile> files,
+            BatchMetadataEdit edit,
+            IProgress<JobProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            Files = files;
+            Edit = edit;
+            return Task.FromResult(new BatchResult(files.Count, 0, [], false));
+        }
+    }
+
+    private sealed class NoopThumbnails : IThumbnailService
+    {
+        public Task<byte[]?> GetThumbnailAsync(
+            MediaFile file,
+            int maxEdgePixels,
+            ThumbnailPriority priority = ThumbnailPriority.Background,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<byte[]?>(null);
     }
 }

@@ -46,6 +46,7 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IThumbnailService, ThumbnailService>();
         services.AddSingleton<IWorkspacePreparer, WorkspacePreparer>();
         services.AddSingleton<IKeywordLibraryService, JsonKeywordLibraryService>();
+        services.AddSingleton<IKeywordClipboard, KeywordClipboard>();
         services.AddSingleton<ILibRawLocator, LibRawLocator>();
 
         // LibRaw first because it is the one the develop settings drive; the platform decoder picks

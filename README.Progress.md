@@ -2944,3 +2944,110 @@ Settings → Keywords  "Only use keywords from my library", ticked
   winning over partial, a word outside the library not being applied, adoption applying and adding in
   one action, unrestricted mode still taking anything, an empty library leaving typing unrestricted,
   and chips reporting whether the library knows them.
+
+---
+
+## Phase 3 — copy and paste keyword sets ✅
+
+Tag one photograph properly, then give the same tags to the rest.
+
+### A clipboard of its own, not the system one
+
+Keywords copied here would be destroyed by the next ordinary copy — a file path, a word from a
+caption — and a set of tags is not something to lose by copying something else first. It is also the
+wrong shape: the system clipboard carries text, this carries a set with an identity.
+
+### Copy from where you can see them
+
+**Copy** sits beside the Keywords heading in the inspector, because that is the one place the keywords
+are visible. Copying from a tile would be copying something you cannot see.
+
+**Paste** applies to the whole selection, from two places: the batch panel that appears for a
+multi-selection, and the tile right-click menu. Both name what will be pasted — *"Paste wide, sand"* —
+rather than asking for a leap of faith.
+
+### Added, never replacing
+
+"Give these the same tags as that one" is what copying keywords means nearly always, and a paste that
+silently discarded what was already there is the kind of mistake noticed a hundred files later.
+Replacing is still available in the batch panel, as a deliberate choice with its own checkbox.
+
+Paste goes through the same `IBatchMetadataService` as every other bulk edit, so pasted keywords are a
+pending change like any other and nothing reaches the files until Sync. Applying it meant extracting
+`RunAsync` out of the batch form's Apply — the two are the same operation over the same files, and the
+only difference is where the edit came from.
+
+### Verified in the GUI
+
+```text
+select a photo, apply "Bird"     chip appears
+Copy                             clipboard holds it
+select two files                 batch panel, "Paste copied" enabled, tooltip "Paste Bird"
+Paste copied                     "Pasted 1 keyword(s) · 2 file(s) modified. Nothing is written until you save."
+Discard all                      pending changes cleared, no sidecars written
+```
+
+### Verified
+
+- `dotnet test` — **545/545 passing** (was 535). Ten new: copying tidies blanks, repeats and case;
+  copying announces itself; nothing copied or nothing selected leaves paste unavailable; pasting adds
+  to every selected file without replacing; and the label names what will be pasted.
+
+---
+
+## Phase 3 revision — the paste bug, and where copy lives ✅
+
+### The panel did not refresh after pasting
+
+A batch run writes to the pending store directly, and the inspector had no idea. It only re-reads on
+`LoadAsync`, so pasted keywords sat in the store while the panel went on showing what it had read
+earlier — until a change of selection happened to reload it. That is exactly what "I have to change
+focus to have the UI refresh" was.
+
+`Batch.Applied` now reloads the inspector for the current selection. The reload already reads through
+the pending store, so it shows the pasted keywords without anything being written to disk.
+
+### Copy and paste, together
+
+They were in two different places — copy on the metadata panel, paste on the tile menu — which is a
+disconnect with nothing to justify it. The tile menu now carries both under one submenu:
+
+```text
+Open Fullscreen
+────────────────
+Keywords  ▸   Copy
+              Paste Bird
+────────────────
+Reveal in Finder
+```
+
+Copy there takes the **clicked tile's** keywords, which need not be the selected one. It reads through
+the pending store first, so it picks up edits not yet written rather than quietly spreading what is on
+disk; and when the clicked tile *is* the one on screen it simply uses what is on screen, with no
+re-read at all.
+
+### Copy as a pill
+
+The Copy button has moved out of the Keywords heading and into the list itself, trailing the keywords
+it would copy — outlined rather than filled, so it reads as an action among the chips without
+competing with them.
+
+It rides in the same collection as the keywords rather than sitting beside it. Two elements in one
+wrap panel are each measured as a block, so a long keyword list would either overflow sideways or
+strand the button on a line of its own. As an item it simply wraps with everything else, and it is
+absent when there is nothing to copy.
+
+### Verified in the GUI
+
+```text
+Keywords pill row     Bird ✕   ( Copy )   — outlined, inline
+right-click a tile    Keywords ▸ Copy | Paste Bird
+Paste Bird            chip appears immediately on DSCF7755.JPG, no focus change needed
+Discard all           cleared; no sidecars written
+```
+
+### Verified
+
+- `dotnet test` — **550/550 passing** (was 545). Five new: the copy pill trailing the keywords and
+  being absent when there are none, and copying another file preferring its pending edit, falling back
+  to disk, and using what is on screen for the current one.

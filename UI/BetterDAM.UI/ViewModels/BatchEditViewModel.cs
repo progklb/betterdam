@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
+using BetterDAM.UI.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -19,15 +20,59 @@ namespace BetterDAM.UI.ViewModels;
 public sealed partial class BatchEditViewModel : ObservableObject
 {
     private readonly IBatchMetadataService _batch;
+    private readonly IKeywordClipboard _clipboard;
     private readonly ILogger<BatchEditViewModel> _logger;
 
     private CancellationTokenSource? _jobCts;
     private IReadOnlyList<MediaItemViewModel> _items = [];
 
-    public BatchEditViewModel(IBatchMetadataService batch, ILogger<BatchEditViewModel> logger)
+    public BatchEditViewModel(
+        IBatchMetadataService batch,
+        IKeywordClipboard clipboard,
+        ILogger<BatchEditViewModel> logger)
     {
         _batch = batch;
+        _clipboard = clipboard;
         _logger = logger;
+
+        _clipboard.Changed += (_, _) =>
+        {
+            OnPropertyChanged(nameof(CanPasteKeywords));
+            OnPropertyChanged(nameof(PasteKeywordsSummary));
+            PasteKeywordsCommand.NotifyCanExecuteChanged();
+        };
+    }
+
+    // ---- Pasting keywords -----------------------------------------------------------------------
+
+    public bool CanPasteKeywords => _clipboard.HasKeywords && SelectedCount > 0 && !IsRunning;
+
+    public string PasteKeywordsSummary => _clipboard.HasKeywords
+        ? $"Paste {string.Join(", ", _clipboard.Keywords)}"
+        : "Nothing copied";
+
+    /// <summary>
+    /// Adds the copied keywords to every selected file.
+    ///
+    /// Added rather than replacing. "Give these the same tags as that one" is what copying keywords
+    /// means nearly always, and a paste that silently discarded what was already there would be the
+    /// kind of mistake noticed a hundred files later. Replacing is still available in this panel, as
+    /// a deliberate choice with its own checkbox.
+    ///
+    /// Goes through the same batch service as every other bulk edit, so pasted keywords are a pending
+    /// change like any other and nothing reaches the files until Sync.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanPasteKeywords))]
+    private async Task PasteKeywordsAsync()
+    {
+        if (!_clipboard.HasKeywords || _items.Count == 0)
+        {
+            return;
+        }
+
+        var edit = new BatchMetadataEdit { KeywordsToAdd = [.. _clipboard.Keywords] };
+
+        await RunAsync(edit, $"Pasted {_clipboard.Keywords.Length:N0} keyword(s)").ConfigureAwait(true);
     }
 
     /// <summary>Raised after a run so the grid's modified badges can be refreshed.</summary>
@@ -106,6 +151,8 @@ public sealed partial class BatchEditViewModel : ObservableObject
         _items = items;
         SelectedCount = items.Count;
         OnPropertyChanged(nameof(SelectionSummary));
+        OnPropertyChanged(nameof(CanPasteKeywords));
+        PasteKeywordsCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -222,6 +269,21 @@ public sealed partial class BatchEditViewModel : ObservableObject
             return;
         }
 
+        await RunAsync(edit, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Applies an edit to the selection, reporting progress and failures.
+    ///
+    /// Shared by the form and by pasting keywords: both are the same operation over the same files,
+    /// and the only difference is where the edit came from.
+    /// </summary>
+    /// <param name="summary">
+    /// Replaces the usual counts when the caller has something more useful to say. Pasting knows how
+    /// many keywords it applied, which the result of the batch cannot tell.
+    /// </param>
+    private async Task RunAsync(BatchMetadataEdit edit, string? summary)
+    {
         var files = _items.Select(i => i.File).ToList();
 
         _jobCts?.Dispose();
@@ -233,6 +295,8 @@ public sealed partial class BatchEditViewModel : ObservableObject
         ResultMessage = null;
         ResultIsFailure = false;
         ProgressFraction = 0;
+        OnPropertyChanged(nameof(CanPasteKeywords));
+        PasteKeywordsCommand.NotifyCanExecuteChanged();
 
         try
         {
@@ -250,7 +314,9 @@ public sealed partial class BatchEditViewModel : ObservableObject
             }
 
             ResultIsFailure = result.Failures.Count > 0;
-            ResultMessage = Describe(result);
+            ResultMessage = summary is null
+                ? Describe(result)
+                : $"{summary} · {Describe(result)}";
 
             // Pending badges are per item, so refresh the ones we touched.
             var pendingPaths = _items.ToDictionary(i => i.File.FullPath, StringComparer.Ordinal);
@@ -275,6 +341,8 @@ public sealed partial class BatchEditViewModel : ObservableObject
         {
             IsRunning = false;
             ProgressLabel = null;
+            OnPropertyChanged(nameof(CanPasteKeywords));
+            PasteKeywordsCommand.NotifyCanExecuteChanged();
         }
     }
 

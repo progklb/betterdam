@@ -183,27 +183,40 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:AppliedKeyword">
-                    <Border Background="#28FFFFFF" CornerRadius="10" Padding="8,3" Margin="0,0,4,4">
-                      <StackPanel Orientation="Horizontal" Spacing="6">
-                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
+                    <Panel>
+                      <!-- A keyword. -->
+                      <Border Background="#28FFFFFF" CornerRadius="10" Padding="8,3" Margin="0,0,4,4"
+                              IsVisible="{Binding !IsCopyAction}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
 
-                        <!-- Keywords that arrived with the file, which no library will ever have all
-                             of. Adopted where they are noticed rather than in a cleanup pass. -->
-                        <Button Content="+" FontSize="10" Padding="2,0" MinWidth="0"
-                                Background="Transparent" BorderThickness="0"
-                                VerticalAlignment="Center"
-                                IsVisible="{Binding !IsInLibrary}"
-                                ToolTip.Tip="Add this keyword to your library"
-                                Command="{Binding $parent[ItemsControl].((vm:MetadataInspectorViewModel)DataContext).AdoptKeywordCommand}"
-                                CommandParameter="{Binding Name}" />
+                          <!-- Keywords that arrived with the file, which no library will ever have all
+                               of. Adopted where they are noticed rather than in a cleanup pass. -->
+                          <Button Content="+" FontSize="10" Padding="2,0" MinWidth="0"
+                                  Background="Transparent" BorderThickness="0"
+                                  VerticalAlignment="Center"
+                                  IsVisible="{Binding !IsInLibrary}"
+                                  ToolTip.Tip="Add this keyword to your library"
+                                  Command="{Binding $parent[ItemsControl].((vm:MetadataInspectorViewModel)DataContext).AdoptKeywordCommand}"
+                                  CommandParameter="{Binding Name}" />
 
-                        <Button Content="✕" FontSize="9" Padding="2,0" MinWidth="0"
-                                Background="Transparent" BorderThickness="0"
-                                VerticalAlignment="Center"
-                                Command="{Binding $parent[ItemsControl].((vm:MetadataInspectorViewModel)DataContext).RemoveKeywordCommand}"
-                                CommandParameter="{Binding Name}" />
-                      </StackPanel>
-                    </Border>
+                          <Button Content="✕" FontSize="9" Padding="2,0" MinWidth="0"
+                                  Background="Transparent" BorderThickness="0"
+                                  VerticalAlignment="Center"
+                                  Command="{Binding $parent[ItemsControl].((vm:MetadataInspectorViewModel)DataContext).RemoveKeywordCommand}"
+                                  CommandParameter="{Binding Name}" />
+                        </StackPanel>
+                      </Border>
+
+                      <!-- The copy pill, trailing the set it copies. Outlined rather than filled, so
+                           it reads as an action among the keywords without competing with them. -->
+                      <Button IsVisible="{Binding IsCopyAction}"
+                              Content="Copy" FontSize="11" Padding="8,2" Margin="0,0,4,4"
+                              Background="Transparent" BorderBrush="#33FFFFFF" BorderThickness="1"
+                              CornerRadius="10" Foreground="#99FFFFFF"
+                              ToolTip.Tip="Copy these keywords, then paste them onto a selection from the grid"
+                              Command="{Binding $parent[ItemsControl].((vm:MetadataInspectorViewModel)DataContext).CopyKeywordsCommand}" />
+                    </Panel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>

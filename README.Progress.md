@@ -2879,3 +2879,68 @@ discard             pending change cleared, nothing written
   a group can be ticked, that the same name ticks in both places, that typing and removing keep the
   ticks in step, case-insensitive matching, the list following the library without a restart, and
   that the open state survives a change of selection while starting closed.
+
+---
+
+## Phase 2b — the keyword input searches the library ✅
+
+Reported: the free-text box is a hole in the discipline the library provides. The same ground-texture
+shot becomes "ground" one day and "sand", "dirt" or "texture" the next, and none of them find each
+other again. The question was whether to hide the box or make it optional.
+
+### Neither — it filters the library instead
+
+Hiding it outright fails in two ways, and the second is worse than the drift it prevents:
+
+- **Missing keywords are discovered while tagging, not before.** Stopping to open Settings, add the
+  word and find your place again is exactly when a vocabulary gets abandoned.
+- **Or the wrong-but-available keyword gets used instead.** Faced with no way to add "texture", the
+  shot gets tagged "ground". That is silent, plausible-looking, wrong data — far harder to find later
+  than a typo, because nothing looks out of place.
+
+So the box stays and changes what it does. Typing filters the library; Enter applies the best match.
+When nothing matches, it offers to add the word to the library **and** apply it in one action.
+
+Three things follow:
+
+- **It is faster than the tick list.** With 35 keywords you are already scrolling; at 150 the list is
+  unusable without search. Three letters beats hunting — so the constrained path is also the quick
+  one, which is the only way discipline sticks.
+- **It is constrained by default.** `ground/sand/texture/dirt/soil` cannot happen by accident, because
+  "dirt" is not offered.
+- **Growing the vocabulary is deliberate but cheap.** Never blocked, never casual.
+
+Matching is `Contains`, not starts-with: remembering the beginning of a name is the hard part, and
+"hour" should find "Golden Hour". An exact name beats a partial one, or typing "Sand" in full would
+apply "Sand Dune" because it sorted first.
+
+### Reconciling what arrives with the files
+
+Photographs come with keywords from cameras and other tools, and no library will ever have all of
+them. Chips now show which the library has never heard of, with a **+** to adopt one where it is
+noticed — rather than a separate cleanup pass nobody will run.
+
+### The setting
+
+**Settings → Keywords → "Only use keywords from my library"**, on by default. A behaviour rather than
+a layout choice, so it sits with the keywords and not with the field-visibility work coming in Phase 4.
+
+It has no effect until a library exists: with nothing to choose from, refusing every word would be
+absurd, so someone with no library gets exactly the box they have today.
+
+### Verified in the GUI
+
+```text
+watermark            "Find a keyword…" rather than "Add keyword…"
+type "hour"          Blue Hour · Golden Hour        — matched mid-name
+type "texture"       Add "texture" to your library
+press Enter          nothing applied; the offer stays
+Settings → Keywords  "Only use keywords from my library", ticked
+```
+
+### Verified
+
+- `dotnet test` — **535/535 passing** (was 523). Twelve new: filtering, mid-name matching, exact match
+  winning over partial, a word outside the library not being applied, adoption applying and adding in
+  one action, unrestricted mode still taking anything, an empty library leaving typing unrestricted,
+  and chips reporting whether the library knows them.

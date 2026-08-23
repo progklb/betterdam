@@ -88,9 +88,28 @@ public class MetadataInspectorViewModelTests
             writer,
             store,
             new StubKeywordLibrary(library ?? KeywordLibrary.Empty),
+            new StubSettings(AppSettings.Default),
             NullLogger<MetadataInspectorViewModel>.Instance);
 
         return (inspector, store, writer);
+    }
+
+    /// <summary>Settings held in memory, so a test can flip the keyword restriction.</summary>
+    private sealed class StubSettings(AppSettings settings) : ISettingsService
+    {
+        public AppSettings Current { get; private set; } = settings;
+
+        public event EventHandler<AppSettings>? Changed;
+
+        public Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Current);
+
+        public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
+        {
+            Current = settings;
+            Changed?.Invoke(this, settings);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class StubKeywordLibrary(KeywordLibrary library) : IKeywordLibraryService
@@ -430,12 +449,33 @@ public class MetadataInspectorViewModelTests
 public class KeywordPickerTests
 {
     private static MetadataInspectorViewModel Create(KeywordLibrary library, params string[] existing)
+        => Create(library, AppSettings.Default, existing);
+
+    private static MetadataInspectorViewModel Create(KeywordLibrary library, AppSettings settings, params string[] existing)
         => new(
             new StubProvider(existing),
             new StubWriter(),
             new PendingChangeStore(),
             new StubLibrary(library),
+            new StubSettingsService(settings),
             NullLogger<MetadataInspectorViewModel>.Instance);
+
+    private sealed class StubSettingsService(AppSettings settings) : ISettingsService
+    {
+        public AppSettings Current { get; private set; } = settings;
+
+        public event EventHandler<AppSettings>? Changed;
+
+        public Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Current);
+
+        public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
+        {
+            Current = settings;
+            Changed?.Invoke(this, settings);
+            return Task.CompletedTask;
+        }
+    }
 
     private static KeywordPickerNodeViewModel Node(MetadataInspectorViewModel inspector, string name)
         => inspector.KeywordPicker.SelectMany(root => root.SelfAndDescendants()).First(n => n.Name == name);
@@ -555,6 +595,7 @@ public class KeywordPickerTests
         var service = new StubLibrary(KeywordLibrary.Empty);
         var inspector = new MetadataInspectorViewModel(
             new StubProvider([]), new StubWriter(), new PendingChangeStore(), service,
+            new StubSettingsService(AppSettings.Default),
             NullLogger<MetadataInspectorViewModel>.Instance);
 
         Assert.False(inspector.HasKeywordLibrary);
@@ -630,6 +671,261 @@ public class KeywordPickerTests
         {
             Current = library;
             Changed?.Invoke(this, library);
+            return Task.CompletedTask;
+        }
+    }
+}
+
+/// <summary>
+/// Searching the library instead of accepting free text — the discipline that keeps a ground-texture
+/// shot from becoming "ground" one day and "sand", "dirt" or "texture" the next.
+/// </summary>
+public class KeywordSearchTests
+{
+    private static readonly KeywordLibrary Library =
+        KeywordLibrary.FromFlat(["Subject|Ground", "Subject|Sand", "Mood|Golden Hour"]);
+
+    private static MetadataInspectorViewModel Create(
+        KeywordLibrary? library = null,
+        bool restrict = true,
+        params string[] existing)
+        => new(
+            new SearchStubProvider(existing),
+            new SearchStubWriter(),
+            new PendingChangeStore(),
+            new SearchStubLibrary(library ?? Library),
+            new SearchStubSettings(AppSettings.Default with { RestrictKeywordsToLibrary = restrict }),
+            NullLogger<MetadataInspectorViewModel>.Instance);
+
+    [Fact]
+    public void Typing_filters_the_library()
+    {
+        var inspector = Create();
+
+        inspector.NewKeyword = "an";
+
+        Assert.Equal(["Sand"], inspector.KeywordMatches.Select(m => m.Name));
+    }
+
+    /// <summary>
+    /// Contains, not starts-with. Remembering the beginning of a name is the hard part — "hour"
+    /// should find "Golden Hour".
+    /// </summary>
+    [Fact]
+    public void Matching_looks_anywhere_in_the_name()
+    {
+        var inspector = Create();
+
+        inspector.NewKeyword = "hour";
+
+        Assert.Equal(["Golden Hour"], inspector.KeywordMatches.Select(m => m.Name));
+    }
+
+    [Fact]
+    public void An_empty_box_shows_no_matches()
+    {
+        var inspector = Create();
+
+        inspector.NewKeyword = "an";
+        inspector.NewKeyword = "";
+
+        Assert.Empty(inspector.KeywordMatches);
+        Assert.False(inspector.IsSearchingKeywords);
+    }
+
+    [Fact]
+    public void Enter_applies_the_only_match()
+    {
+        var inspector = Create();
+
+        inspector.NewKeyword = "grou";
+        inspector.AddKeywordCommand.Execute(null);
+
+        Assert.Equal(["Ground"], inspector.Keywords);
+        Assert.Equal(string.Empty, inspector.NewKeyword);
+    }
+
+    /// <summary>
+    /// An exact name beats a partial one that happens to sort first, or typing "Sand" in full would
+    /// apply something else entirely.
+    /// </summary>
+    [Fact]
+    public void An_exact_name_wins_over_a_partial_match()
+    {
+        var inspector = Create(KeywordLibrary.FromFlat(["Sand", "Sand Dune"]));
+
+        inspector.NewKeyword = "Sand";
+        inspector.AddKeywordCommand.Execute(null);
+
+        Assert.Equal(["Sand"], inspector.Keywords);
+    }
+
+    /// <summary>The point of the restriction: a word outside the library is not applied by typing it.</summary>
+    [Fact]
+    public void A_word_outside_the_library_is_not_applied()
+    {
+        var inspector = Create();
+
+        inspector.NewKeyword = "dirt";
+        inspector.AddKeywordCommand.Execute(null);
+
+        Assert.Empty(inspector.Keywords);
+        Assert.True(inspector.HasNoKeywordMatch);
+        Assert.True(inspector.CanAddTypedKeywordToLibrary);
+    }
+
+    /// <summary>But it is never a dead end: one action adds it to the library and applies it.</summary>
+    [Fact]
+    public async Task An_unmatched_word_can_be_adopted_and_applied()
+    {
+        var service = new SearchStubLibrary(Library);
+        var inspector = new MetadataInspectorViewModel(
+            new SearchStubProvider([]), new SearchStubWriter(), new PendingChangeStore(), service,
+            new SearchStubSettings(AppSettings.Default),
+            NullLogger<MetadataInspectorViewModel>.Instance);
+
+        inspector.NewKeyword = "texture";
+        await inspector.AddTypedKeywordToLibraryCommand.ExecuteAsync(null);
+
+        Assert.Equal(["texture"], inspector.Keywords);
+        Assert.Contains("texture", service.Current.AllNames());
+        Assert.Equal(string.Empty, inspector.NewKeyword);
+    }
+
+    /// <summary>With the restriction off, the box behaves as it always did.</summary>
+    [Fact]
+    public void Unrestricted_typing_still_accepts_anything()
+    {
+        var inspector = Create(restrict: false);
+
+        inspector.NewKeyword = "dirt";
+        inspector.AddKeywordCommand.Execute(null);
+
+        Assert.Equal(["dirt"], inspector.Keywords);
+    }
+
+    /// <summary>
+    /// With nothing to choose from, refusing every word would be absurd — so the restriction only
+    /// takes effect once a library exists.
+    /// </summary>
+    [Fact]
+    public void An_empty_library_leaves_typing_unrestricted()
+    {
+        var inspector = Create(KeywordLibrary.Empty);
+
+        Assert.False(inspector.IsRestrictedToLibrary);
+
+        inspector.NewKeyword = "dirt";
+        inspector.AddKeywordCommand.Execute(null);
+
+        Assert.Equal(["dirt"], inspector.Keywords);
+    }
+
+    [Fact]
+    public void Clicking_a_match_applies_it()
+    {
+        var inspector = Create();
+
+        inspector.NewKeyword = "grou";
+        inspector.ApplyFromLibraryCommand.Execute("Ground");
+
+        Assert.Equal(["Ground"], inspector.Keywords);
+    }
+
+    // ---- Chips ------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Files arrive carrying keywords from cameras and other tools. The chip has to say which of them
+    /// the library has never heard of, or there is no way to notice.
+    /// </summary>
+    [Fact]
+    public async Task Chips_say_whether_the_library_knows_them()
+    {
+        var inspector = Create();
+
+        inspector.NewKeyword = "Ground";
+        inspector.AddKeywordCommand.Execute(null);
+
+        // Something that arrived with the file rather than from the library.
+        var unrestricted = Create(restrict: false);
+        unrestricted.NewKeyword = "dirt";
+        unrestricted.AddKeywordCommand.Execute(null);
+
+        Assert.True(inspector.AppliedKeywords.Single().IsInLibrary);
+        Assert.False(unrestricted.AppliedKeywords.Single().IsInLibrary);
+
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task An_unknown_keyword_can_be_adopted_from_its_chip()
+    {
+        var service = new SearchStubLibrary(Library);
+        var inspector = new MetadataInspectorViewModel(
+            new SearchStubProvider([]), new SearchStubWriter(), new PendingChangeStore(), service,
+            new SearchStubSettings(AppSettings.Default with { RestrictKeywordsToLibrary = false }),
+            NullLogger<MetadataInspectorViewModel>.Instance);
+
+        inspector.NewKeyword = "dirt";
+        inspector.AddKeywordCommand.Execute(null);
+
+        await inspector.AdoptKeywordCommand.ExecuteAsync("dirt");
+
+        Assert.Contains("dirt", service.Current.AllNames());
+        Assert.True(inspector.AppliedKeywords.Single().IsInLibrary);
+    }
+
+    private sealed class SearchStubProvider(string[] keywords) : IMetadataProvider
+    {
+        public bool IsAvailable => true;
+
+        public Task<MediaMetadata> ReadAsync(MediaFile file, CancellationToken cancellationToken = default)
+            => Task.FromResult(new MediaMetadata { Embedded = new EditableMetadata { Keywords = [.. keywords] } });
+
+        public Task<IReadOnlyDictionary<string, MediaMetadata>> ReadManyAsync(
+            IReadOnlyList<MediaFile> files,
+            IProgress<int>? progress = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<string, MediaMetadata>>(new Dictionary<string, MediaMetadata>());
+    }
+
+    private sealed class SearchStubWriter : IMetadataWriter
+    {
+        public bool IsAvailable => true;
+
+        public Task<SidecarWriteResult> WriteSidecarAsync(MediaFile file, EditableMetadata metadata, SidecarWriteOptions options, CancellationToken cancellationToken = default)
+            => Task.FromResult(new SidecarWriteResult(file.FullPath, true, file.FullPath + ".xmp"));
+
+        public Task<EmbedWriteResult> WriteEmbeddedAsync(MediaFile file, EditableMetadata metadata, EmbedWriteOptions options, CancellationToken cancellationToken = default)
+            => Task.FromResult(new EmbedWriteResult(file.FullPath, true));
+    }
+
+    private sealed class SearchStubLibrary(KeywordLibrary library) : IKeywordLibraryService
+    {
+        public KeywordLibrary Current { get; private set; } = library;
+
+        public event EventHandler<KeywordLibrary>? Changed;
+
+        public Task SaveAsync(KeywordLibrary library, CancellationToken cancellationToken = default)
+        {
+            Current = library;
+            Changed?.Invoke(this, library);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class SearchStubSettings(AppSettings settings) : ISettingsService
+    {
+        public AppSettings Current { get; private set; } = settings;
+
+        public event EventHandler<AppSettings>? Changed;
+
+        public Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default) => Task.FromResult(Current);
+
+        public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
+        {
+            Current = settings;
+            Changed?.Invoke(this, settings);
             return Task.CompletedTask;
         }
     }

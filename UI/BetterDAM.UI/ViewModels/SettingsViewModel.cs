@@ -45,6 +45,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             ? NearestChoice(current.CacheSizeLimitBytes)
             : DefaultChoiceIndex;
 
+        _restrictKeywordsToLibrary = current.RestrictKeywordsToLibrary;
         _renderCacheEnabled = current.RenderCacheEnabled;
         _selectedRenderLimitIndex = current.IsRenderCacheLimited
             ? NearestChoice(current.RenderCacheSizeLimitBytes)
@@ -340,6 +341,23 @@ public sealed partial class SettingsViewModel : ObservableObject
         IsUsingDefaultCatalogPath = true;
         StatusMessage = "Using the default catalog location.";
         await RefreshAsync().ConfigureAwait(true);
+    }
+
+    // ---- Keywords -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Whether keywords may only come from the library. Applied immediately — the metadata panel
+    /// reads the setting rather than being told about it.
+    /// </summary>
+    [ObservableProperty]
+    private bool _restrictKeywordsToLibrary;
+
+    partial void OnRestrictKeywordsToLibraryChanged(bool value)
+    {
+        if (_settings.Current.RestrictKeywordsToLibrary != value)
+        {
+            _ = SaveAsync(_settings.Current with { RestrictKeywordsToLibrary = value });
+        }
     }
 
     // ---- Render cache -------------------------------------------------------------------------

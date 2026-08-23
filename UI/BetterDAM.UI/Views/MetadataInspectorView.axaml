@@ -175,22 +175,33 @@
                        TextWrapping="Wrap" MinHeight="70" MaxHeight="140" />
 
               <TextBlock Text="Keywords" Classes="label" />
-              <ItemsControl ItemsSource="{Binding Keywords}" Margin="0,0,0,4">
+              <ItemsControl ItemsSource="{Binding AppliedKeywords}" Margin="0,0,0,4">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate>
                     <WrapPanel Orientation="Horizontal" />
                   </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="x:String">
+                  <DataTemplate x:DataType="vm:AppliedKeyword">
                     <Border Background="#28FFFFFF" CornerRadius="10" Padding="8,3" Margin="0,0,4,4">
                       <StackPanel Orientation="Horizontal" Spacing="6">
-                        <TextBlock Text="{Binding}" FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
+
+                        <!-- Keywords that arrived with the file, which no library will ever have all
+                             of. Adopted where they are noticed rather than in a cleanup pass. -->
+                        <Button Content="+" FontSize="10" Padding="2,0" MinWidth="0"
+                                Background="Transparent" BorderThickness="0"
+                                VerticalAlignment="Center"
+                                IsVisible="{Binding !IsInLibrary}"
+                                ToolTip.Tip="Add this keyword to your library"
+                                Command="{Binding $parent[ItemsControl].((vm:MetadataInspectorViewModel)DataContext).AdoptKeywordCommand}"
+                                CommandParameter="{Binding Name}" />
+
                         <Button Content="✕" FontSize="9" Padding="2,0" MinWidth="0"
                                 Background="Transparent" BorderThickness="0"
                                 VerticalAlignment="Center"
                                 Command="{Binding $parent[ItemsControl].((vm:MetadataInspectorViewModel)DataContext).RemoveKeywordCommand}"
-                                CommandParameter="{Binding}" />
+                                CommandParameter="{Binding Name}" />
                       </StackPanel>
                     </Border>
                   </DataTemplate>
@@ -199,12 +210,43 @@
               <DockPanel>
                 <Button DockPanel.Dock="Right" Content="Add" Margin="4,0,0,0"
                         Command="{Binding AddKeywordCommand}" />
-                <TextBox Text="{Binding NewKeyword}" Watermark="Add keyword…">
+                <TextBox Text="{Binding NewKeyword}" Watermark="{Binding KeywordInputWatermark}">
                   <TextBox.KeyBindings>
                     <KeyBinding Gesture="Enter" Command="{Binding AddKeywordCommand}" />
                   </TextBox.KeyBindings>
                 </TextBox>
               </DockPanel>
+
+              <!--
+                Matches for what has been typed. Flat, because while searching the answer is a short
+                list of candidates and the shape of the tree only gets in the way of picking one.
+              -->
+              <Border IsVisible="{Binding IsSearchingKeywords}"
+                      Background="#12FFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1"
+                      CornerRadius="4" Padding="4" Margin="0,4,0,0">
+                <StackPanel Spacing="4">
+                  <ItemsControl ItemsSource="{Binding KeywordMatches}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:KeywordPickerNodeViewModel">
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                Background="Transparent" BorderThickness="0" Padding="6,3"
+                                FontSize="12"
+                                Content="{Binding Name}"
+                                Command="{Binding $parent[ItemsControl].((vm:MetadataInspectorViewModel)DataContext).ApplyFromLibraryCommand}"
+                                CommandParameter="{Binding Name}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <!-- Nothing matched. How a vocabulary grows, so it is offered rather than refused. -->
+                  <Button IsVisible="{Binding CanAddTypedKeywordToLibrary}"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                          FontSize="12" Padding="6,3"
+                          Background="#2622A0F2" BorderBrush="#4422A0F2"
+                          Content="{Binding AddToLibraryPrompt}"
+                          Command="{Binding AddTypedKeywordToLibraryCommand}" />
+                </StackPanel>
+              </Border>
 
               <!--
                 The library, folded away by default so the panel stays about this photograph. Its

@@ -11,6 +11,15 @@ using Microsoft.Extensions.Logging;
 namespace BetterDAM.UI.ViewModels;
 
 /// <summary>
+/// A keyword on the current file, and whether the library knows it.
+/// </summary>
+/// <param name="IsInLibrary">
+/// False for keywords that arrived with the file — from a camera, or another tool. The chip offers to
+/// adopt those, so a vocabulary can be reconciled where the gap is noticed.
+/// </param>
+public sealed record AppliedKeyword(string Name, bool IsInLibrary);
+
+/// <summary>
 /// The metadata inspector. Edits made here never touch the media file — they are written to the
 /// <see cref="IPendingChangeStore"/> and stay there until an explicit Sync in a later phase.
 /// </summary>
@@ -20,6 +29,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     private readonly IMetadataWriter _writer;
     private readonly IPendingChangeStore _pending;
     private readonly IKeywordLibraryService _library;
+    private readonly ISettingsService _settings;
     private readonly ILogger<MetadataInspectorViewModel> _logger;
 
     private CancellationTokenSource? _loadCts;
@@ -38,18 +48,21 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         IMetadataWriter writer,
         IPendingChangeStore pending,
         IKeywordLibraryService library,
+        ISettingsService settings,
         ILogger<MetadataInspectorViewModel> logger)
     {
         _metadata = metadata;
         _writer = writer;
         _pending = pending;
         _library = library;
+        _settings = settings;
         _logger = logger;
 
         // Rebuilt rather than patched: editing the library in Settings can change anything about it,
         // and the tick list is cheap to make.
         _library.Changed += (_, library) => BuildPicker(library);
         BuildPicker(_library.Current);
+        _settings.Changed += (_, _) => OnPropertyChanged(nameof(IsRestrictedToLibrary));
     }
 
     // ---- Keyword library ------------------------------------------------------------------------
@@ -69,6 +82,108 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
 
     public bool HasKeywordLibrary => KeywordPicker.Count > 0;
 
+    /// <summary>
+    /// Whether typing can only choose from the library. Off automatically when there is no library —
+    /// there would be nothing to choose from, and refusing every word would be absurd.
+    /// </summary>
+    public bool IsRestrictedToLibrary => HasKeywordLibrary && _settings.Current.RestrictKeywordsToLibrary;
+
+    /// <summary>
+    /// Keywords matching what has been typed, flattened out of the tree.
+    ///
+    /// Flat on purpose: while searching, the answer is a short list of candidates, and the shape of
+    /// the tree only gets in the way of picking one. The tree comes back when the box is empty.
+    /// </summary>
+    public ObservableCollection<KeywordPickerNodeViewModel> KeywordMatches { get; } = [];
+
+    public bool IsSearchingKeywords => !string.IsNullOrWhiteSpace(NewKeyword);
+
+    /// <summary>
+    /// Nothing in the library matches what was typed. Not an error — it is how a vocabulary grows —
+    /// so it is offered as an action rather than reported as a failure.
+    /// </summary>
+    public bool HasNoKeywordMatch => IsSearchingKeywords && KeywordMatches.Count == 0;
+
+    public bool CanAddTypedKeywordToLibrary => HasNoKeywordMatch && HasKeywordLibrary;
+
+    public string AddToLibraryPrompt => $"Add \"{NewKeyword?.Trim()}\" to your library";
+
+    public string KeywordInputWatermark => IsRestrictedToLibrary
+        ? "Find a keyword…"
+        : "Add keyword…";
+
+    partial void OnNewKeywordChanged(string? value) => RefreshMatches();
+
+    private void RefreshMatches()
+    {
+        KeywordMatches.Clear();
+
+        var term = NewKeyword?.Trim();
+
+        if (!string.IsNullOrEmpty(term))
+        {
+            // Contains rather than starts-with: "hour" should find "Golden Hour", which is exactly
+            // the case where remembering the beginning of the name is hardest.
+            foreach (var node in KeywordPicker
+                         .SelectMany(root => root.SelfAndDescendants())
+                         .Where(node => node.Name.Contains(term, StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(node => node.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                KeywordMatches.Add(node);
+            }
+        }
+
+        OnPropertyChanged(nameof(IsSearchingKeywords));
+        OnPropertyChanged(nameof(HasNoKeywordMatch));
+        OnPropertyChanged(nameof(CanAddTypedKeywordToLibrary));
+        OnPropertyChanged(nameof(AddToLibraryPrompt));
+    }
+
+    /// <summary>
+    /// The keywords on this file, each knowing whether the library has heard of it.
+    ///
+    /// Kept alongside <see cref="Keywords"/> rather than replacing it: that collection is what gets
+    /// written, and putting a view concern into it would mean touching the save path for a chip.
+    /// </summary>
+    public ObservableCollection<AppliedKeyword> AppliedKeywords { get; } = [];
+
+    /// <summary>
+    /// Files arrive with keywords from cameras and other tools, and no library will ever have all of
+    /// them. Offering to adopt one where it is noticed beats a separate reconciliation pass that
+    /// nobody will run.
+    /// </summary>
+    [RelayCommand]
+    private async Task AdoptKeywordAsync(string? keyword)
+    {
+        if (string.IsNullOrWhiteSpace(keyword))
+        {
+            return;
+        }
+
+        await _library.SaveAsync(_library.Current.MergedWith([keyword.Trim()])).ConfigureAwait(true);
+    }
+
+    /// <summary>Adds what was typed to the library and applies it, in one action.</summary>
+    [RelayCommand]
+    private async Task AddTypedKeywordToLibraryAsync()
+    {
+        var keyword = NewKeyword?.Trim();
+        if (string.IsNullOrEmpty(keyword))
+        {
+            return;
+        }
+
+        await _library.SaveAsync(_library.Current.MergedWith([keyword])).ConfigureAwait(true);
+
+        if (AddKeywordNamed(keyword))
+        {
+            SyncKeywordState();
+            RecordEdit();
+        }
+
+        NewKeyword = string.Empty;
+    }
+
     private void BuildPicker(KeywordLibrary library)
     {
         KeywordPicker.Clear();
@@ -78,8 +193,13 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
             KeywordPicker.Add(KeywordPickerNodeViewModel.FromModel(root, OnKeywordToggled));
         }
 
-        SyncPicker();
+        SyncKeywordState();
+        RefreshMatches();
+
         OnPropertyChanged(nameof(HasKeywordLibrary));
+        OnPropertyChanged(nameof(IsRestrictedToLibrary));
+        OnPropertyChanged(nameof(KeywordInputWatermark));
+        OnPropertyChanged(nameof(CanAddTypedKeywordToLibrary));
     }
 
     /// <summary>
@@ -88,13 +208,21 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     /// Matched by name, which is what a keyword is — so the same word filed in two groups ticks in
     /// both places, and a keyword typed by hand ticks wherever it appears in the library.
     /// </summary>
-    private void SyncPicker()
+    private void SyncKeywordState()
     {
         var applied = Keywords.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var node in KeywordPicker.SelectMany(root => root.SelfAndDescendants()))
         {
             node.SyncChecked(applied.Contains(node.Name));
+        }
+
+        var known = _library.Current.AllNames();
+
+        AppliedKeywords.Clear();
+        foreach (var keyword in Keywords)
+        {
+            AppliedKeywords.Add(new AppliedKeyword(keyword, known.Contains(keyword)));
         }
     }
 
@@ -120,7 +248,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
 
         // The same name can appear in more than one group; they all describe one keyword, so they
         // all have to move together.
-        SyncPicker();
+        SyncKeywordState();
         RecordEdit();
     }
 
@@ -326,12 +454,35 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// What Enter and the Add button do.
+    ///
+    /// With a library and the restriction on, this picks the best match rather than accepting the
+    /// text — so typing three letters is the quick path to a consistent keyword. Without a library,
+    /// or with the restriction off, it takes the text as written, which is what it has always done.
+    /// </summary>
     [RelayCommand]
     private void AddKeyword()
     {
         var keyword = NewKeyword?.Trim();
         if (string.IsNullOrEmpty(keyword))
         {
+            return;
+        }
+
+        if (IsRestrictedToLibrary)
+        {
+            // An exact name beats a nearer-the-top partial one: typing "sand" in full should not
+            // apply "Sand Dune" because it happened to sort first.
+            var match = KeywordMatches.FirstOrDefault(
+                            node => string.Equals(node.Name, keyword, StringComparison.OrdinalIgnoreCase))
+                        ?? KeywordMatches.FirstOrDefault();
+
+            if (match is not null)
+            {
+                ApplyFromLibrary(match.Name);
+            }
+
             return;
         }
 
@@ -345,8 +496,21 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         }
 
         NewKeyword = string.Empty;
-        SyncPicker();
+        SyncKeywordState();
         RecordEdit();
+    }
+
+    /// <summary>Applies a keyword chosen from the library and clears the search.</summary>
+    [RelayCommand]
+    private void ApplyFromLibrary(string? keyword)
+    {
+        if (keyword is not null && AddKeywordNamed(keyword))
+        {
+            SyncKeywordState();
+            RecordEdit();
+        }
+
+        NewKeyword = string.Empty;
     }
 
     [RelayCommand]
@@ -354,7 +518,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     {
         if (keyword is not null && Keywords.Remove(keyword))
         {
-            SyncPicker();
+            SyncKeywordState();
             RecordEdit();
         }
     }
@@ -478,7 +642,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
                 Keywords.Add(keyword);
             }
 
-            SyncPicker();
+            SyncKeywordState();
         }
         finally
         {

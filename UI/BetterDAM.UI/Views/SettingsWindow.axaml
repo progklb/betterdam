@@ -182,6 +182,10 @@
           <!-- Actions stay put at the bottom, so they do not scroll away with a long vocabulary. -->
           <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,10,0,0"
                       DataContext="{Binding Keywords}">
+            <CheckBox Content="Only use keywords from my library"
+                      IsChecked="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).RestrictKeywordsToLibrary}"
+                      ToolTip.Tip="Typing in the metadata panel searches your library instead of accepting anything. A word that is not in the library can still be added to it in one click." />
+
             <StackPanel Orientation="Horizontal" Spacing="8">
               <Button Content="Add group" Command="{Binding AddGroupCommand}" />
               <Button Content="Import from workspace…" Command="{Binding ImportCommand}"

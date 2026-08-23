@@ -89,6 +89,19 @@ public sealed record AppSettings
 
     public bool IsRenderCacheLimited => RenderCacheSizeLimitBytes > UnlimitedCache;
 
+    /// <summary>
+    /// Whether keywords may only be applied from the library.
+    ///
+    /// The point of a library is consistent filtering, and free text quietly defeats it: the same
+    /// ground-texture shot becomes "ground" one day and "sand", "dirt" or "texture" the next, and
+    /// none of them find each other again. Restricted, the input filters the library instead of
+    /// accepting anything — and offers to add a genuinely new word to the library rather than
+    /// blocking it.
+    ///
+    /// Has no effect until a library exists: with nothing to pick from, there would be nothing to do.
+    /// </summary>
+    public bool RestrictKeywordsToLibrary { get; init; } = true;
+
     /// <summary>Beyond this many entries, Open Recent stops being a shortcut and becomes a list.</summary>
     public const int MaxRecentWorkspaces = 10;
 

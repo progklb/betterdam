@@ -76,8 +76,49 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         // and the tick list is cheap to make.
         _library.Changed += (_, library) => BuildPicker(library);
         BuildPicker(_library.Current);
-        _settings.Changed += (_, _) => OnPropertyChanged(nameof(IsRestrictedToLibrary));
+        _settings.Changed += (_, _) =>
+        {
+            OnPropertyChanged(nameof(IsRestrictedToLibrary));
+            RefreshFieldVisibility();
+        };
         _clipboard.Changed += (_, _) => OnPropertyChanged(nameof(CopiedKeywordsSummary));
+    }
+
+    // ---- Which fields are shown -----------------------------------------------------------------
+
+    /// <summary>
+    /// One property per field rather than a lookup, because that is what a binding can use directly.
+    /// A converter taking the field as a parameter would cost the same line of markup and hide the
+    /// intent behind an indirection.
+    /// </summary>
+    public bool ShowRating => IsVisible(MetadataField.Rating);
+
+    public bool ShowTitle => IsVisible(MetadataField.Title);
+
+    public bool ShowHeadline => IsVisible(MetadataField.Headline);
+
+    public bool ShowDescription => IsVisible(MetadataField.Description);
+
+    public bool ShowKeywords => IsVisible(MetadataField.Keywords);
+
+    public bool ShowLabel => IsVisible(MetadataField.Label);
+
+    public bool ShowCreator => IsVisible(MetadataField.Creator);
+
+    public bool ShowCopyright => IsVisible(MetadataField.Copyright);
+
+    private bool IsVisible(MetadataField field) => _settings.Current.IsFieldVisible(field);
+
+    private void RefreshFieldVisibility()
+    {
+        foreach (var name in (string[])
+                 [
+                     nameof(ShowRating), nameof(ShowTitle), nameof(ShowHeadline), nameof(ShowDescription),
+                     nameof(ShowKeywords), nameof(ShowLabel), nameof(ShowCreator), nameof(ShowCopyright)
+                 ])
+        {
+            OnPropertyChanged(name);
+        }
     }
 
     // ---- Keyword library ------------------------------------------------------------------------

@@ -487,3 +487,70 @@ public class KeywordSortingTests
         public Task ClearAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }
+
+/// <summary>
+/// Which metadata fields the panel shows. Everyone uses a different subset, and someone who never
+/// writes a headline is paying for three large text boxes with the space their keywords would use.
+/// </summary>
+public class MetadataFieldVisibilityTests
+{
+    [Fact]
+    public void Everything_is_visible_by_default()
+    {
+        var settings = AppSettings.Default;
+
+        Assert.Empty(settings.HiddenMetadataFields);
+        Assert.All(Enum.GetValues<MetadataField>(), field => Assert.True(settings.IsFieldVisible(field)));
+    }
+
+    [Fact]
+    public void A_hidden_field_reports_itself_hidden()
+    {
+        var settings = AppSettings.Default with { HiddenMetadataFields = [MetadataField.Headline] };
+
+        Assert.False(settings.IsFieldVisible(MetadataField.Headline));
+        Assert.True(settings.IsFieldVisible(MetadataField.Title));
+    }
+
+    /// <summary>
+    /// The reason this stores what to hide rather than what to show. A field added in a later version
+    /// is absent from everyone's hidden list and so appears for everyone; an allow-list would hide
+    /// every new field from every existing user, silently.
+    /// </summary>
+    [Fact]
+    public void A_field_nobody_has_heard_of_is_visible()
+    {
+        var settings = AppSettings.Default with
+        {
+            HiddenMetadataFields = [MetadataField.Title, MetadataField.Headline]
+        };
+
+        // Stands in for a field introduced after these settings were written.
+        Assert.True(settings.IsFieldVisible(MetadataField.Copyright));
+    }
+
+    [Fact]
+    public void Hiding_several_fields_leaves_the_rest_alone()
+    {
+        var settings = AppSettings.Default with
+        {
+            HiddenMetadataFields = [MetadataField.Title, MetadataField.Headline, MetadataField.Description]
+        };
+
+        Assert.False(settings.IsFieldVisible(MetadataField.Description));
+        Assert.True(settings.IsFieldVisible(MetadataField.Keywords));
+        Assert.True(settings.IsFieldVisible(MetadataField.Rating));
+    }
+
+    /// <summary>Hiding a field is a display choice; nothing about it reaches the files.</summary>
+    [Fact]
+    public void Hiding_a_field_changes_nothing_else()
+    {
+        var before = AppSettings.Default;
+        var after = before with { HiddenMetadataFields = [MetadataField.Title] };
+
+        Assert.Equal(before.RestrictKeywordsToLibrary, after.RestrictKeywordsToLibrary);
+        Assert.Equal(before.DevelopRawFiles, after.DevelopRawFiles);
+        Assert.Equal(before.RenderCacheEnabled, after.RenderCacheEnabled);
+    }
+}

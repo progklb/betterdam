@@ -3051,3 +3051,53 @@ Discard all           cleared; no sidecars written
 - `dotnet test` — **550/550 passing** (was 545). Five new: the copy pill trailing the keywords and
   being absent when there are none, and copying another file preferring its pending edit, falling back
   to disk, and using what is on screen for the current one.
+
+---
+
+## Phase 4 — choosing which fields the panel shows ✅
+
+A **Display** tab listing the eight editable metadata fields, each with a tick. Hiding one removes it
+from the metadata panel and nothing else: what is already written stays written, and it reappears the
+moment it is ticked again.
+
+### It stores what to hide, not what to show
+
+The setting will outlive the current set of fields, and the two directions age very differently:
+
+- **Hidden list.** A field added in a later version is absent from everyone's list, so it appears for
+  everyone.
+- **Allow-list.** A field added later is in nobody's list, so it is hidden from every existing user —
+  silently, until they go looking for it.
+
+Only the second needs a migration, so the first is the one to pick. Pinned by a test.
+
+### Tabs reordered
+
+**Cache · Catalog · Display · Keywords.** Cache and Catalog first, as asked — they are both storage
+housekeeping, and reading them together is how anyone thinks about disk. The two working preferences
+follow.
+
+### Verified in the GUI
+
+```text
+tab order              Cache · Catalog · Display · Keywords
+Display                eight fields, all ticked
+untick Title,
+Headline, Description  panel becomes Rating → Keywords → Label → Creator → Copyright,
+                       with the keyword library much higher up the panel
+re-tick                all three back; settings.json shows HiddenMetadataFields: []
+```
+
+Left as it was found — the choice is the user's to make, not one to be made for them by a test.
+
+### Scope
+
+The batch editor still shows every field. Its rows carry their own "apply this" checkboxes and are a
+different context — a bulk edit is where someone reaches for a field they otherwise never touch. Worth
+revisiting if that turns out to be wrong in use.
+
+### Verified
+
+- `dotnet test` — **555/555 passing** (was 550). Five new: everything visible by default, a hidden
+  field reporting itself hidden, a field nobody has heard of staying visible, hiding several leaving
+  the rest alone, and hiding changing nothing else.

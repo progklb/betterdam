@@ -102,6 +102,18 @@ public sealed record AppSettings
     /// </summary>
     public bool RestrictKeywordsToLibrary { get; init; } = true;
 
+    /// <summary>
+    /// Fields hidden from the metadata panel.
+    ///
+    /// A list of what to <b>hide</b> rather than what to show, which matters for a setting that will
+    /// outlive the current set of fields: a field added later is simply absent from anyone's hidden
+    /// list and appears for everyone. An allow-list would hide every new field from every existing
+    /// user, silently, until they went looking for it.
+    /// </summary>
+    public IReadOnlyList<MetadataField> HiddenMetadataFields { get; init; } = [];
+
+    public bool IsFieldVisible(MetadataField field) => !HiddenMetadataFields.Contains(field);
+
     /// <summary>Beyond this many entries, Open Recent stops being a shortcut and becomes a list.</summary>
     public const int MaxRecentWorkspaces = 10;
 

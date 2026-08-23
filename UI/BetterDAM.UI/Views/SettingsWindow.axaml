@@ -175,6 +175,102 @@
         </ScrollViewer>
       </TabItem>
 
+      <TabItem Header="Catalog">
+        <ScrollViewer>
+          <StackPanel Margin="4,10" Spacing="12">
+
+            <TextBlock Classes="hint"
+                       Text="The catalog is what search looks in. It is built as you browse folders and covers everything indexed so far, not just the folder on screen — that is what makes searching your whole library possible. It is rebuildable: clearing it only means folders are re-indexed next time you open them." />
+
+            <!-- Location -->
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Location" Classes="section" />
+                <SelectableTextBlock Text="{Binding CatalogPath}" Classes="value" FontFamily="monospace" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Content="Change…" Command="{Binding ChooseCatalogFolderCommand}" />
+                  <Button Content="Use default"
+                          Command="{Binding UseDefaultCatalogFolderCommand}"
+                          IsEnabled="{Binding !IsUsingDefaultCatalogPath}" />
+                </StackPanel>
+
+                <TextBlock Classes="hint"
+                           Text="Moving the catalog starts a new, empty one at the new location; the old file stays where it was and can be deleted by hand. Folders are re-indexed as you browse them." />
+              </StackPanel>
+            </Border>
+
+            <!-- Size -->
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Contents" Classes="section" />
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshCommand}" />
+                  <TextBlock Text="{Binding CatalogSizeDisplay}" Classes="value" FontSize="15"
+                             VerticalAlignment="Center" />
+                </DockPanel>
+              </StackPanel>
+            </Border>
+
+            <!-- Prune -->
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Remove entries for missing files" Classes="section" />
+                <TextBlock Classes="hint"
+                           Text="Drops catalog entries whose files have been moved or deleted, so search stops returning results that lead nowhere. Everything still on disk is left alone." />
+                <Button Content="Remove missing entries"
+                        IsEnabled="{Binding !IsBusy}"
+                        Command="{Binding PruneCatalogCommand}" />
+              </StackPanel>
+            </Border>
+
+            <!-- Clear -->
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Clear catalog" Classes="section" />
+                <TextBlock Classes="hint"
+                           Text="Empties the catalog completely. Search finds nothing until folders are browsed again. Your media, metadata, sidecars and pending changes are unaffected." />
+
+                <Button Content="Clear catalog…"
+                        Command="{Binding BeginClearCatalogCommand}"
+                        IsVisible="{Binding !IsConfirmingCatalogClear}"
+                        IsEnabled="{Binding !IsBusy}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsConfirmingCatalogClear}">
+                  <TextBlock Text="Empty the whole catalog?" VerticalAlignment="Center" />
+                  <Button Content="Clear" Command="{Binding ConfirmClearCatalogCommand}"
+                          Background="#33FF6B6B" BorderBrush="#66FF6B6B" />
+                  <Button Content="Cancel" Command="{Binding CancelClearCatalogCommand}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Display">
+        <ScrollViewer>
+          <StackPanel Margin="4,10" Spacing="12">
+
+            <TextBlock Classes="hint"
+                       Text="Which fields the metadata panel shows. Hiding one changes nothing about your files — anything already written stays written, and it reappears the moment you tick it again." />
+
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Metadata fields" Classes="section" />
+                <ItemsControl ItemsSource="{Binding FieldToggles}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MetadataFieldToggle">
+                      <CheckBox Content="{Binding Label}" IsChecked="{Binding IsVisible}" Margin="0,1" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
 
       <TabItem Header="Keywords">
         <DockPanel Margin="10,8">
@@ -281,80 +377,6 @@
             </Border>
           </StackPanel>
         </DockPanel>
-      </TabItem>
-
-      <TabItem Header="Catalog">
-        <ScrollViewer>
-          <StackPanel Margin="4,10" Spacing="12">
-
-            <TextBlock Classes="hint"
-                       Text="The catalog is what search looks in. It is built as you browse folders and covers everything indexed so far, not just the folder on screen — that is what makes searching your whole library possible. It is rebuildable: clearing it only means folders are re-indexed next time you open them." />
-
-            <!-- Location -->
-            <Border Classes="card">
-              <StackPanel Spacing="8">
-                <TextBlock Text="Location" Classes="section" />
-                <SelectableTextBlock Text="{Binding CatalogPath}" Classes="value" FontFamily="monospace" />
-
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Button Content="Change…" Command="{Binding ChooseCatalogFolderCommand}" />
-                  <Button Content="Use default"
-                          Command="{Binding UseDefaultCatalogFolderCommand}"
-                          IsEnabled="{Binding !IsUsingDefaultCatalogPath}" />
-                </StackPanel>
-
-                <TextBlock Classes="hint"
-                           Text="Moving the catalog starts a new, empty one at the new location; the old file stays where it was and can be deleted by hand. Folders are re-indexed as you browse them." />
-              </StackPanel>
-            </Border>
-
-            <!-- Size -->
-            <Border Classes="card">
-              <StackPanel Spacing="8">
-                <TextBlock Text="Contents" Classes="section" />
-                <DockPanel>
-                  <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshCommand}" />
-                  <TextBlock Text="{Binding CatalogSizeDisplay}" Classes="value" FontSize="15"
-                             VerticalAlignment="Center" />
-                </DockPanel>
-              </StackPanel>
-            </Border>
-
-            <!-- Prune -->
-            <Border Classes="card">
-              <StackPanel Spacing="8">
-                <TextBlock Text="Remove entries for missing files" Classes="section" />
-                <TextBlock Classes="hint"
-                           Text="Drops catalog entries whose files have been moved or deleted, so search stops returning results that lead nowhere. Everything still on disk is left alone." />
-                <Button Content="Remove missing entries"
-                        IsEnabled="{Binding !IsBusy}"
-                        Command="{Binding PruneCatalogCommand}" />
-              </StackPanel>
-            </Border>
-
-            <!-- Clear -->
-            <Border Classes="card">
-              <StackPanel Spacing="8">
-                <TextBlock Text="Clear catalog" Classes="section" />
-                <TextBlock Classes="hint"
-                           Text="Empties the catalog completely. Search finds nothing until folders are browsed again. Your media, metadata, sidecars and pending changes are unaffected." />
-
-                <Button Content="Clear catalog…"
-                        Command="{Binding BeginClearCatalogCommand}"
-                        IsVisible="{Binding !IsConfirmingCatalogClear}"
-                        IsEnabled="{Binding !IsBusy}" />
-
-                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsConfirmingCatalogClear}">
-                  <TextBlock Text="Empty the whole catalog?" VerticalAlignment="Center" />
-                  <Button Content="Clear" Command="{Binding ConfirmClearCatalogCommand}"
-                          Background="#33FF6B6B" BorderBrush="#66FF6B6B" />
-                  <Button Content="Cancel" Command="{Binding CancelClearCatalogCommand}" />
-                </StackPanel>
-              </StackPanel>
-            </Border>
-
-          </StackPanel>
-        </ScrollViewer>
       </TabItem>
 
     </TabControl>

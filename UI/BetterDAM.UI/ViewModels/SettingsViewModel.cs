@@ -7,6 +7,33 @@ using Microsoft.Extensions.Logging;
 
 namespace BetterDAM.UI.ViewModels;
 
+/// <summary>
+/// A metadata field and whether the panel shows it. Saves as it is toggled — there is nothing here
+/// worth an Apply button, and a settings dialog that could be closed with unsaved work is the only
+/// way to lose the change.
+/// </summary>
+public sealed partial class MetadataFieldToggle : ObservableObject
+{
+    private readonly Action<MetadataField, bool> _changed;
+
+    public MetadataFieldToggle(MetadataField field, string label, bool isVisible, Action<MetadataField, bool> changed)
+    {
+        Field = field;
+        Label = label;
+        _isVisible = isVisible;
+        _changed = changed;
+    }
+
+    public MetadataField Field { get; }
+
+    public string Label { get; }
+
+    [ObservableProperty]
+    private bool _isVisible;
+
+    partial void OnIsVisibleChanged(bool value) => _changed(Field, value);
+}
+
 public sealed partial class SettingsViewModel : ObservableObject
 {
     /// <summary>
@@ -46,6 +73,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             : DefaultChoiceIndex;
 
         _restrictKeywordsToLibrary = current.RestrictKeywordsToLibrary;
+        BuildFieldToggles();
         _renderCacheEnabled = current.RenderCacheEnabled;
         _selectedRenderLimitIndex = current.IsRenderCacheLimited
             ? NearestChoice(current.RenderCacheSizeLimitBytes)
@@ -341,6 +369,54 @@ public sealed partial class SettingsViewModel : ObservableObject
         IsUsingDefaultCatalogPath = true;
         StatusMessage = "Using the default catalog location.";
         await RefreshAsync().ConfigureAwait(true);
+    }
+
+    // ---- Display ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// One toggle per metadata field. Built once and bound two ways; each toggle saves itself, so
+    /// there is no Apply to forget.
+    /// </summary>
+    public IReadOnlyList<MetadataFieldToggle> FieldToggles { get; private set; } = [];
+
+    private void BuildFieldToggles()
+    {
+        var hidden = _settings.Current.HiddenMetadataFields.ToHashSet();
+
+        FieldToggles =
+        [
+            .. Enum.GetValues<MetadataField>()
+                .Select(field => new MetadataFieldToggle(field, Describe(field), !hidden.Contains(field), SetFieldVisible))
+        ];
+    }
+
+    private static string Describe(MetadataField field) => field switch
+    {
+        MetadataField.Rating => "Rating",
+        MetadataField.Title => "Title",
+        MetadataField.Headline => "Headline",
+        MetadataField.Description => "Description",
+        MetadataField.Keywords => "Keywords",
+        MetadataField.Label => "Label",
+        MetadataField.Creator => "Creator",
+        MetadataField.Copyright => "Copyright",
+        _ => field.ToString()
+    };
+
+    private void SetFieldVisible(MetadataField field, bool visible)
+    {
+        var hidden = _settings.Current.HiddenMetadataFields.ToList();
+
+        if (visible)
+        {
+            hidden.RemoveAll(f => f == field);
+        }
+        else if (!hidden.Contains(field))
+        {
+            hidden.Add(field);
+        }
+
+        _ = SaveAsync(_settings.Current with { HiddenMetadataFields = hidden });
     }
 
     // ---- Keywords -----------------------------------------------------------------------------

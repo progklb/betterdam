@@ -150,6 +150,7 @@
           <ScrollViewer>
             <StackPanel Margin="8,4">
 
+              <StackPanel IsVisible="{Binding ShowRating}">
               <TextBlock Text="Rating" Classes="label" />
               <StackPanel Orientation="Horizontal">
                 <Button Classes="star" Content="{Binding Rating, Converter={StaticResource StarGlyph}, ConverterParameter=1}"
@@ -163,17 +164,25 @@
                 <Button Classes="star" Content="{Binding Rating, Converter={StaticResource StarGlyph}, ConverterParameter=5}"
                         Command="{Binding SetRatingCommand}" CommandParameter="5" />
               </StackPanel>
+              </StackPanel>
 
-              <TextBlock Text="Title" Classes="label" />
-              <TextBox Text="{Binding Title}" />
+              <StackPanel IsVisible="{Binding ShowTitle}">
+                <TextBlock Text="Title" Classes="label" />
+                <TextBox Text="{Binding Title}" />
+              </StackPanel>
 
-              <TextBlock Text="Headline" Classes="label" />
-              <TextBox Text="{Binding Headline}" />
+              <StackPanel IsVisible="{Binding ShowHeadline}">
+                <TextBlock Text="Headline" Classes="label" />
+                <TextBox Text="{Binding Headline}" />
+              </StackPanel>
 
-              <TextBlock Text="Description" Classes="label" />
-              <TextBox Text="{Binding Description}" AcceptsReturn="True"
-                       TextWrapping="Wrap" MinHeight="70" MaxHeight="140" />
+              <StackPanel IsVisible="{Binding ShowDescription}">
+                <TextBlock Text="Description" Classes="label" />
+                <TextBox Text="{Binding Description}" AcceptsReturn="True"
+                         TextWrapping="Wrap" MinHeight="70" MaxHeight="140" />
+              </StackPanel>
 
+              <StackPanel IsVisible="{Binding ShowKeywords}">
               <TextBlock Text="Keywords" Classes="label" />
               <ItemsControl ItemsSource="{Binding AppliedKeywords}" Margin="0,0,0,4">
                 <ItemsControl.ItemsPanel>
@@ -310,14 +319,22 @@
                 </StackPanel>
               </Border>
 
-              <TextBlock Text="Label" Classes="label" />
-              <TextBox Text="{Binding Label}" />
+              </StackPanel>
 
-              <TextBlock Text="Creator" Classes="label" />
-              <TextBox Text="{Binding Creator}" />
+              <StackPanel IsVisible="{Binding ShowLabel}">
+                <TextBlock Text="Label" Classes="label" />
+                <TextBox Text="{Binding Label}" />
+              </StackPanel>
 
-              <TextBlock Text="Copyright" Classes="label" />
-              <TextBox Text="{Binding Copyright}" />
+              <StackPanel IsVisible="{Binding ShowCreator}">
+                <TextBlock Text="Creator" Classes="label" />
+                <TextBox Text="{Binding Creator}" />
+              </StackPanel>
+
+              <StackPanel IsVisible="{Binding ShowCopyright}">
+                <TextBlock Text="Copyright" Classes="label" />
+                <TextBox Text="{Binding Copyright}" />
+              </StackPanel>
 
             </StackPanel>
           </ScrollViewer>

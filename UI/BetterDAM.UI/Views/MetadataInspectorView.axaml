@@ -147,8 +147,21 @@
 
         <!-- ============ General (editable) ============ -->
         <TabItem Header="General">
-          <ScrollViewer>
-            <StackPanel Margin="8,4">
+          <!--
+            Three rows so the library can take the space nobody else wants. The row heights come from
+            the ViewModel: expanded, the library gets the star and the fields below it sit under it;
+            collapsed, the slack goes to the bottom and everything hugs the top as before.
+
+            MinHeight ties the grid to the viewport, which is what makes the star row mean anything —
+            a grid inside a ScrollViewer is otherwise measured against infinite height, and a star row
+            of infinite height collapses to its content. Above the viewport height it grows and the
+            ScrollViewer does its job.
+          -->
+          <ScrollViewer x:Name="GeneralScroll">
+            <Grid x:Name="GeneralGrid" RowDefinitions="Auto,Auto,Auto"
+                  MinHeight="{Binding #GeneralScroll.Bounds.Height}">
+
+            <StackPanel Grid.Row="0" Margin="8,4,8,0">
 
               <StackPanel IsVisible="{Binding ShowRating}">
               <TextBlock Text="Rating" Classes="label" />
@@ -271,20 +284,40 @@
               </Border>
 
               <!--
+                Nothing to tick from yet. Says what to do and offers to take them there, rather than
+                opening Settings unasked in the middle of whatever they were doing.
+              -->
+              <Border IsVisible="{Binding !HasKeywordLibrary}" Margin="0,6,0,0"
+                      Background="#2622A0F2" BorderBrush="#6622A0F2" BorderThickness="1"
+                      CornerRadius="6" Padding="10,8">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="No keyword library yet" FontWeight="SemiBold" FontSize="12" />
+                  <TextBlock TextWrapping="Wrap" FontSize="11" Opacity="0.8"
+                             Text="Set up your own keywords once and they become a tick list here — far quicker than typing them for every photograph." />
+                  <Button Content="Set up keywords…" FontSize="11" HorizontalAlignment="Left"
+                          Click="OnSetUpKeywords" />
+                </StackPanel>
+              </Border>
+
+
+              </StackPanel>
+            </StackPanel>
+
+              <!--
                 The library, folded away by default so the panel stays about this photograph. Its
                 open state is bound to the ViewModel rather than kept by the Expander, which is what
                 lets it stay open across a change of selection — tagging a folder means tagging one
                 and moving to the next, and a panel that refolded itself each time would be reopened
                 once per photograph.
               -->
-              <Expander Margin="0,6,0,0" IsExpanded="{Binding IsKeywordLibraryOpen}"
+            <Expander Grid.Row="1" Margin="8,6,8,0" IsExpanded="{Binding IsKeywordLibraryOpen}"
                         IsVisible="{Binding HasKeywordLibrary}"
                         HorizontalAlignment="Stretch">
                 <Expander.Header>
                   <TextBlock Text="Keyword library" FontSize="12" />
                 </Expander.Header>
 
-                <ScrollViewer MaxHeight="280" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer MinHeight="120" HorizontalScrollBarVisibility="Disabled">
                   <TreeView ItemsSource="{Binding KeywordPicker}"
                             Background="Transparent" BorderThickness="0">
                     <TreeView.Styles>
@@ -303,23 +336,7 @@
                 </ScrollViewer>
               </Expander>
 
-              <!--
-                Nothing to tick from yet. Says what to do and offers to take them there, rather than
-                opening Settings unasked in the middle of whatever they were doing.
-              -->
-              <Border IsVisible="{Binding !HasKeywordLibrary}" Margin="0,6,0,0"
-                      Background="#2622A0F2" BorderBrush="#6622A0F2" BorderThickness="1"
-                      CornerRadius="6" Padding="10,8">
-                <StackPanel Spacing="6">
-                  <TextBlock Text="No keyword library yet" FontWeight="SemiBold" FontSize="12" />
-                  <TextBlock TextWrapping="Wrap" FontSize="11" Opacity="0.8"
-                             Text="Set up your own keywords once and they become a tick list here — far quicker than typing them for every photograph." />
-                  <Button Content="Set up keywords…" FontSize="11" HorizontalAlignment="Left"
-                          Click="OnSetUpKeywords" />
-                </StackPanel>
-              </Border>
-
-              </StackPanel>
+            <StackPanel Grid.Row="2" Margin="8,0,8,4">
 
               <StackPanel IsVisible="{Binding ShowLabel}">
                 <TextBlock Text="Label" Classes="label" />
@@ -337,6 +354,7 @@
               </StackPanel>
 
             </StackPanel>
+            </Grid>
           </ScrollViewer>
         </TabItem>
 

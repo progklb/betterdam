@@ -3175,3 +3175,43 @@ was on the keyword clipboard with an empty set; it now leaves the clipboard alon
 
 - `dotnet test` — **570/570 passing**, unchanged; this is chrome with no logic behind it.
 - In the GUI: the viewer chrome now reads `Develop · Fit · 100% · ✕`.
+
+---
+
+## Interlude — the keyword list fills the sidebar ✅
+
+Reported: expanded, the tick list is a small window onto a long list — most noticeable in the workflow
+it exists for, where every other field is hidden and the panel is nothing but keywords.
+
+### Three rows instead of one stack
+
+The General tab was a `StackPanel` in a `ScrollViewer`, so every part was measured at its natural
+height and the library was pinned at `MaxHeight="280"`. It is now a grid of three rows — the fields
+above, the library, the fields below — where the library's row takes the leftover height while it is
+open and hugs its content while it is not.
+
+### Two things had to be true, and only one was obvious
+
+The row height is set from code. `RowDefinitions` cannot take a binding in compiled XAML, and
+`x:Name` on a `RowDefinition` generates no field — it is not a control. The same trap as native menu
+items and render transforms; the grid *is* a control, so its rows are reachable by index.
+
+The second was not obvious, and the first attempt looked right and did nothing: **a star row inside a
+`ScrollViewer` is measured against infinite height.** The row reported the full height of a 35-item
+tick list, the grid grew past the viewport, the star divided up nothing, and the fields below the
+library scrolled out of reach. Capping the grid at the viewport height is what gives the star
+something to divide — and only while the library is open, since a permanent cap would clip a panel
+showing every field on a short window with no way to scroll to the rest.
+
+### Verified in the GUI
+
+```text
+collapsed    fields hug the top, slack beneath — unchanged
+expanded     tick list fills down to Label, which stays visible at the bottom
+             thirteen keywords visible where seven fitted before
+collapsed    back to hugging the top; the cap is lifted, so scrolling works again
+```
+
+### Verified
+
+- `dotnet test` — **570/570 passing**, unchanged; layout with no logic behind it.

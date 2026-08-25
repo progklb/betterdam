@@ -24,9 +24,6 @@
     <Border VerticalAlignment="Top" HorizontalAlignment="Right" Margin="16"
             Background="#B0000000" CornerRadius="6" Padding="10,6">
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <TextBlock x:Name="ZoomLabel" Text="Fit" FontSize="12" VerticalAlignment="Center"
-                   MinWidth="52" TextAlignment="Right" />
-
         <!--
           Develop controls, here rather than in the main window because this is where a photograph
           is actually being judged. Only offered when they would do something.
@@ -146,8 +143,8 @@
           <DoubleTransition Property="Opacity" Duration="0:0:0.8" />
         </Transitions>
       </Border.Transitions>
-      <TextBlock FontSize="11" Opacity="0.85"
-                 Text="Scroll to zoom · drag to pan · space to fit · ← → to browse · \ RAW/JPEG · Esc to close" />
+      <!-- Set in code: the keys that apply depend on whether a video or a still is on screen. -->
+      <TextBlock x:Name="HintText" FontSize="11" Opacity="0.85" />
     </Border>
 
   </Panel>

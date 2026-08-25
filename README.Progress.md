@@ -3101,3 +3101,77 @@ revisiting if that turns out to be wrong in use.
 - `dotnet test` — **555/555 passing** (was 550). Five new: everything visible by default, a hidden
   field reporting itself hidden, a field nobody has heard of staying visible, hiding several leaving
   the rest alone, and hiding changing nothing else.
+
+---
+
+## Interlude — Space means play in the viewer ✅
+
+Reported: Space plays the video in the preview pane but re-fits the frame in the viewer, and the
+inconsistency grates in use.
+
+### Space does the obvious thing for what is on screen
+
+- **Video** → play/pause, matching the inline preview and every other player.
+- **Still** → fit, which is what Lightroom's space bar means and what it was put there for.
+
+That reads as inconsistent written down and is the opposite in practice. Space is the universal
+play/pause; a video that ignored it in favour of re-fitting a frame that already fits would be the
+surprising thing.
+
+Fit is no longer only on Space, or it would be unreachable from the keyboard whenever a video was
+showing: **0** and **Enter** both fit, whatever is on screen, and the Fit button is always on the
+chrome. **K** still plays, so the habit from the video player carries over.
+
+### The map is now a thing rather than a switch
+
+`ViewerShortcuts.Resolve(key, isVideo)` returns an action, and the window just carries it out. The
+rule above is the sort that looks arbitrary six months later, so it is stated in one place, explained
+where it lives, and pinned by tests — including the one that matters, that Fit stays reachable while
+a video is on screen.
+
+The on-arrival hint follows the medium too, since it was telling video viewers to press space to fit.
+
+### Verified in the GUI
+
+```text
+open a video fullscreen   viewer opens
+space                     playback starts — frame advances, playhead appears
+space                     pauses
+1                         zoom label reads 100%
+0                         zoom label reads Fit
+```
+
+### Verified
+
+- `dotnet test` — **570/570 passing** (was 555). Fifteen new on the shortcut map.
+
+---
+
+## Interlude — dropping the zoom label ✅
+
+The viewer chrome read `Fit  [Fit]  [100%]  [✕]` — a state readout immediately followed by a button
+of the same name, which reads as a duplicate rather than as two different things. Dropped.
+
+```text
+before   Develop   Fit   [Fit]  [100%]  [✕]
+after    Develop         [Fit]  [100%]  [✕]
+```
+
+The `PropertyChanged` subscription on the viewer existed only to keep that label current, so it went
+with it — one fewer thing reacting to every scroll of the wheel.
+
+**What is lost:** the viewer no longer shows the current magnification anywhere. `[Fit]` and `[100%]`
+are actions, not state, so at 237% nothing says so. Worth knowing rather than discovering; if it turns
+out to matter, highlighting whichever button matches the current state would say it without bringing
+back a word that looks duplicated.
+
+### Also fixed in passing
+
+`CopyKeywordsFromAsync` dereferenced the result of `IMetadataProvider.ReadAsync` without checking it,
+which is nullable when a file cannot be read. Copying nothing would have silently replaced whatever
+was on the keyword clipboard with an empty set; it now leaves the clipboard alone.
+
+### Verified
+
+- `dotnet test` — **570/570 passing**, unchanged; this is chrome with no logic behind it.
+- In the GUI: the viewer chrome now reads `Develop · Fit · 100% · ✕`.

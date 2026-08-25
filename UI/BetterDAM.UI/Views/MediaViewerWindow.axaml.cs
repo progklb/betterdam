@@ -50,14 +50,6 @@ public partial class MediaViewerWindow : Window
                 Viewer.Fit();
             }
         };
-
-        Viewer.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == ZoomPanViewer.ScaleProperty || e.Property == ZoomPanViewer.IsFittedProperty)
-            {
-                UpdateZoomLabel();
-            }
-        };
     }
 
     /// <summary>Must be called before showing: the window sizes itself from these settings.</summary>
@@ -150,7 +142,6 @@ public partial class MediaViewerWindow : Window
         {
             // The full-size decode has landed; swap it in without disturbing the view.
             ShowStill(_viewModel.FullPreview ?? _viewModel.Preview, isNewItem: false);
-            UpdateZoomLabel();
         }
     }
 
@@ -163,6 +154,7 @@ public partial class MediaViewerWindow : Window
         }
 
         UpdateCounter();
+        HintText.Text = ViewerShortcuts.Hint(viewModel.IsVideoSelected);
 
         if (viewModel.IsVideoSelected)
         {
@@ -252,38 +244,36 @@ public partial class MediaViewerWindow : Window
     {
         _awaitingInitialFit = false;
 
-        switch (e.Key)
+        var isVideo = _viewModel?.IsVideoSelected == true;
+
+        switch (ViewerShortcuts.Resolve(e.Key, isVideo))
         {
-            case Key.Escape or Key.F:
+            case ViewerAction.Close:
                 Close();
                 break;
 
-            // Reset the view, the way Lightroom's space bar recentres. Video play/pause is on the
-            // transport and on K, because resetting the view is the thing wanted constantly here.
-            case Key.Space or Key.D0 or Key.NumPad0:
+            case ViewerAction.Fit:
                 Viewer.Fit();
                 break;
 
-            case Key.D1 or Key.NumPad1:
+            case ViewerAction.ActualSize:
                 Viewer.ActualSize();
                 break;
 
-            case Key.Left:
+            case ViewerAction.Previous:
                 _viewModel?.SelectPreviousCommand.Execute(null);
                 break;
 
-            case Key.Right:
+            case ViewerAction.Next:
                 _viewModel?.SelectNextCommand.Execute(null);
                 break;
 
-            // Backslash flips between the developed RAW and the embedded JPEG, the way Lightroom
-            // uses it to compare two renderings. Reported under several names depending on layout.
-            case Key.OemBackslash or Key.OemPipe or Key.Oem5:
+            case ViewerAction.ToggleRawDevelopment:
                 _viewModel?.ToggleRawDevelopmentCommand.Execute(null);
                 break;
 
-            case Key.K or Key.Enter when _viewModel?.IsVideoSelected == true:
-                _viewModel.Player.TogglePlayCommand.Execute(null);
+            case ViewerAction.TogglePlayback:
+                _viewModel?.Player.TogglePlayCommand.Execute(null);
                 break;
 
             default:
@@ -312,13 +302,6 @@ public partial class MediaViewerWindow : Window
             e.Handled = true;
         }
     }
-
-    /// <summary>
-    /// "Fit" rather than a percentage while everything is visible: the number only means something
-    /// once it is being compared against 100%.
-    /// </summary>
-    private void UpdateZoomLabel()
-        => ZoomLabel.Text = Viewer.IsFitted ? "Fit" : $"{Viewer.Scale * 100:F0}%";
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {

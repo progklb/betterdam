@@ -597,8 +597,12 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
 
         try
         {
-            var metadata = await _metadata.ReadAsync(file).ConfigureAwait(true);
-            _clipboard.Copy(metadata.Effective.Keywords);
+            // Null when the file cannot be read. Copying nothing would silently replace whatever was
+            // on the clipboard with an empty set, so leave it alone instead.
+            if (await _metadata.ReadAsync(file).ConfigureAwait(true) is { } metadata)
+            {
+                _clipboard.Copy(metadata.Effective.Keywords);
+            }
         }
         catch (Exception ex)
         {

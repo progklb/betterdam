@@ -4528,3 +4528,12 @@ will show as plain text until the library is renamed to match. Renaming the five
 colour words is the one-minute fix; the chips and the filters follow immediately.
 
 - `dotnet test` — **677/677 passing**.
+
+### Labels moved to their own tab
+
+Settings is now General · Cache · Catalog · Display · Keywords · Labels. Labels sits beside Keywords
+because they are the same kind of thing: a vocabulary the user maintains, rather than a preference.
+
+Moving it also removed a duplicated explanation — a tab-level hint added during the move said the
+same thing as the card's own text, which is the sort of thing that reads fine while writing it and
+badly once both are on screen.

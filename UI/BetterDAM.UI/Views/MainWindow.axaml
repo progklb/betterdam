@@ -266,6 +266,43 @@
                 </DockPanel>
 
                 <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="Label" FontSize="11"
+                             VerticalAlignment="Center" Width="52" />
+                  <!--
+                    Built from the library rather than written out here: the labels are the user's,
+                    and there may be any number of them under any names.
+                  -->
+                  <ItemsControl ItemsSource="{Binding LabelChips}" HorizontalAlignment="Left">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:LabelFilterChip">
+                        <ToggleButton Margin="0,0,6,4" Padding="7,3" FontSize="11"
+                                      IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                      Command="{Binding ToggleCommand}"
+                                      ToolTip.Tip="{Binding Name}">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Border Width="10" Height="10" CornerRadius="2"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding Colour}"
+                                    IsVisible="{Binding HasColour}" />
+                            <!-- No label gets an outline where the others get a colour. -->
+                            <Border Width="10" Height="10" CornerRadius="2"
+                                    VerticalAlignment="Center"
+                                    BorderBrush="#66FFFFFF" BorderThickness="1"
+                                    IsVisible="{Binding !HasColour}" />
+                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </ToggleButton>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </DockPanel>
+
+                <DockPanel>
                   <TextBlock DockPanel.Dock="Left" Text="Flag" FontSize="11"
                              VerticalAlignment="Center" Width="52" />
                   <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">

@@ -4464,3 +4464,67 @@ That is unavoidable and the label still separates them; a test states it so it r
 limit rather than a gap.
 
 - `dotnet test` — **677/677 passing** (5 new).
+
+---
+
+## Colour labels: a library, and filtering by them ✅
+
+### The compatibility finding, which shaped everything else
+
+**The file stores a name, not a colour.** `xmp:Label` is a string, and every application decides for
+itself which colour to draw a given string in. Bridge ships *Select, Second, Approved, Review,
+To Do*; Lightroom ships *Red, Yellow, Green, Blue, Purple*. A file labelled in one opens in the other
+with the label intact and no colour, because the word matches nothing in its own list. Lightroom
+offers a "Bridge compatible" label set for precisely this reason.
+
+So the names are the interoperable part, and they are what the library makes editable. The colours
+are local decoration and never leave the machine.
+
+### The numeric fields were deliberately left alone
+
+digiKam and Photo Mechanic store an index rather than a word, and all four tags write and read back
+cleanly:
+
+```text
+XMP:Label                 "Approved"          Bridge, Lightroom
+XMP-digiKam:ColorLabel    3
+XMP-photomech:ColorClass  3 (Superior)        needs the # suffix, as Tagged does
+XMP:Urgency               3
+```
+
+Writing those was implemented and then **removed**. Their scales are each application's own colour
+order, they disagree with one another, and ExifTool exposes no colour meanings for digiKam's — so any
+mapping would have been a guess. A guess here does not fail loudly; it shows a confident wrong colour
+in another application, which is worse than showing none. Only the name is written, and that
+round-trips exactly.
+
+This is the opposite conclusion to the cull flags, where writing three conventions was right. The
+difference is that those carry the same meaning in every scheme, and these do not.
+
+### What was built
+
+- `LabelLibrary` in settings, defaulting to Bridge's five names and colours.
+- An editor in Settings › General: rename each label, pick its colour from swatches.
+- Chips in the filter popup, built from the library so a rename shows up without a restart.
+- `lb:none` for files carrying no label — a question about absence, which no label name can express,
+  so it is a separate flag on the query rather than a magic string in the list.
+
+Unknown labels are kept, not discarded: a file may carry any string, written by another application
+or by this one before the library was edited.
+
+### Verified against the live catalog
+
+```text
+lb:yellow        187     SQL says 187
+lb:none        1 849     SQL says 1 849
+lb:yellow,none 2 036     SQL says 2 036
+```
+
+### Worth knowing
+
+The workspace's existing labels are **Yellow, Red, Green and Blue** — Lightroom's naming, not
+Bridge's. The library now ships Bridge's words, so those existing labels will not match a chip and
+will show as plain text until the library is renamed to match. Renaming the five entries to the
+colour words is the one-minute fix; the chips and the filters follow immediately.
+
+- `dotnet test` — **677/677 passing**.

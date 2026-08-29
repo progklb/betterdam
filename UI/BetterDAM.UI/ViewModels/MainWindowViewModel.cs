@@ -106,6 +106,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _noiseReduction = develop.NoiseReduction;
         _rawQuality = develop.Quality;
 
+        RebuildLabelChips();
+        _settings.Changed += (_, _) => Dispatcher.UIThread.Post(RebuildLabelChips);
+
         // Otherwise the kind toggles start unticked on an empty query, which reads as "showing
         // nothing" when it means "showing everything".
         ReadFiltersFromQuery();
@@ -334,6 +337,34 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     partial void OnFilterUnflaggedChanged(bool value) => WriteFlags();
 
+    /// <summary>
+    /// One chip per label in the library, plus "No label". Rebuilt when the library changes so a
+    /// rename in Settings shows here without a restart.
+    /// </summary>
+    public ObservableCollection<LabelFilterChip> LabelChips { get; } = [];
+
+    private void RebuildLabelChips()
+    {
+        LabelChips.Clear();
+
+        foreach (var label in _settings.Current.Labels.Labels)
+        {
+            LabelChips.Add(new LabelFilterChip(label.Name, label.Colour, ToggleLabelFilter));
+        }
+
+        // Files with no label at all. Written as the bare word, which the parser understands and
+        // which reads sensibly in the box.
+        LabelChips.Add(new LabelFilterChip("No label", null, ToggleLabelFilter));
+    }
+
+    private void ToggleLabelFilter(LabelFilterChip chip) => WriteFilter(() =>
+    {
+        var chosen = LabelChips.Where(c => c.IsSelected).Select(c => c.Term).ToList();
+
+        SearchText = SearchQueryText.WithField(
+            SearchText, "label", chosen.Count == 0 ? null : string.Join(',', chosen));
+    });
+
     private void WriteFlags() => WriteFilter(() =>
     {
         var flags = new List<string>();
@@ -419,6 +450,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
             FilterRaw = all || kinds.Contains(MediaKind.Raw);
             FilterJpeg = all || kinds.Contains(MediaKind.Jpeg);
             FilterVideo = all || kinds.Contains(MediaKind.Video);
+
+            var labels = query.Labels;
+
+            foreach (var chip in LabelChips)
+            {
+                chip.SetSelected(labels.Any(l => string.Equals(l, chip.Term, StringComparison.OrdinalIgnoreCase)));
+            }
 
             var flags = query.Flags;
             var everyFlag = flags.IsDefaultOrEmpty;

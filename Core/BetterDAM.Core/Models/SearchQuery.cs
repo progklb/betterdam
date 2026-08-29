@@ -50,6 +50,13 @@ public sealed record SearchQuery
     public ImmutableArray<string> Labels { get; init; } = [];
 
     /// <summary>
+    /// Whether files carrying no label at all should be included. Separate from
+    /// <see cref="Labels"/> because "unlabelled" is a question about absence, which no label name
+    /// can express.
+    /// </summary>
+    public bool IncludeUnlabelled { get; init; }
+
+    /// <summary>
     /// Cull flags to include. Several mean "any of these", since a file carries one flag.
     /// </summary>
     public ImmutableArray<MediaFlag> Flags { get; init; } = [];
@@ -76,7 +83,7 @@ public sealed record SearchQuery
 
     public bool IsEmpty =>
         FreeText.IsDefaultOrEmpty && Keywords.IsDefaultOrEmpty && Cameras.IsDefaultOrEmpty &&
-        Labels.IsDefaultOrEmpty && Flags.IsDefaultOrEmpty && FileNames.IsDefaultOrEmpty &&
+        Labels.IsDefaultOrEmpty && !IncludeUnlabelled && Flags.IsDefaultOrEmpty && FileNames.IsDefaultOrEmpty &&
         Lenses.IsDefaultOrEmpty && Kinds.IsDefaultOrEmpty && Rating is null && CaptureDate is null;
 }
 

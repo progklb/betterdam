@@ -250,6 +250,11 @@ public sealed class ExifToolSidecarWriter : IMetadataWriter
         AddValue(arguments, "XMP:Title", metadata.Title, temporaryValueFiles);
         AddValue(arguments, "XMP:Description", metadata.Description, temporaryValueFiles);
         AddValue(arguments, "XMP:Headline", metadata.Headline, temporaryValueFiles);
+        // Only the name. The numeric colour fields the other applications use — digiKam's
+        // ColorLabel and Photo Mechanic's ColorClass — are indices into their own colour scales,
+        // and those scales disagree with each other and with any slot order chosen here. Writing a
+        // number into them would show a confident wrong colour elsewhere, which is worse than
+        // showing none: xmp:Label alone is what Bridge and Lightroom read, and it round-trips exactly.
         AddValue(arguments, "XMP:Label", metadata.Label, temporaryValueFiles);
         AddValue(arguments, "XMP:Creator", metadata.Creator, temporaryValueFiles);
         AddValue(arguments, "XMP:Rights", metadata.Copyright, temporaryValueFiles);

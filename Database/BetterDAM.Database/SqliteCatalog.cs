@@ -411,7 +411,7 @@ public sealed class SqliteCatalog : ICatalog
                 """);
         }
 
-        if (!query.Labels.IsDefaultOrEmpty)
+        if (!query.Labels.IsDefaultOrEmpty || query.IncludeUnlabelled)
         {
             // Lowered on both sides: labels are typed by hand and by other applications, so "Yellow"
             // and "yellow" are the same label and a case-sensitive IN would quietly miss half of them.
@@ -423,7 +423,21 @@ public sealed class SqliteCatalog : ICatalog
                 parameters.Add($"label{i}", query.Labels[i].ToLowerInvariant());
             }
 
-            sql.Append($"\n  AND LOWER(m.Label) IN ({string.Join(", ", placeholders)})");
+            var clauses = new List<string>();
+
+            if (placeholders.Count > 0)
+            {
+                clauses.Add($"LOWER(m.Label) IN ({string.Join(", ", placeholders)})");
+            }
+
+            // A file with no label has NULL here, and some applications write an empty string —
+            // both mean unlabelled, and an IN test would match neither.
+            if (query.IncludeUnlabelled)
+            {
+                clauses.Add("(m.Label IS NULL OR m.Label = '')");
+            }
+
+            sql.Append($"\n  AND ({string.Join(" OR ", clauses)})");
         }
 
         if (!query.Flags.IsDefaultOrEmpty)

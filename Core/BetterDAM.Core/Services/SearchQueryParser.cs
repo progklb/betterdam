@@ -27,6 +27,7 @@ public static class SearchQueryParser
         var keywords = ImmutableArray.CreateBuilder<KeywordFilter>();
         var cameras = ImmutableArray.CreateBuilder<string>();
         var labels = ImmutableArray.CreateBuilder<string>();
+        var unlabelled = false;
         var flags = ImmutableArray.CreateBuilder<MediaFlag>();
         var fileNames = ImmutableArray.CreateBuilder<string>();
         var lenses = ImmutableArray.CreateBuilder<string>();
@@ -86,7 +87,11 @@ public static class SearchQueryParser
                     foreach (var label in value
                         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
-                        if (!labels.Contains(label, StringComparer.OrdinalIgnoreCase))
+                        if (string.Equals(label, "none", StringComparison.OrdinalIgnoreCase))
+                        {
+                            unlabelled = true;
+                        }
+                        else if (!labels.Contains(label, StringComparer.OrdinalIgnoreCase))
                         {
                             labels.Add(label);
                         }
@@ -178,6 +183,7 @@ public static class SearchQueryParser
             FreeText = freeText.ToImmutable(),
             Keywords = keywords.ToImmutable(),
             Labels = labels.ToImmutable(),
+            IncludeUnlabelled = unlabelled,
             Flags = flags.ToImmutable(),
             FileNames = fileNames.ToImmutable(),
             Cameras = cameras.ToImmutable(),

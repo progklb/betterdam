@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using Avalonia.Platform.Storage;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
@@ -99,6 +101,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         _restrictKeywordsToLibrary = current.RestrictKeywordsToLibrary;
         BuildFieldToggles();
+        BuildLabelRows();
         _renderCacheEnabled = current.RenderCacheEnabled;
         _selectedRenderLimitIndex = current.IsRenderCacheLimited
             ? NearestChoice(current.RenderCacheSizeLimitBytes)
@@ -536,6 +539,51 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             _ = SaveAsync(_settings.Current with { HandDrawnAnimates = value });
         }
+    }
+
+    // ---- Labels --------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The colour labels, editable. Saved as they are typed, like everything else here.
+    /// </summary>
+    public ObservableCollection<LabelRowViewModel> LabelRows { get; } = [];
+
+    private bool _loadingLabels;
+
+    private void BuildLabelRows()
+    {
+        _loadingLabels = true;
+
+        try
+        {
+            LabelRows.Clear();
+
+            foreach (var label in _settings.Current.Labels.Labels)
+            {
+                LabelRows.Add(new LabelRowViewModel(label.Name, label.Colour, SaveLabels));
+            }
+        }
+        finally
+        {
+            _loadingLabels = false;
+        }
+    }
+
+    private void SaveLabels()
+    {
+        if (_loadingLabels)
+        {
+            return;
+        }
+
+        // Blank names are dropped rather than saved: an empty label would be written to files as an
+        // empty string, which is indistinguishable from having no label at all.
+        var labels = LabelRows
+            .Where(row => !string.IsNullOrWhiteSpace(row.Name))
+            .Select(row => new LabelDefinition(row.Name.Trim(), row.Colour))
+            .ToImmutableArray();
+
+        _ = SaveAsync(_settings.Current with { Labels = new LabelLibrary { Labels = labels } });
     }
 
     public static double MinRoughness => AppSettings.MinRoughness;

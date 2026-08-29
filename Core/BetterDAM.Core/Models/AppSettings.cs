@@ -146,6 +146,13 @@ public sealed record AppSettings
     public bool RestrictKeywordsToLibrary { get; init; } = true;
 
     /// <summary>
+    /// The colour labels offered, and what they are called. Editable because the names are the only
+    /// part other applications read, and matching them to whatever Bridge or Lightroom is set to is
+    /// what lets a label travel between them.
+    /// </summary>
+    public LabelLibrary Labels { get; init; } = LabelLibrary.Default;
+
+    /// <summary>
     /// Fields hidden from the metadata panel.
     ///
     /// A list of what to <b>hide</b> rather than what to show, which matters for a setting that will

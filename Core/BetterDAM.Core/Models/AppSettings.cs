@@ -48,6 +48,13 @@ public sealed record AppSettings
     public AppTheme Theme { get; init; } = AppTheme.Darkroom;
 
     /// <summary>
+    /// Where the selection highlight takes its colour from. Separate from <see cref="Theme"/> on
+    /// purpose — how loud a selection should be is not the same question as how dark the
+    /// application should be.
+    /// </summary>
+    public SelectionColour SelectionColour { get; init; } = SelectionColour.System;
+
+    /// <summary>
     /// Whether the viewer takes over the whole screen or just fills the current one.
     ///
     /// Two different things on macOS: real fullscreen hides the menu bar but moves the window to a

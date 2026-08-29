@@ -49,6 +49,12 @@
     <Style Selector="Window">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
     </Style>
+
+    <!--
+      Selection is not styled here. It follows the accent, which AppThemes sets from the theme or
+      leaves to the platform — see ApplyAccent for why overriding individual controls turned out to
+      be the wrong lever.
+    -->
   </Application.Styles>
 
 </Application>

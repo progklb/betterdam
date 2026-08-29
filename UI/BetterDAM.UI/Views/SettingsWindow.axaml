@@ -88,6 +88,27 @@
                            Text="Applies straight away, including to windows already open. The fullscreen viewer stays black whichever theme is chosen — a photograph is judged against black, not against the application." />
               </StackPanel>
             </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Selection" Classes="section" />
+
+                <ComboBox ItemsSource="{Binding SelectionColours}" SelectedItem="{Binding SelectedSelectionColour}"
+                          HorizontalAlignment="Stretch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SelectionChoice">
+                      <StackPanel Spacing="1" Margin="0,3">
+                        <TextBlock Text="{Binding Name}" FontSize="12" />
+                        <TextBlock Text="{Binding Description}" FontSize="11" Opacity="0.55" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <TextBlock Classes="hint"
+                           Text="What a selected thumbnail or folder is filled with. Kept apart from the theme because how loud a selection should be is a different question from how dark the application should be. Checkboxes and sliders keep the system colour either way." />
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

@@ -3389,3 +3389,181 @@ that evenly. Around a grid tile it would fight the tile's own rectangle.
 So: cheap to build, and it would look genuinely good on a short fixed nav — which is not currently
 what that sidebar is. Worth pairing with a decision about what the sidebar wants to be, rather than
 adding it to what is there now.
+
+---
+
+## Verdigris toned down, and selection split from the theme ✅
+
+### Verdigris
+
+The first version kept the borrowed hue *and* its borrowed value, and in use it read as loud beside
+the other three. The value came down; the hue stayed.
+
+| | Surface | Panel |
+|---|---|---|
+| Verdigris (was) | `#0E2E31` | `#174145` |
+| **Verdigris (now)** | `#081B1D` | `#0D2729` |
+
+### Selection is now its own setting
+
+Two options, as asked: **System default** and **Match the theme**.
+
+The investigation turned up something that changed the shape of this. Avalonia already resolves the
+platform accent on macOS — `PlatformSettings.GetColorValues().AccentColor1` returns `#007AFF`, and
+Fluent has already published it as `SystemAccentColor` by the time the application starts. So
+**"system default" was never a new feature; it is what the application has been doing all along**,
+and the harsh blue was macOS's own highlight colour rather than a Windows default leaking through.
+It also means the setting tracks a change made in System Settings without a restart, for free.
+
+That let the resolution read the `SystemAccentColor` resource instead of reaching for
+`PlatformSettings`, which needs a window to exist first — the theme has to be applied before there
+is one.
+
+| | Selection |
+|---|---|
+| Darkroom | `#4A4A4A` |
+| Graphite | `#4A4A4A` |
+| Safelight | `#6B1A1A` |
+| Verdigris | `#1C534C` |
+
+### Scoped to selection, not to the accent
+
+Redefining `SystemAccentColor` wholesale would have been fewer lines and would have caught every
+control at once — and that is exactly why it was not done. It reaches checkboxes, sliders, progress
+bars and focus rings, and a grey tick reads as a disabled one. The ask was for a quieter selection,
+not a quieter application, so the override sits on the template part Fluent fills:
+
+```text
+ListBoxItem:selected  /template/ ContentPresenter#PART_ContentPresenter
+TreeViewItem:selected /template/ ContentPresenter#PART_HeaderPresenter
+```
+
+`ComboBoxItem` does not derive-match a `ListBoxItem` selector in Avalonia, so dropdowns keep the
+platform colour — which is right for a list that only exists while it is being used.
+
+### Tests
+
+A new one worth calling out: **every theme's selection must stand clear of its own tile.** A tile is
+the panel plus 9% white, so a selection picked by eye can easily land near it and read as a hover
+rather than as a choice. That is a drift a person does not notice while choosing one colour at a
+time, which is what makes it worth asserting.
+
+- `dotnet test` — **587/587 passing**.
+
+### Verified in the GUI
+
+```text
+System       selected tile is the platform accent, on every theme
+Theme        Verdigris → teal, Graphite → grey, both clearly selected and quiet
+both         apply live, and survive a restart
+checkbox     stays system blue in both, as documented
+```
+
+The selected tile samples lighter than the table says — `#4A4A4A` reads as `#5B5B5B` — because the
+tile's own 9% white overlay composites on top of it. That is the two-token design working, not a
+mismatch: `74 → 74·0.906 + 255·0.094 = 91`, which is exactly what was sampled.
+
+---
+
+## The accented controls follow the theme too ✅
+
+Previously "Match the theme" recoloured only the selection, and left checkboxes, sliders and focus
+rings on the platform blue. In use that blue was the loudest thing on a Verdigris or Safelight
+window — the restraint was defensible in the abstract and wrong on screen.
+
+Under **Match the theme**, the accent now follows as well. Under **System default** the overrides are
+*removed* rather than written back, so lookups fall through to the values Fluent derived from the
+operating system — writing them back would freeze them, and the point of System is that it tracks a
+change made in System Settings.
+
+### Seven colours, not one
+
+Fluent wants a ramp: the base plus three lighter and three darker, which are what a control uses
+when it is hovered, pressed or disabled. Overriding only the base would leave those states blue, so
+a checkbox would change colour under the pointer — worse than not overriding at all.
+
+The ratios were **measured from a running Avalonia** rather than guessed, by reading what it
+publishes for the accent macOS gave it:
+
+```text
+Light1/2/3   blend towards white by 0.30, 0.55, 0.81
+Dark1/2/3    scale down by        0.78, 0.62, 0.42
+```
+
+A test feeds `#007AFF` back through that derivation and asserts it reproduces Avalonia's own seven
+values within two points per channel, so a theme accent behaves exactly like a system one. A second
+test asserts the ramp is monotonic for every theme — lighter steps lighter, darker steps darker.
+
+- `dotnet test` — **589/589 passing**.
+
+### How each theme reads
+
+```text
+Verdigris   teal fill, white tick — clearly on, and quiet
+Safelight   deep red fill, white tick — clearly on
+Graphite    grey fill, white tick — legible, but reads closer to an inactive control
+Darkroom    same grey as Graphite, same caveat
+```
+
+The concern raised when this was first left alone turns out to bite only on the two neutral themes:
+a grey tick is quieter than a coloured one, and sits nearer to how a disabled control looks. It is
+one value to change if that matters — either lift the neutral selection towards `#6A6A6A`, or give
+the accent its own colour separate from the selection so the tick can stay emphatic while the
+selected tile stays quiet.
+
+Applied live in both directions with no restart: Fluent's accent brushes turn out to be bound with
+`DynamicResource`, which was not a given.
+
+---
+
+## Fix — the selected folder had two backgrounds 🐞
+
+Reported: the selected row in the folder tree showed a full-width band in one colour and a block
+behind the text in another. Visible in both selection modes and on every theme.
+
+Two separate faults, both mine, both from the same wrong idea.
+
+### 1. A band inside a band
+
+Fluent paints the tree row background from the accent, and the header presenter sits *inside* that
+row. Overriding `ContentPresenter#PART_HeaderPresenter` therefore did not replace the row colour —
+it drew a second, differently-coloured block nested in it. The list had the same shape of problem
+and only avoided showing it because the two colours happened to agree.
+
+### 2. The override was read back as if it were the platform's
+
+Worse, and the source of the *red* inner block in system mode. `Apply` resolved the selection colour
+before `ApplyAccent` removed the theme overrides, so `ReadPlatformAccent` read
+`SystemAccentColor` while the application's own override was still in the dictionary. In System mode
+it recovered the previous theme colour and painted the selection with it — a stale value that
+survived the switch:
+
+```text
+System default, sampled from the running app
+  outer band  #0056AB   Fluent, from the platform accent — correct
+  inner block #00544C   the theme's teal, read back from my own override — wrong
+```
+
+### The fix removes the cause of both
+
+Now that the accent itself is themed, none of it was necessary. The per-control overrides are gone
+and so is the `AppSelectionBrush` token; `AppThemes` sets the accent and lets Fluent distribute it.
+That cannot produce a nested mismatch, needs no template part names — which are neither public API
+nor stable — and deletes the ordering hazard entirely rather than reordering two statements.
+
+It also restores the grid's original stock appearance: the tile had been painted with the accent's
+base colour by the override, where Fluent uses a darker step.
+
+### Verified in the GUI
+
+```text
+Safelight + Match the theme   row uniform #510B0F across its full width
+live switch to System         row uniform #004DA1 — no stale colour, no inner block
+grid tile                     uniform #0060AB
+```
+
+Tree and grid land on different steps of the ramp — Fluent uses Dark2 for a tree row and Dark1 for a
+list tile. That is its own convention and was true before any of this work; each control is uniform
+within itself, which was the actual complaint.
+
+- `dotnet test` — **587/587 passing** (three tests removed with the code they covered).

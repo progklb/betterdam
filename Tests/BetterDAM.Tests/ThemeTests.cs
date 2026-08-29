@@ -78,8 +78,29 @@ public class ThemeTests
     }
 
     /// <summary>
+    /// A selection has to be clearly lighter than the tile it lands on. A tile is the panel plus 9%
+    /// white, so a selection near that value reads as a hover rather than as a choice — which is
+    /// exactly the failure a hand-picked colour drifts into.
+    /// </summary>
+    [Fact]
+    public void EveryThemeSelectionOutranksItsTile()
+    {
+        const byte TileOverlay = 0x18;
+
+        Assert.All(Enum.GetValues<AppTheme>(), theme =>
+        {
+            var palette = AppThemes.For(theme);
+            var tile = Composite(palette.Panel.R, TileOverlay);
+
+            Assert.True(palette.Selection.R > tile + 8 || palette.Selection.G > tile + 8,
+                $"{theme}'s selection does not stand clear of its tile.");
+        });
+    }
+
+    /// <summary>
     /// Every theme stays dark enough to judge a photograph against. A light surface would be a
     /// different product, and would arrive by way of someone nudging a colour rather than deciding.
+    /// Selection is excluded — it is meant to stand out.
     /// </summary>
     [Fact]
     public void EveryThemeStaysDark()
@@ -135,6 +156,104 @@ public class ThemeTests
         Assert.Equal(1, (int)AppTheme.Graphite);
         Assert.Equal(2, (int)AppTheme.Safelight);
         Assert.Equal(3, (int)AppTheme.Verdigris);
+    }
+
+    // ---- Selection colour ----------------------------------------------------------------------
+
+    /// <summary>
+    /// The accent is the whole mechanism now, so the two modes must genuinely differ: Theme paints
+    /// from the palette, System leaves the platform's colour alone by removing the override.
+    /// </summary>
+    [Fact]
+    public void ThemeAccentComesFromThePalette()
+    {
+        Assert.All(Enum.GetValues<AppTheme>(), theme =>
+            Assert.Equal(AppThemes.For(theme).Selection, AppThemes.AccentRamp(AppThemes.For(theme).Selection)[0]));
+    }
+
+    [Fact]
+    public void SelectionColourDefaultsToSystemSoNothingChangesUnasked()
+    {
+        Assert.Equal(SelectionColour.System, AppSettings.Default.SelectionColour);
+        Assert.Equal(0, (int)SelectionColour.System);
+        Assert.Equal(1, (int)SelectionColour.Theme);
+    }
+
+    [Fact]
+    public void SelectionColourSurvivesARoundTrip()
+    {
+        var settings = AppSettings.Default with { SelectionColour = SelectionColour.Theme };
+
+        var restored = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings));
+
+        Assert.NotNull(restored);
+        Assert.Equal(SelectionColour.Theme, restored.SelectionColour);
+    }
+
+    /// <summary>
+    /// The accent ramp has to be the one Fluent would have produced itself, or an accented control
+    /// changes character under the pointer — hover and pressed states come from the variants, not
+    /// the base. The expected values here were read out of a running Avalonia on macOS, given the
+    /// platform accent it had resolved, so this pins the derivation to something observed rather
+    /// than to ratios that looked about right.
+    /// </summary>
+    [Fact]
+    public void AccentRampMatchesTheOneAvaloniaDerives()
+    {
+        var platformAccent = Color.FromRgb(0x00, 0x7A, 0xFF);
+
+        Color[] avalonia =
+        [
+            Color.FromRgb(0x00, 0x7A, 0xFF), // base
+            Color.FromRgb(0x4E, 0xA3, 0xFF), // Light1
+            Color.FromRgb(0x8C, 0xC3, 0xFF), // Light2
+            Color.FromRgb(0xCE, 0xE5, 0xFF), // Light3
+            Color.FromRgb(0x00, 0x5F, 0xC6), // Dark1
+            Color.FromRgb(0x00, 0x4B, 0x9D), // Dark2
+            Color.FromRgb(0x00, 0x33, 0x6A)  // Dark3
+        ];
+
+        var ramp = AppThemes.AccentRamp(platformAccent);
+
+        Assert.Equal(avalonia.Length, ramp.Count);
+
+        for (var i = 0; i < avalonia.Length; i++)
+        {
+            // Within a point or two per channel: the ratios were recovered from rounded bytes.
+            Assert.True(
+                Math.Abs(avalonia[i].R - ramp[i].R) <= 2
+                && Math.Abs(avalonia[i].G - ramp[i].G) <= 2
+                && Math.Abs(avalonia[i].B - ramp[i].B) <= 2,
+                $"step {i}: expected about {avalonia[i]}, got {ramp[i]}");
+        }
+    }
+
+    /// <summary>Lighter steps must actually lighten and darker ones darken, for any accent.</summary>
+    [Fact]
+    public void AccentRampIsMonotonic()
+    {
+        Assert.All(Enum.GetValues<AppTheme>(), theme =>
+        {
+            var ramp = AppThemes.AccentRamp(AppThemes.For(theme).Selection);
+
+            static int Luma(Color c) => (int)((0.299 * c.R) + (0.587 * c.G) + (0.114 * c.B));
+
+            Assert.True(Luma(ramp[1]) > Luma(ramp[0]), $"{theme}: Light1 is not lighter than the base.");
+            Assert.True(Luma(ramp[2]) > Luma(ramp[1]), $"{theme}: Light2 is not lighter than Light1.");
+            Assert.True(Luma(ramp[3]) > Luma(ramp[2]), $"{theme}: Light3 is not lighter than Light2.");
+
+            Assert.True(Luma(ramp[4]) < Luma(ramp[0]), $"{theme}: Dark1 is not darker than the base.");
+            Assert.True(Luma(ramp[5]) < Luma(ramp[4]), $"{theme}: Dark2 is not darker than Dark1.");
+            Assert.True(Luma(ramp[6]) < Luma(ramp[5]), $"{theme}: Dark3 is not darker than Dark2.");
+        });
+    }
+
+    [Fact]
+    public void EverySelectionColourIsOfferedInSettings()
+    {
+        var offered = SettingsViewModel.SelectionColours.Select(choice => choice.Source).ToArray();
+
+        Assert.Equal(Enum.GetValues<SelectionColour>(), offered);
     }
 
     /// <summary>

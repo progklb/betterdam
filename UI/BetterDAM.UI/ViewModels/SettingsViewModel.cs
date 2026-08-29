@@ -40,6 +40,9 @@ public sealed partial class MetadataFieldToggle : ObservableObject
 /// </summary>
 public sealed record ThemeChoice(AppTheme Theme, string Name, string Description);
 
+/// <summary>Where the selection highlight takes its colour from, as the dropdown offers it.</summary>
+public sealed record SelectionChoice(SelectionColour Source, string Name, string Description);
+
 public sealed partial class SettingsViewModel : ObservableObject
 {
     /// <summary>
@@ -77,6 +80,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         // Matched by value, and falling back to the first entry so a theme this build no longer
         // offers leaves the dropdown showing something rather than blank.
         _selectedTheme = Themes.FirstOrDefault(choice => choice.Theme == current.Theme) ?? Themes[0];
+        _selectedSelectionColour =
+            SelectionColours.FirstOrDefault(choice => choice.Source == current.SelectionColour)
+            ?? SelectionColours[0];
 
         _isCacheLimited = current.IsCacheLimited;
         _selectedLimitIndex = current.IsCacheLimited
@@ -452,6 +458,25 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (_settings.Current.Theme != value.Theme)
         {
             _ = SaveAsync(_settings.Current with { Theme = value.Theme });
+        }
+    }
+
+    public static IReadOnlyList<SelectionChoice> SelectionColours { get; } =
+    [
+        new(SelectionColour.System, "System default",
+            "The colour your operating system highlights with, and it follows if you change it."),
+        new(SelectionColour.Theme, "Match the theme",
+            "A quieter highlight drawn from the theme's own colours.")
+    ];
+
+    [ObservableProperty]
+    private SelectionChoice _selectedSelectionColour;
+
+    partial void OnSelectedSelectionColourChanged(SelectionChoice value)
+    {
+        if (_settings.Current.SelectionColour != value.Source)
+        {
+            _ = SaveAsync(_settings.Current with { SelectionColour = value.Source });
         }
     }
 

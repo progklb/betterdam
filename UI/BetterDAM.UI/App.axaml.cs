@@ -47,9 +47,9 @@ public partial class App : Application
             // Before any window exists, so the application never shows in one theme and repaints
             // into another. Changed fires from whichever thread called SaveAsync, so the repaint is
             // posted rather than applied where it lands.
-            AppThemes.Apply(this, settings.Current.Theme);
+            AppThemes.Apply(this, settings.Current);
             settings.Changed += (_, updated) =>
-                Dispatcher.UIThread.Post(() => AppThemes.Apply(this, updated.Theme));
+                Dispatcher.UIThread.Post(() => AppThemes.Apply(this, updated));
 
             var services = new ServiceCollection()
                 .AddBetterDam(Paths ?? new Core.Services.AppPaths(settings), settings)

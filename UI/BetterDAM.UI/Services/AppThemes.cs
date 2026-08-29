@@ -44,9 +44,29 @@ public static class AppThemes
         Surface: Color.FromRgb(0x10, 0x10, 0x10),
         Panel: Color.FromRgb(0x10, 0x10, 0x10));
 
+    /// <summary>
+    /// Red kept very dark and only moderately saturated. A safelight is dim on purpose, and the
+    /// colour has to sit behind photographs without casting the eye — a bright red would tint the
+    /// judgement of every warm image in the grid.
+    /// </summary>
+    private static readonly ThemePalette Safelight = new(
+        Surface: Color.FromRgb(0x18, 0x05, 0x05),
+        Panel: Color.FromRgb(0x28, 0x09, 0x09));
+
+    /// <summary>
+    /// Pitched darker than the application it takes its hue from: that one paints a writing canvas,
+    /// where this sits behind photographs and has to stay out of their contrast. The hue is the
+    /// same family, the value is not.
+    /// </summary>
+    private static readonly ThemePalette Verdigris = new(
+        Surface: Color.FromRgb(0x0E, 0x2E, 0x31),
+        Panel: Color.FromRgb(0x17, 0x41, 0x45));
+
     public static ThemePalette For(AppTheme theme) => theme switch
     {
         AppTheme.Graphite => Graphite,
+        AppTheme.Safelight => Safelight,
+        AppTheme.Verdigris => Verdigris,
 
         // Darkroom is also the fallback: a settings file naming a theme this build has never heard
         // of should open looking like the application, not fail to start.

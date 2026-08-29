@@ -48,16 +48,53 @@ public class ThemeTests
         Assert.Equal(AppThemes.For(AppTheme.Darkroom).Panel, graphite.Surface);
     }
 
-    /// <summary>Themes are opaque; a translucent surface would let the desktop through the window.</summary>
-    [Theory]
-    [InlineData(AppTheme.Darkroom)]
-    [InlineData(AppTheme.Graphite)]
-    public void EveryThemeIsOpaque(AppTheme theme)
+    /// <summary>
+    /// Themes are opaque; a translucent surface would let the desktop through the window. Driven off
+    /// the enum rather than a list of cases, so a theme added later is covered without being added
+    /// here — the failure this guards against is one nobody remembers to write a case for.
+    /// </summary>
+    [Fact]
+    public void EveryThemeIsOpaque()
     {
-        var palette = AppThemes.For(theme);
+        Assert.All(Enum.GetValues<AppTheme>(), theme =>
+        {
+            var palette = AppThemes.For(theme);
 
-        Assert.Equal(255, palette.Surface.A);
-        Assert.Equal(255, palette.Panel.A);
+            Assert.Equal(255, palette.Surface.A);
+            Assert.Equal(255, palette.Panel.A);
+        });
+    }
+
+    /// <summary>
+    /// Themes have to be told apart. Two entries resolving to the same palette would leave the
+    /// dropdown offering a choice that does nothing.
+    /// </summary>
+    [Fact]
+    public void EveryThemeIsDistinct()
+    {
+        var palettes = Enum.GetValues<AppTheme>().Select(AppThemes.For).ToArray();
+
+        Assert.Equal(palettes.Length, palettes.Distinct().Count());
+    }
+
+    /// <summary>
+    /// Every theme stays dark enough to judge a photograph against. A light surface would be a
+    /// different product, and would arrive by way of someone nudging a colour rather than deciding.
+    /// </summary>
+    [Fact]
+    public void EveryThemeStaysDark()
+    {
+        Assert.All(Enum.GetValues<AppTheme>(), theme =>
+        {
+            var palette = AppThemes.For(theme);
+
+            foreach (var colour in new[] { palette.Surface, palette.Panel })
+            {
+                // Rec. 601 luma, which weights green the way the eye does.
+                var luma = (0.299 * colour.R) + (0.587 * colour.G) + (0.114 * colour.B);
+                Assert.True(luma < 80, $"{theme} has a surface at luma {luma:F0}, which is not dark.");
+            }
+        });
     }
 
     /// <summary>
@@ -96,6 +133,8 @@ public class ThemeTests
     {
         Assert.Equal(0, (int)AppTheme.Darkroom);
         Assert.Equal(1, (int)AppTheme.Graphite);
+        Assert.Equal(2, (int)AppTheme.Safelight);
+        Assert.Equal(3, (int)AppTheme.Verdigris);
     }
 
     /// <summary>

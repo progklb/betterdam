@@ -435,7 +435,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     public static IReadOnlyList<ThemeChoice> Themes { get; } =
     [
         new(AppTheme.Darkroom, "Darkroom", "Near-black, so nothing competes with the photograph."),
-        new(AppTheme.Graphite, "Graphite", "One dark grey throughout, with no panel lighter than another.")
+        new(AppTheme.Graphite, "Graphite", "One dark grey throughout, with no panel lighter than another."),
+        new(AppTheme.Safelight, "Safelight", "Deep red, after the lamp a darkroom is lit by."),
+        new(AppTheme.Verdigris, "Verdigris", "Dark teal, after the green that grows on weathered copper.")
     ];
 
     /// <summary>

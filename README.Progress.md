@@ -3292,3 +3292,100 @@ tab order    General · Cache · Catalog · Display · Keywords
   rather keep Cache and Catalog leading.
 - The batch editor and the media viewer's chrome were left alone; both already sit on their own
   overlays.
+
+---
+
+## Two more themes ✅
+
+**Safelight** — deep red-black, after the lamp a darkroom is lit by. Kept dim and only moderately
+saturated on purpose: a safelight is dim by design, and a brighter red sitting behind the grid would
+tint the judgement of every warm image in it.
+
+**Verdigris** — dark teal, taking its hue from the Ellipsus screenshot. Pitched darker than the
+application it borrows from, which paints a writing canvas where this one sits behind photographs
+and has to stay out of their contrast. Same hue family, different value.
+
+| | Surface | Panel |
+|---|---|---|
+| Darkroom | `#000000` | `#101010` |
+| Graphite | `#101010` | `#101010` |
+| **Safelight** | `#180505` | `#280909` |
+| **Verdigris** | `#0E2E31` | `#174145` |
+
+Both cost two colours each and no other change — the point of the two-token design. Nothing in the
+views, converters or overlays was touched.
+
+### Tests now driven off the enum
+
+`EveryThemeIsOpaque` was a `Theory` with a case per theme, which is exactly the kind of test that
+silently stops covering anything when a theme is added and nobody remembers it. It now iterates
+`Enum.GetValues<AppTheme>()`, and two more do the same: every theme must be distinct — an entry
+resolving to a palette another theme already uses would offer a choice that does nothing — and every
+theme must stay below Rec. 601 luma 80, so a light surface has to be an explicit decision rather
+than something that arrives by nudging a colour.
+
+### Verified in the GUI
+
+```text
+dropdown     four entries, names and descriptions correct
+Safelight    chrome, grid and preview all red-black; photographs still read
+Verdigris    recognisably the Ellipsus tone
+switching    both new themes repaint already-open windows
+persistence  theme survives a restart in both directions
+```
+
+Sampled values for these two do not match the table exactly, and should not: screen captures are
+tagged Display P3, so chromatic values shift under the profile conversion. Greys are unaffected —
+`R=G=B` survives the transform — which is why Darkroom and Graphite sampled byte-exact.
+
+### Worth knowing
+
+Fluent's accent blue is still used for selection, checkboxes and focus rings, and it now sits on a
+red or teal ground. It is not unpleasant, but it is the one colour in the application that does not
+belong to the theme. Making the accent a third token is possible — it means overriding Fluent's
+`SystemAccentColor` family — but it reaches buttons, sliders and focus rings, so it is a decision
+rather than a tweak.
+
+---
+
+## Investigation — the hand-drawn selection ring 🔍
+
+Asked for: whether Ellipsus's pencil-circle selection is doable. Investigated, not implemented.
+
+**It is doable, and not especially hard.** A prototype is in the scratchpad
+(`roughcircle/Program.cs`, rendered to `rough.png`) which draws the effect at real menu-item sizes.
+
+### How it works
+
+Sample points around an ellipse, push each off course by a seeded noise, smooth the result into
+cubic segments, and stroke it twice with different offsets and a slight overshoot past the closing
+point — the way a person circling something by hand never quite retraces or meets their own line.
+This is roughly what roughjs does. The prototype uses Skia, which is what Avalonia draws with, and
+`SKPath.CubicTo` maps one-for-one onto `StreamGeometry`'s `CubicBezierTo`, so it ports directly to a
+custom control overriding `Render`.
+
+### The two things that would go wrong
+
+**Stretching a fixed path distorts the stroke.** A single hand-drawn SVG scaled with `Stretch="Fill"`
+gets a fat stroke on the long axis and a thin one on the short. Generating the geometry at the
+control's real size avoids it — the prototype's four widths all hold the same stroke weight.
+
+**Unseeded noise shimmers.** Re-rolling the randomness on every repaint makes the ring crawl during
+resizes and scrolls. Seeding from something stable about the item fixes it; the prototype draws the
+same item three times to show it lands identically.
+
+Neither is expensive: two paths of 26 cubic segments, generated once and cached until the size
+changes. Roughness has a usable range — around 0.8–1.0 reads as hand-drawn, below that it looks like
+a plain ellipse and above it gets scribbly. It reads well on all four theme surfaces.
+
+### The real question is not technical
+
+Ellipsus circles a **fixed menu of short labels**, which is what an ellipse flatters. BetterDAM's
+sidebar is a folder tree with arbitrary-length names and nesting, and its other selection is a
+rectangular thumbnail tile. The prototype's 300px sample shows the problem: a very wide ellipse stops
+looking hand-drawn and starts looking like a stretched oval, because nobody draws a 300px ellipse
+that evenly. Around a grid tile it would fight the tile's own rectangle.
+
+So: cheap to build, and it would look genuinely good on a short fixed nav — which is not currently
+what that sidebar is. Worth pairing with a decision about what the sidebar wants to be, rather than
+adding it to what is there now.

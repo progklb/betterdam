@@ -19,5 +19,16 @@ public enum AppTheme
     /// A single dark grey throughout — the tone Darkroom reserves for the grid and the preview,
     /// used for the whole application so no panel sits lighter than its neighbour.
     /// </summary>
-    Graphite = 1
+    Graphite = 1,
+
+    /// <summary>
+    /// Deep red-black, after the safelight a darkroom is lit by — the one lamp that will not fog
+    /// the paper. Dark enough to keep judging by, and unmistakably red.
+    /// </summary>
+    Safelight = 2,
+
+    /// <summary>
+    /// Dark teal, after the green that grows on weathered copper.
+    /// </summary>
+    Verdigris = 3
 }

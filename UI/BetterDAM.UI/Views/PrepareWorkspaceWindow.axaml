@@ -4,8 +4,8 @@
         x:Class="BetterDAM.UI.Views.PrepareWorkspaceWindow"
         x:DataType="vm:PrepareWorkspaceViewModel"
         Title="Prepare Workspace"
-        Width="560" Height="480"
-        MinWidth="480" MinHeight="420"
+        Width="560" Height="600"
+        MinWidth="480" MinHeight="360"
         WindowStartupLocation="CenterOwner"
         Classes.handDrawn="{DynamicResource AppRingEnabled}">
 
@@ -49,6 +49,14 @@
       </StackPanel>
     </Border>
 
+    <!--
+      Scrolls rather than overflows. The content is not a fixed height: the video card appears only
+      when there is video, the warning only when developed RAWs are being discarded, and the progress
+      row only while running. With all of them at once the content is taller than the window, and a
+      bare StackPanel in a DockPanel does not shrink to fit — it simply draws past the footer, which
+      is what put the progress line on top of the warning card.
+    -->
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <StackPanel Spacing="12">
 
       <TextBlock Text="{Binding WorkspaceName}" FontSize="16" FontWeight="SemiBold" />
@@ -100,5 +108,6 @@
         </StackPanel>
       </Border>
     </StackPanel>
+    </ScrollViewer>
   </DockPanel>
 </Window>

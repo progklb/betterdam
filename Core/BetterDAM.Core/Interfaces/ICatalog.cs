@@ -26,7 +26,12 @@ public sealed record CatalogStatistics(int FileCount, int KeywordCount, long Siz
 /// What the catalog already knows about a file, used to decide whether it needs re-reading.
 /// Modified time is seconds since the epoch, matching how it is stored.
 /// </summary>
-public readonly record struct IndexedStamp(long SizeBytes, long ModifiedUtc);
+/// <param name="IndexerVersion">
+/// Which generation of the indexer wrote this row. Part of the staleness test because a file that
+/// has not changed can still need re-reading — when the indexer learns to extract something it did
+/// not extract before, every existing row is out of date even though every file is untouched.
+/// </param>
+public readonly record struct IndexedStamp(long SizeBytes, long ModifiedUtc, int IndexerVersion = 0);
 
 /// <summary>
 /// The local search catalog.

@@ -54,6 +54,9 @@ public sealed record SearchQuery
     /// </summary>
     public ImmutableArray<MediaFlag> Flags { get; init; } = [];
 
+    /// <summary>Filename fragments, matched anywhere in the name.</summary>
+    public ImmutableArray<string> FileNames { get; init; } = [];
+
     public ImmutableArray<string> Cameras { get; init; } = [];
 
     public ImmutableArray<string> Lenses { get; init; } = [];
@@ -73,7 +76,7 @@ public sealed record SearchQuery
 
     public bool IsEmpty =>
         FreeText.IsDefaultOrEmpty && Keywords.IsDefaultOrEmpty && Cameras.IsDefaultOrEmpty &&
-        Labels.IsDefaultOrEmpty && Flags.IsDefaultOrEmpty &&
+        Labels.IsDefaultOrEmpty && Flags.IsDefaultOrEmpty && FileNames.IsDefaultOrEmpty &&
         Lenses.IsDefaultOrEmpty && Kinds.IsDefaultOrEmpty && Rating is null && CaptureDate is null;
 }
 

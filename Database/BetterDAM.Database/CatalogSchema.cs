@@ -10,7 +10,7 @@ namespace BetterDAM.Database;
 /// </summary>
 internal static class CatalogSchema
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public static void Apply(SqliteConnection connection)
     {
@@ -36,6 +36,11 @@ internal static class CatalogSchema
             ApplyVersion2(connection);
         }
 
+        if (version < 3)
+        {
+            ApplyVersion3(connection);
+        }
+
         SetVersion(connection, CurrentVersion);
     }
 
@@ -52,6 +57,34 @@ internal static class CatalogSchema
         }
 
         Execute(connection, "CREATE INDEX IF NOT EXISTS IX_Media_Flag ON Media(Flag);");
+    }
+
+    /// <summary>
+    /// Records which generation of the indexer wrote each row, and puts the filename into the search
+    /// index.
+    ///
+    /// The version column is what makes a migration like the last one actually take effect. Adding
+    /// the cull flag gave every existing row a null flag, and nothing would ever have filled it in:
+    /// files had not changed, so the indexer had no reason to re-read them, and a search for
+    /// rejected photographs answered "none" on a workspace full of them. Existing rows default to 0
+    /// and so are all stale against the current indexer, which re-reads them once.
+    ///
+    /// FTS5 tables cannot gain a column, so the search index is dropped and rebuilt by that same
+    /// re-read rather than migrated.
+    /// </summary>
+    private static void ApplyVersion3(SqliteConnection connection)
+    {
+        if (!HasColumn(connection, "Media", "IndexerVersion"))
+        {
+            Execute(connection, "ALTER TABLE Media ADD COLUMN IndexerVersion INTEGER NOT NULL DEFAULT 0;");
+        }
+
+        Execute(connection, "DROP TABLE IF EXISTS MediaSearch;");
+        Execute(connection, """
+            CREATE VIRTUAL TABLE MediaSearch USING fts5(
+                FileName, Title, Description, Headline, Keywords, Creator
+            );
+            """);
     }
 
     private static bool HasColumn(SqliteConnection connection, string table, string column)
@@ -125,7 +158,7 @@ internal static class CatalogSchema
         // re-index is a delete-by-rowid rather than a scan.
         Execute(connection, """
             CREATE VIRTUAL TABLE IF NOT EXISTS MediaSearch USING fts5(
-                Title, Description, Headline, Keywords, Creator
+                FileName, Title, Description, Headline, Keywords, Creator
             );
             """);
     }

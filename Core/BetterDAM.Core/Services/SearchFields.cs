@@ -56,6 +56,7 @@ public static class SearchFields
         new("type", "t", "raw, jpg or video", "t:raw,video"),
         new("label", "lb", "Colour label", "lb:yellow"),
         new("flag", "f", "accepted, rejected or none", "f:accepted"),
+        new("filename", "fn", "Part of the file name", "fn:DSCF7676"),
         new("camera", "c", "Camera make or model", "c:Fujifilm"),
         new("lens", "l", "Lens name; quote it if it has spaces", "l:\"RF 100-500\""),
         new("date", "d", "Capture date, or a bare year", "d:>=2024-01-01")

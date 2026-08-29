@@ -4303,3 +4303,102 @@ Catalog schema is now version 2 — `Flag` added by migration, so an existing ca
 without a reindex. Confirmed applied to the live catalog on launch.
 
 - `dotnet test` — **647/647 passing**.
+
+---
+
+## Fix — flags found nothing, and filenames were not searchable 🐞
+
+Reported: `flag:rejected` returned nothing although DSCF7676.RAF is rejected, and the inspector
+showed the flag. And separately, filenames could not be searched at all.
+
+### The flag search was right and the catalog was stale
+
+The two halves of the report were the diagnosis. The inspector reads the file; search reads the
+catalog. So the reading was correct and the index was not:
+
+```text
+DSCF7676.xmp    XMP:Rating = -1      a genuine rejection
+catalog row     Rating 0, Flag NULL  the flag never populated, and the old clamping bug baked in
+whole catalog   Flag NULL × 3388     nothing had been reindexed since the migration
+```
+
+Adding the `Flag` column was not enough, and the note written with that migration — "the flag reads
+as null until the file is next indexed" — was quietly wrong. Files are only re-read when their size
+or timestamp changes, and none of them had changed. Nothing would *ever* have filled the column in.
+
+### Staleness now has a second cause
+
+`IndexedStamp` carries an `IndexerVersion`, and a row is stale when it was written by an older
+indexer as well as when the file has changed. Version 1 covers the cull flag, the rating fix and the
+filename index — none of which any file's own timestamp reflects.
+
+This is the general fix rather than a one-off reindex: the next migration that changes what a row
+*means* only has to bump the number. Existing rows default to 0, so a catalog written before the
+column existed is stale by construction, which is exactly right.
+
+It also swept up a second, quieter bug. Rows indexed before the reader was fixed had stored a
+rejected file's rating as **0** — the old clamp inventing a nought-star rating. Re-reading corrected
+those too.
+
+### Filenames
+
+`FileName` is now in the full-text index, so typing `DSCF7676` finds the file with no syntax at all —
+which was the actual complaint. There is also a `filename:` / `fn:` field for when the name is known
+exactly. FTS5 tables cannot gain a column, so the index is dropped and rebuilt by the same re-read.
+
+### Verified against the live catalog
+
+```text
+before   Flag NULL × 3388,  f:rejected → nothing
+after    Flag = Rejected × 27
+         f:rejected  → 27 matches, exactly the catalog's own count
+         DSCF7676    → 1 match, by free text alone
+         DSCF7676.RAF row now Flag = Rejected, IndexerVersion = 1
+```
+
+The count was 17 partway through the reindex and 27 once it finished — worth noting, because reading
+it too early would have looked like a second bug.
+
+Also fixed on the way past: `StampRow.IndexerVersion` had to be a `long`. SQLite hands INTEGER back
+as Int64 and Dapper will not materialise that into an `int` — it fails at run time, not compile time.
+The same trap as the keyword-count query earlier in this project.
+
+- `dotnet test` — **656/656 passing** (9 new).
+
+---
+
+## Fix — the Prepare Workspace window 🐞
+
+Two faults, reported together.
+
+### The progress line drew on top of the warning
+
+The window is a `DockPanel`: a footer docked to the bottom, and a `StackPanel` filling the rest. That
+content is not a fixed height — the video card appears only when there is video, the warning only
+when developed RAWs are being discarded, and the progress row only while running. With all of them
+at once it is taller than the window, and a bare `StackPanel` in a `DockPanel` does not shrink to
+fit. It simply drew past the footer.
+
+Now wrapped in a `ScrollViewer`, so it scrolls instead, and the window opens taller so the usual case
+never needs to. The scroll is the safety net rather than the everyday behaviour.
+
+### Closing the window left the work running
+
+Only the Stop button cancelled. Closing with the window's own close button left the preparation
+running with nothing on screen reporting it and no way to reach it — several thousand RAW develops
+continuing invisibly, which is exactly the unexplained slowness that was noticed.
+
+`Closing` now cancels. Stopping rather than refusing to close: preparation writes only to the cache
+and keeps what it has finished, so there is nothing to lose and nothing to confirm.
+
+### Verified, after a first attempt that proved nothing
+
+Counting cache files before and after closing was the obvious check and is worthless: the cache is
+size-limited, so it trims while it fills, and the count went *down* by 517 in one interval. The log
+is unambiguous where the file count was not:
+
+```text
+Preparation of …20260523 Kalahari Trip 7D/ was cancelled after 29 of 1837
+```
+
+CPU agrees — the instance with the fix settled to 7–16% after the window closed.

@@ -28,6 +28,7 @@ public static class SearchQueryParser
         var cameras = ImmutableArray.CreateBuilder<string>();
         var labels = ImmutableArray.CreateBuilder<string>();
         var flags = ImmutableArray.CreateBuilder<MediaFlag>();
+        var fileNames = ImmutableArray.CreateBuilder<string>();
         var lenses = ImmutableArray.CreateBuilder<string>();
         var unrecognised = ImmutableArray.CreateBuilder<string>();
 
@@ -108,6 +109,10 @@ public static class SearchQueryParser
 
                     break;
 
+                case "filename":
+                    fileNames.Add(value);
+                    break;
+
                 case "camera":
                     cameras.Add(value);
                     break;
@@ -174,6 +179,7 @@ public static class SearchQueryParser
             Keywords = keywords.ToImmutable(),
             Labels = labels.ToImmutable(),
             Flags = flags.ToImmutable(),
+            FileNames = fileNames.ToImmutable(),
             Cameras = cameras.ToImmutable(),
             Lenses = lenses.ToImmutable(),
             Kinds = kinds.ToImmutable(),

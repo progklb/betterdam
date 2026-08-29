@@ -1000,3 +1000,74 @@ public class KindAndKeywordSqlTests
         Assert.Contains(" OR ", sql);
     }
 }
+
+/// <summary>Filename searching, which was missing entirely.</summary>
+public class FileNameSearchTests
+{
+    [Fact]
+    public void A_filename_field_matches_part_of_the_name()
+    {
+        var (sql, parameters) = SqliteCatalog.BuildSearch(
+            SearchQueryParser.Parse("fn:DSCF7676"), null, 100);
+
+        Assert.Contains("m.FileName LIKE @fileName0", sql);
+        Assert.Contains("fileName0", parameters.ParameterNames);
+
+        // Wrapped in wildcards rather than anchored: people remember a fragment, not the whole name.
+        Assert.DoesNotContain("DSCF7676", sql);
+    }
+
+    [Fact]
+    public void The_short_form_is_fn()
+    {
+        Assert.Equal(["DSCF7676"], SearchQueryParser.Parse("fn:DSCF7676").FileNames.ToArray());
+        Assert.Equal(["DSCF7676"], SearchQueryParser.Parse("filename:DSCF7676").FileNames.ToArray());
+    }
+
+    /// <summary>
+    /// Bare words go to the full-text index, which now covers the filename — so typing a filename
+    /// into the box finds the file without knowing any syntax at all. That was the actual complaint.
+    /// </summary>
+    [Fact]
+    public void Free_text_reaches_the_search_index()
+    {
+        var (sql, _) = SqliteCatalog.BuildSearch(SearchQueryParser.Parse("DSCF7676"), null, 100);
+
+        Assert.Contains("MediaSearch MATCH", sql);
+    }
+}
+
+/// <summary>The cull flag in SQL, including the one value that is not a simple equality.</summary>
+public class FlagSearchTests
+{
+    [Fact]
+    public void A_flag_is_matched_by_value()
+    {
+        var (sql, parameters) = SqliteCatalog.BuildSearch(
+            SearchQueryParser.Parse("f:rejected"), null, 100);
+
+        Assert.Contains("m.Flag = @flag0", sql);
+        Assert.Contains("flag0", parameters.ParameterNames);
+    }
+
+    /// <summary>
+    /// "None" has to include rows with no flag at all as well as rows explicitly cleared. A plain
+    /// equality would miss every file nobody has judged yet, which is the whole point of asking.
+    /// </summary>
+    [Fact]
+    public void Unflagged_includes_rows_that_were_never_flagged()
+    {
+        var (sql, _) = SqliteCatalog.BuildSearch(SearchQueryParser.Parse("f:none"), null, 100);
+
+        Assert.Contains("m.Flag IS NULL", sql);
+    }
+
+    [Fact]
+    public void Several_flags_are_ored_together()
+    {
+        var (sql, _) = SqliteCatalog.BuildSearch(
+            SearchQueryParser.Parse("f:accepted,rejected"), null, 100);
+
+        Assert.Contains(" OR ", sql);
+    }
+}

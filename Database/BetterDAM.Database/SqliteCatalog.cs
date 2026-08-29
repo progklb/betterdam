@@ -130,10 +130,10 @@ public sealed class SqliteCatalog : ICatalog
             """
             INSERT INTO Media (Path, FileName, MediaType, SizeBytes, ModifiedUtc, CreatedUtc,
                                Title, Description, Headline, Label, Creator, Copyright, Rating, Flag,
-                               Camera, Lens, CaptureDate, HasSidecar, IndexedUtc)
+                               Camera, Lens, CaptureDate, HasSidecar, IndexedUtc, IndexerVersion)
             VALUES (@Path, @FileName, @MediaType, @SizeBytes, @ModifiedUtc, @CreatedUtc,
                     @Title, @Description, @Headline, @Label, @Creator, @Copyright, @Rating, @Flag,
-                    @Camera, @Lens, @CaptureDate, @HasSidecar, @IndexedUtc)
+                    @Camera, @Lens, @CaptureDate, @HasSidecar, @IndexedUtc, @IndexerVersion)
             ON CONFLICT(Path) DO UPDATE SET
                 FileName = excluded.FileName, MediaType = excluded.MediaType,
                 SizeBytes = excluded.SizeBytes, ModifiedUtc = excluded.ModifiedUtc,
@@ -144,7 +144,8 @@ public sealed class SqliteCatalog : ICatalog
                 Flag = excluded.Flag,
                 Camera = excluded.Camera, Lens = excluded.Lens,
                 CaptureDate = excluded.CaptureDate, HasSidecar = excluded.HasSidecar,
-                IndexedUtc = excluded.IndexedUtc
+                IndexedUtc = excluded.IndexedUtc,
+                IndexerVersion = excluded.IndexerVersion
             RETURNING Id;
             """,
             new
@@ -167,7 +168,8 @@ public sealed class SqliteCatalog : ICatalog
                 entry.Camera.Lens,
                 CaptureDate = entry.CaptureDate?.ToUnixTimeSeconds(),
                 HasSidecar = entry.HasSidecar ? 1 : 0,
-                IndexedUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                IndexedUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                IndexerVersion = CatalogIndexer.CurrentVersion
             },
             transaction).ConfigureAwait(false);
 
@@ -196,12 +198,13 @@ public sealed class SqliteCatalog : ICatalog
 
         await connection.ExecuteAsync(
             """
-            INSERT INTO MediaSearch (rowid, Title, Description, Headline, Keywords, Creator)
-            VALUES (@id, @Title, @Description, @Headline, @Keywords, @Creator);
+            INSERT INTO MediaSearch (rowid, FileName, Title, Description, Headline, Keywords, Creator)
+            VALUES (@id, @FileName, @Title, @Description, @Headline, @Keywords, @Creator);
             """,
             new
             {
                 id,
+                file.FileName,
                 metadata.Title,
                 metadata.Description,
                 metadata.Headline,
@@ -223,11 +226,11 @@ public sealed class SqliteCatalog : ICatalog
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var rows = await connection.QueryAsync<StampRow>(new CommandDefinition(
-            "SELECT Path, SizeBytes, ModifiedUtc FROM Media WHERE Path IN @paths",
+            "SELECT Path, SizeBytes, ModifiedUtc, IndexerVersion FROM Media WHERE Path IN @paths",
             new { paths },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        return rows.ToDictionary(r => r.Path, r => new IndexedStamp(r.SizeBytes, r.ModifiedUtc), StringComparer.Ordinal);
+        return rows.ToDictionary(r => r.Path, r => new IndexedStamp(r.SizeBytes, r.ModifiedUtc, (int)r.IndexerVersion), StringComparer.Ordinal);
     }
 
     public async Task<IReadOnlyList<SearchHit>> SearchAsync(
@@ -440,6 +443,12 @@ public sealed class SqliteCatalog : ICatalog
             sql.Append($"\n  AND ({string.Join(" OR ", clauses)})");
         }
 
+        for (var i = 0; i < query.FileNames.Length; i++)
+        {
+            sql.Append($"\n  AND m.FileName LIKE @fileName{i}");
+            parameters.Add($"fileName{i}", $"%{query.FileNames[i]}%");
+        }
+
         for (var i = 0; i < query.Cameras.Length; i++)
         {
             sql.Append($"\n  AND m.Camera LIKE @camera{i}");
@@ -569,5 +578,10 @@ public sealed class SqliteCatalog : ICatalog
 
     // long, not int: SQLite hands back every integer column as Int64, and a mismatched constructor
     // makes Dapper fail to materialise the row at all.
-    private sealed record StampRow(string Path, long SizeBytes, long ModifiedUtc);
+    /// <summary>
+    /// IndexerVersion is a long because SQLite hands INTEGER back as Int64, and Dapper will not
+    /// materialise it into an int — it fails at run time rather than compile time, so the narrowing
+    /// happens here where it is visible.
+    /// </summary>
+    private sealed record StampRow(string Path, long SizeBytes, long ModifiedUtc, long IndexerVersion);
 }

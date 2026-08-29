@@ -103,10 +103,21 @@ public sealed class CatalogIndexer : ICatalogIndexer
     /// timestamp. Content hashing would be exact, but reading every byte of every file would cost
     /// far more than the metadata read it is trying to avoid.
     /// </summary>
+    /// <summary>
+    /// What this generation of the indexer extracts.
+    ///
+    /// Bumped whenever the meaning of an indexed row changes, which makes every existing row stale
+    /// and re-read. Version 1 added the cull flag, stopped storing a rejected file's rating as zero,
+    /// and put the filename in the search index — none of which any file's own timestamp reflects,
+    /// so without this a catalog would have kept answering with what an older indexer understood.
+    /// </summary>
+    public const int CurrentVersion = 1;
+
     internal static bool NeedsIndexing(MediaFile file, IReadOnlyDictionary<string, IndexedStamp> known)
         => !known.TryGetValue(file.FullPath, out var stamp)
            || stamp.SizeBytes != file.SizeBytes
-           || stamp.ModifiedUtc != file.ModifiedUtc.ToUnixTimeSeconds();
+           || stamp.ModifiedUtc != file.ModifiedUtc.ToUnixTimeSeconds()
+           || stamp.IndexerVersion != CurrentVersion;
 
     /// <summary>
     /// EXIF dates use colons between date parts — "2024:06:01 09:15:22" — which no standard parser

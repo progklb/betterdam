@@ -54,7 +54,7 @@ public class IncrementalIndexingTests
     [Fact]
     public void An_unchanged_file_does_not()
     {
-        var known = new Dictionary<string, IndexedStamp> { ["/a.jpg"] = new(100, 1_700_000_000) };
+        var known = new Dictionary<string, IndexedStamp> { ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion) };
 
         Assert.False(CatalogIndexer.NeedsIndexing(File("/a.jpg"), known));
     }
@@ -62,7 +62,7 @@ public class IncrementalIndexingTests
     [Fact]
     public void A_file_whose_size_changed_needs_reindexing()
     {
-        var known = new Dictionary<string, IndexedStamp> { ["/a.jpg"] = new(100, 1_700_000_000) };
+        var known = new Dictionary<string, IndexedStamp> { ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion) };
 
         Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg", size: 101), known));
     }
@@ -70,7 +70,7 @@ public class IncrementalIndexingTests
     [Fact]
     public void A_file_whose_timestamp_changed_needs_reindexing()
     {
-        var known = new Dictionary<string, IndexedStamp> { ["/a.jpg"] = new(100, 1_700_000_000) };
+        var known = new Dictionary<string, IndexedStamp> { ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion) };
 
         // Same size, edited in place — the timestamp is the only signal.
         Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg", modified: 1_700_000_001), known));
@@ -86,7 +86,7 @@ public class IncrementalIndexingTests
 
         var stamps = await catalog.GetIndexedStampsAsync(["/a.jpg", "/never-seen.jpg"]);
 
-        Assert.Equal(new IndexedStamp(42, 123), stamps["/a.jpg"]);
+        Assert.Equal(new IndexedStamp(42, 123, CatalogIndexer.CurrentVersion), stamps["/a.jpg"]);
         Assert.False(stamps.ContainsKey("/never-seen.jpg"));
     }
 
@@ -273,5 +273,59 @@ public class PruneIntegrityTests
         // ON DELETE CASCADE, which SQLite ignores unless foreign_keys is on for the connection
         // doing the delete — off by default, and a per-connection setting.
         Assert.Equal(1, await catalog.CountKeywordLinksAsync());
+    }
+}
+
+/// <summary>
+/// Staleness has a second cause besides the file changing, and it is the one that bit: a row written
+/// by an older indexer is out of date even though the file it describes is untouched.
+/// </summary>
+public class IndexerVersionTests
+{
+    private static MediaFile File(string path, long size = 100, long modified = 1_700_000_000) => new()
+    {
+        FullPath = path,
+        FileName = System.IO.Path.GetFileName(path),
+        MediaType = MediaType.Image,
+        SizeBytes = size,
+        ModifiedUtc = DateTimeOffset.FromUnixTimeSeconds(modified),
+        CreatedUtc = DateTimeOffset.FromUnixTimeSeconds(modified)
+    };
+
+    /// <summary>
+    /// The bug this exists to prevent: adding the cull flag left every existing row with a null
+    /// flag, and because no file had changed, nothing ever re-read them. A search for rejected
+    /// photographs answered "none" on a workspace full of them.
+    /// </summary>
+    [Fact]
+    public void A_row_from_an_older_indexer_is_stale_even_though_the_file_is_untouched()
+    {
+        var known = new Dictionary<string, IndexedStamp>
+        {
+            ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion - 1)
+        };
+
+        Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg"), known));
+    }
+
+    [Fact]
+    public void A_row_from_this_indexer_is_current()
+    {
+        var known = new Dictionary<string, IndexedStamp>
+        {
+            ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion)
+        };
+
+        Assert.False(CatalogIndexer.NeedsIndexing(File("/a.jpg"), known));
+    }
+
+    /// <summary>
+    /// A catalog written before the column existed defaults to 0, which must not read as current —
+    /// that default is precisely the "indexed by something older" case.
+    /// </summary>
+    [Fact]
+    public void The_default_version_is_never_current()
+    {
+        Assert.NotEqual(0, CatalogIndexer.CurrentVersion);
     }
 }

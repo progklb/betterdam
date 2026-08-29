@@ -11,7 +11,8 @@
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding WindowTitle}"
         Width="1400" Height="900"
-        MinWidth="900" MinHeight="600">
+        MinWidth="900" MinHeight="600"
+        Classes.handDrawn="{DynamicResource AppRingEnabled}">
 
   <Window.KeyBindings>
     <KeyBinding Gesture="{x:Static svc:MenuConventions.ToggleFolderPanel}"
@@ -333,6 +334,7 @@
         </Panel>
 
         <ListBox Background="Transparent"
+                 Classes.handDrawn="{DynamicResource AppRingEnabled}"
                  ItemsSource="{Binding MediaItems}"
                  SelectedItem="{Binding SelectedItem}"
                  SelectionMode="Multiple"
@@ -348,6 +350,12 @@
           </ListBox.ItemsPanel>
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:MediaItemViewModel">
+             <!--
+               The mark is drawn over the tile rather than behind it: the thumbnail fills its own
+               border, so a pencil box underneath would be hidden by the picture it is meant to be
+               drawn around. Hover marks the filename, which is where the bottom of the tile is.
+             -->
+             <Panel>
               <StackPanel Width="{Binding $parent[ListBox].((vm:MainWindowViewModel)DataContext).ThumbnailSize}"
                           Margin="4" Spacing="4"
                           DoubleTapped="OnThumbnailDoubleTapped">
@@ -411,6 +419,11 @@
                 <TextBlock Text="{Binding FileName}" FontSize="11"
                            TextTrimming="CharacterEllipsis" TextAlignment="Center" />
               </StackPanel>
+
+              <controls:RoughMark Kind="Box" Margin="1"
+                                  IsSelected="{Binding $parent[ListBoxItem].IsSelected}"
+                                  IsHovered="{Binding $parent[ListBoxItem].IsPointerOver}" />
+             </Panel>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>

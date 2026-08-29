@@ -72,6 +72,47 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
 
+    <!-- Same again for the thumbnail grid: the pencil box replaces the filled tile entirely. -->
+    <Style Selector="ListBox.handDrawn ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!--
+      The inspector's tabs keep their ordinary hover — it is already unobtrusive, and only the
+      chosen tab was asked to change. So just the selected-tab indicator goes, and a drawn underline
+      takes its place.
+    -->
+    <Style Selector="TabControl.handDrawn TabItem:selected /template/ Border#PART_SelectedPipe">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+
+    <!--
+      The tick. Fluent draws its checkmark as a Path in a Viewbox, so the glyph can be swapped for a
+      drawn one without replacing the template — the geometry is authored at a fixed size and scaled
+      by the Viewbox, which is safe here in a way it would not be for a mark that has to fit an
+      arbitrary label: a checkbox is always the same shape.
+
+      Gated on an ancestor window's class rather than each checkbox's own, because there are a dozen
+      of them across the application and none should have to know about the experiment.
+    -->
+    <Style Selector="Window.handDrawn CheckBox:checked /template/ Path#CheckGlyph">
+      <Setter Property="Data" Value="{DynamicResource AppTickGeometry}" />
+      <Setter Property="Fill" Value="{x:Null}" />
+      <Setter Property="Stroke" Value="#F2FFFFFF" />
+      <!--
+        In the units the tick is authored in, which the Viewbox then scales down — so this lands
+        near a pixel and a bit on screen, a shade lighter than the rings rather than heavier.
+      -->
+      <Setter Property="StrokeThickness" Value="1.7" />
+      <Setter Property="StrokeLineCap" Value="Round" />
+      <Setter Property="StrokeJoin" Value="Round" />
+    </Style>
+
+    <Style Selector="controls|Loupe">
+      <Setter Property="IsHandDrawn" Value="{DynamicResource AppRingEnabled}" />
+      <Setter Property="Roughness" Value="{DynamicResource AppRingRoughness}" />
+    </Style>
+
     <Style Selector="controls|RoughMark">
       <Setter Property="IsVisible" Value="{DynamicResource AppRingEnabled}" />
       <Setter Property="Roughness" Value="{DynamicResource AppRingRoughness}" />

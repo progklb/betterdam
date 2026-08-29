@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:BetterDAM.UI.ViewModels"
              xmlns:core="using:BetterDAM.Core.Models"
+             xmlns:controls="using:BetterDAM.UI.Controls"
              mc:Ignorable="d"
              x:Class="BetterDAM.UI.Views.MetadataInspectorView"
              x:DataType="vm:MetadataInspectorViewModel">
@@ -30,6 +31,21 @@
       <Setter Property="FontSize" Value="14" />
       <Setter Property="Padding" Value="10,4" />
       <Setter Property="MinHeight" Value="0" />
+
+      <!--
+        One template for every tab rather than four hand-written headers. HoverKind is None: the
+        tabs keep their ordinary hover highlight, and only the chosen one is drawn. The bottom
+        margin is what the underline is drawn in, so it does not cross the descenders of the label.
+      -->
+      <Setter Property="HeaderTemplate">
+        <DataTemplate>
+          <Panel>
+            <controls:RoughMark Kind="Underline" HoverKind="None"
+                                IsSelected="{Binding $parent[TabItem].IsSelected}" />
+            <TextBlock Text="{Binding}" Margin="0,0,0,4" />
+          </Panel>
+        </DataTemplate>
+      </Setter>
     </Style>
     <!-- A field is hidden entirely when it has no value, so no empty row is left behind. -->
     <Style Selector="StackPanel.field">
@@ -143,7 +159,8 @@
                      IsVisible="{Binding IsWriting}" />
       </StackPanel>
 
-      <TabControl Margin="4,6,4,4" SelectedIndex="{Binding SelectedTabIndex}">
+      <TabControl Margin="4,6,4,4" SelectedIndex="{Binding SelectedTabIndex}"
+                  Classes.handDrawn="{DynamicResource AppRingEnabled}">
 
         <!-- ============ General (editable) ============ -->
         <TabItem Header="General">

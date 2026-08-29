@@ -3731,3 +3731,234 @@ child would underline every folder above it. It does not: hovering a child highl
 Verified in the running application before the binding was written rather than after it misbehaved.
 
 - `dotnet test` — **594/594 passing**.
+
+---
+
+## The pencil reaches the grid and the inspector ✅
+
+Same experiment, same switch, two more places. Nothing new in Settings — the one checkbox now
+governs all three.
+
+### Thumbnails — a box, not a ring
+
+An ellipse round a tall tile cuts across the corners of the photograph, and a tile is already a
+rectangle: the pencil should agree with it rather than argue. So the selected tile gets a drawn
+**box**, and the hovered one an underline beneath its filename.
+
+The box is the ring's own maths with one number changed — a superellipse rather than an ellipse,
+exponent 2/4.5 instead of 2/2. Corners square off, edges stay very slightly convex so the line never
+looks ruled, and every other part (two passes, the draw-on, the seeded wobble, the cache) is shared
+untouched.
+
+Two things had to differ, both because a straight edge is less forgiving than a curve:
+
+- **Wobble in points, clamped, not proportional.** The ring's amplitude scales with its radius, which
+  is right for a small label and absurd on a 230px tile — the pencil would wander across the picture.
+- **Forty samples rather than twenty-six.** The parameter bunches at a superellipse's corners, and
+  the ring's sampling left them visibly faceted.
+
+It is drawn *over* the tile, not behind: the thumbnail fills its own border, so a box underneath
+would be hidden by the very picture it is meant to enclose.
+
+### Inspector tabs — underline on the chosen one
+
+Hover keeps its ordinary highlight, exactly as asked; only the selected tab changes. Fluent's
+straight indicator is hidden and a drawn underline takes its place. `HoverKind="None"` is what says
+"leave hover alone" — the same control, told to do less.
+
+One `HeaderTemplate` on the shared `TabItem` style rather than four hand-written headers, so General,
+Camera, Video and XMP all get it and a fifth tab would too.
+
+### Part names, again read rather than guessed
+
+```text
+ListBoxItem  → ContentPresenter#PART_ContentPresenter   the tile fill
+TabItem      → Border#PART_SelectedPipe                 the straight indicator
+```
+
+Both suppressed by the same class mechanism as the tree — `ListBox.handDrawn`,
+`TabControl.handDrawn` — because a style that is removed does not give back what it overrode, which
+this session has now established twice.
+
+### Verified
+
+Round-tripped in the running application rather than switched on and admired:
+
+```text
+on    tile drawn in a box, hovered tile underlined, General underlined by hand
+off   filled tile back, hover fill back, straight tab indicator back
+```
+
+- `dotnet test` — **594/594 passing**.
+
+---
+
+## Settings tabs, drawn ticks, and a drawn loupe ✅
+
+### The tabs I missed
+
+Settings had the same `TabControl` as the inspector and did not get the same treatment. It does now,
+by the same one-`HeaderTemplate` route — General, Cache, Catalog, Display and Keywords all drawn,
+hover untouched.
+
+### Ticks
+
+Fluent draws its checkmark as a `Path` in a `Viewbox`, which means the glyph can be swapped for a
+drawn one without replacing the control template — the geometry is authored once at a fixed size and
+the Viewbox scales it. That is safe here in a way it would not be for a mark that has to fit an
+arbitrary label: a checkbox is always the same shape, so the one thing a stretched path gets wrong —
+a fat stroke on one axis and a thin one on the other — cannot happen.
+
+Gated on an ancestor **window's** class rather than each checkbox's own, since there are a dozen
+across the application and none should have to know the experiment exists. The class went on
+MainWindow, SettingsWindow, PrepareWorkspaceWindow and SyncWindow, which between them contain every
+checkbox in the application, including those inside the batch editor and the keyword library.
+
+Only the tick is drawn; the box around it stays filled. Drawing the box too would mean injecting a
+control into the template, which styles cannot do — and a drawn box at 14px would be mostly noise.
+
+### The loupe
+
+The frame is now drawn rather than ruled, using the same box geometry as a thumbnail.
+
+Its colour deliberately does **not** follow the theme, unlike every other pencil in the application.
+The loupe is the one piece of chrome that sits *on top of a photograph*, and a themed line has no
+guaranteed contrast against an arbitrary image — a dark teal frame would disappear into a dark teal
+photograph. The shape follows the setting; the colour cannot afford to.
+
+### One implementation of the pencil
+
+`RoughGeometry` was extracted so the loupe and `RoughMark` share it. The loupe draws in its own
+`Render` rather than hosting a control, so without this there would have been two copies of the
+wobble, and they would have drifted apart the first time either was tuned.
+
+### Verified
+
+Round-tripped again, because the tick sets `Data` on a template part and a setter that does not
+revert would leave the glyph wrong — or missing — forever:
+
+```text
+on    drawn tick, drawn tab underline, drawn loupe frame
+off   stock Fluent tick, straight tab indicator, ruled loupe frame
+```
+
+- `dotnet test` — **594/594 passing**.
+
+---
+
+## Fix — the loupe's border is a border again 🐞
+
+Reported: the drawn frame was a rounded square sitting inside a perfectly square window, which read
+as a shape floating in a box rather than as the window's own edge.
+
+The cause was reusing the thumbnail's geometry. A tile's box is a **superellipse** — one closed loop,
+smoothed, with deliberately rounded corners. That is right for a tile, whose own border is rounded,
+and wrong for the loupe, whose window has four square corners for the line to disagree with.
+
+### Four strokes, not one loop
+
+A single smoothed loop cannot have sharp corners: the spline has no way to know a corner was meant
+to be one, so it rounds it. `RoughGeometry.BorderEdges` returns **one stroke per side** instead.
+Separate strokes keep the corners square, and letting each run a little past its corner gives the
+crossed ends a box drawn by hand actually has.
+
+The wobble is perpendicular to each edge and tapers to nothing at both ends, so the sides bow gently
+while the corners still meet where they should. Amplitude is modest and in points: this line is
+meant to read as the edge of the window it is drawn on, so it may wander a little without ever
+losing the edge.
+
+The inset grew from 1px to 6px, since the wobble and the corner overshoot both have to stay inside
+the window or the border is clipped by the very edge it is drawn against.
+
+The thumbnail box is unchanged — it was never the problem, and a rounded box is right for a tile.
+
+- `dotnet test` — **594/594 passing**.
+
+---
+
+## Fix — a selection no longer redraws when the pointer crosses it 🐞
+
+Reported: hovering a thumbnail or folder that was *already selected* rubbed its mark out and drew it
+again. Distracting, and wrong — where the pointer happens to be is not information about what is
+selected.
+
+The cause was in the handler rather than the drawing. It watched `IsSelected` and `IsHovered` and
+redrew on any change of either, but the mark shown is decided by both together and the selected mark
+wins. Hovering a selected row therefore changed an input without changing the output, and the redraw
+was pure noise. The mark is now tracked, and a draw only starts when it actually differs from what
+is on screen.
+
+The guard had to be careful not to overcorrect: selecting something that was merely hovered swaps an
+underline for a ring, and that genuinely must draw. Tabs are a third case — they ignore hover
+entirely, so nothing should happen when the pointer crosses one.
+
+### Tests that fail without the fix
+
+Five, driven with `Animates` off so that a redraw snaps `Progress` to 1 and "did it redraw" becomes
+observable without a dispatcher. Confirmed by removing the guard and watching them go red rather
+than by assuming they would:
+
+```text
+guard removed   3 failed, 2 passed
+guard restored  5 passed
+```
+
+The two that keep passing are the ones asserting a real change still draws, which is exactly the
+overcorrection they exist to catch.
+
+- `dotnet test` — **599/599 passing**.
+
+---
+
+## The ticks are lighter and actually drawn ✅
+
+Reported: the ticks felt heavier than the other pencil marks, and too clean to read as drawn at all.
+
+Both true, and the second was the more interesting fault. The tick was a hand-authored path — two
+tidy cubics — so it was the one mark in the application that was not produced by the same wobble as
+everything else. It could not look hand-drawn because it was not drawn; it was described.
+
+It is now generated by `RoughGeometry.Tick`, which means it wanders like the rest **and follows the
+roughness slider with them**. Two strokes rather than one, for the same reason the loupe's border is
+four: a single smoothed run rounds its own elbow, and a tick with a rounded elbow is a swoosh. Drawn
+separately and each passing the join, they cross the way two strokes of a pen do.
+
+### The weight, measured rather than guessed
+
+Fluent wraps its check glyph in a Viewbox, so the number in the style is not the number on screen.
+The geometry is authored in a 24-unit square and scaled to roughly two thirds before it is drawn:
+
+```text
+was   2.6 units × ~0.69  ≈ 1.8px   heavier than the 1.5px rings
+now   1.7 units × ~0.66  ≈ 1.1px   a shade lighter, as it should be
+```
+
+That same scaling is why the first attempt at roughness failed. The fractions the enclosing marks
+use put the wander at about a third of a pixel here — which is to say perfectly straight. The tick's
+wobble is a much larger fraction of its own size, and deliberately: it is a couple of centimetres of
+line, not a lap of a tile.
+
+The elbow overshoot went through one round of tuning too. Enough to cross visibly, not so much that
+the down-stroke grows a spur.
+
+Every checkbox draws the same tick, from a fixed seed. They are read as a set, and a column of them
+each wobbling differently would look like a fault rather than a hand.
+
+- `dotnet test` — **599/599 passing**.
+
+### Follow-up — the spur under the elbow
+
+Reported: a bit hanging off the bottom of the tick.
+
+It was the crossing, and the diagnosis was the wrong stroke. Both strokes ran past the elbow, but
+the conspicuous one was the up-stroke's *backward* extension: extended backwards, a stroke that
+travels up and to the right points down and to the left, and hangs below the join.
+
+Both now stop exactly on the elbow. They stay two separate strokes, so the elbow is still a corner
+rather than a rounded swoosh, and they still overlap enough there to thicken slightly like pen
+pressure. The only overshoot left is at the tip, where it reads as the pen being lifted late rather
+than as something dangling.
+
+A crossing is right for a mark the size of a folder ring and wrong for one twelve pixels across.
+
+- `dotnet test` — **599/599 passing**.

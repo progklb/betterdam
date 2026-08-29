@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Styling;
 using BetterDAM.Core.Models;
+using BetterDAM.UI.Controls;
 
 namespace BetterDAM.UI.Services;
 
@@ -160,7 +161,24 @@ public static class AppThemes
         application.Resources[RingRoughnessKey] = settings.ClampedRoughness;
         application.Resources[RingAnimatesKey] = settings.HandDrawnAnimates;
         application.Resources[RingInkKey] = new SolidColorBrush(InkFor(accent));
+
+        // Generated rather than authored as a fixed path, so the tick wanders by the same amount as
+        // every other pencil in the application and follows the roughness slider with them. A
+        // hand-written squiggle would have been one more thing to keep in step by eye.
+        application.Resources[TickGeometryKey] =
+            RoughGeometry.Tick(TickSize, TickSeed, settings.ClampedRoughness);
     }
+
+    public const string TickGeometryKey = "AppTickGeometry";
+
+    /// <summary>The square the tick is authored in; Fluent's Viewbox scales it to the checkbox.</summary>
+    private const double TickSize = 24;
+
+    /// <summary>
+    /// Fixed, so every checkbox in the application wears the same tick. They are read as a set —
+    /// a column of them each wobbling differently would look like a fault rather than a hand.
+    /// </summary>
+    private const int TickSeed = 8731;
 
     /// <summary>
     /// Sets the accent, which is what actually colours a selection.

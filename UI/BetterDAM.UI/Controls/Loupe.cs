@@ -36,6 +36,25 @@ public sealed class Loupe : Control
     public static readonly StyledProperty<string?> CaptionProperty =
         AvaloniaProperty.Register<Loupe, string?>(nameof(Caption));
 
+    /// <summary>Set from the hand-drawn selection setting, like every other pencil in the app.</summary>
+    public static readonly StyledProperty<bool> IsHandDrawnProperty =
+        AvaloniaProperty.Register<Loupe, bool>(nameof(IsHandDrawn));
+
+    public static readonly StyledProperty<double> RoughnessProperty =
+        AvaloniaProperty.Register<Loupe, double>(nameof(Roughness), 1.0);
+
+    public bool IsHandDrawn
+    {
+        get => GetValue(IsHandDrawnProperty);
+        set => SetValue(IsHandDrawnProperty, value);
+    }
+
+    public double Roughness
+    {
+        get => GetValue(RoughnessProperty);
+        set => SetValue(RoughnessProperty, value);
+    }
+
     /// <summary>
     /// The pixel width that 100% refers to. Zero means the source's own width, which is right for
     /// anything already at its final resolution.
@@ -54,7 +73,9 @@ public sealed class Loupe : Control
 
     static Loupe()
     {
-        AffectsRender<Loupe>(SourceProperty, RelativeProperty, CaptionProperty, TargetWidthProperty, IsPinnedProperty);
+        AffectsRender<Loupe>(
+            SourceProperty, RelativeProperty, CaptionProperty, TargetWidthProperty, IsPinnedProperty,
+            IsHandDrawnProperty, RoughnessProperty);
     }
 
     public Loupe()
@@ -107,11 +128,40 @@ public sealed class Loupe : Control
             DrawMagnified(context, source, bounds);
         }
 
-        context.DrawRectangle(null, Frame, bounds);
+        DrawFrame(context, bounds);
 
         if (!string.IsNullOrEmpty(Caption))
         {
             DrawCaption(context, bounds, Caption);
+        }
+    }
+
+    /// <summary>
+    /// The frame, ruled or drawn depending on the experiment.
+    ///
+    /// Kept white either way rather than taking the theme's ink. The loupe is the one piece of
+    /// chrome that sits <i>on top of a photograph</i>, and a themed line has no guaranteed contrast
+    /// against an arbitrary image — a dark teal frame would vanish into a dark teal photograph. The
+    /// shape follows the setting; the colour cannot afford to.
+    /// </summary>
+    private void DrawFrame(DrawingContext context, Rect bounds)
+    {
+        if (!IsHandDrawn)
+        {
+            context.DrawRectangle(null, Frame, bounds);
+            return;
+        }
+
+        // Inset enough that the wobble and the corner overshoot both stay inside the window, so no
+        // part of the border is clipped away by the edge it is drawn against.
+        var area = bounds.Deflate(6);
+
+        foreach (var edge in RoughGeometry.BorderEdges(area, RoughGeometry.SeedFor(area), Roughness))
+        {
+            if (RoughGeometry.Build(edge, 1) is { } geometry)
+            {
+                context.DrawGeometry(null, Frame, geometry);
+            }
         }
     }
 

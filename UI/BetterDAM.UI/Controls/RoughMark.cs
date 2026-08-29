@@ -5,8 +5,27 @@ using Avalonia.Threading;
 
 namespace BetterDAM.UI.Controls;
 
+/// <summary>What shape a mark takes.</summary>
+public enum RoughMarkKind
+{
+    None,
+
+    /// <summary>An ellipse round a short label. What the folder tree uses for its selection.</summary>
+    Ring,
+
+    /// <summary>
+    /// A rounded box. What a thumbnail uses: an ellipse round a tall rectangle cuts across the
+    /// corners of the picture, and a tile is already a box — the pencil should agree with it rather
+    /// than argue.
+    /// </summary>
+    Box,
+
+    /// <summary>A single stroke beneath. The lighter mark, for hover and for a chosen tab.</summary>
+    Underline
+}
+
 /// <summary>
-/// Marks a folder as selected or hovered, drawn as if by pencil, for the hand-drawn selection
+/// Marks a control as selected or hovered, drawn as if by pencil, for the hand-drawn selection
 /// experiment.
 ///
 /// One control rather than two because the two marks are the same gesture at different weights, and
@@ -33,9 +52,21 @@ public sealed class RoughMark : Control
     public static readonly StyledProperty<bool> IsSelectedProperty =
         AvaloniaProperty.Register<RoughMark, bool>(nameof(IsSelected));
 
-    /// <summary>The row under the pointer. Drawn as an underline, and only when not selected.</summary>
+    /// <summary>Under the pointer. Marked only when not selected — the stronger mark wins.</summary>
     public static readonly StyledProperty<bool> IsHoveredProperty =
         AvaloniaProperty.Register<RoughMark, bool>(nameof(IsHovered));
+
+    /// <summary>The mark drawn when selected.</summary>
+    public static readonly StyledProperty<RoughMarkKind> KindProperty =
+        AvaloniaProperty.Register<RoughMark, RoughMarkKind>(nameof(Kind), RoughMarkKind.Ring);
+
+    /// <summary>
+    /// The mark drawn when hovered but not selected. <see cref="RoughMarkKind.None"/> leaves hover
+    /// to whatever the control already did — which is what the inspector's tabs want, since their
+    /// standard highlight is already unobtrusive and only the chosen tab needed redrawing.
+    /// </summary>
+    public static readonly StyledProperty<RoughMarkKind> HoverKindProperty =
+        AvaloniaProperty.Register<RoughMark, RoughMarkKind>(nameof(HoverKind), RoughMarkKind.Underline);
 
     public static readonly StyledProperty<double> RoughnessProperty =
         AvaloniaProperty.Register<RoughMark, double>(nameof(Roughness), 1.0);
@@ -64,8 +95,8 @@ public sealed class RoughMark : Control
     static RoughMark()
     {
         AffectsRender<RoughMark>(
-            IsSelectedProperty, IsHoveredProperty, RoughnessProperty,
-            StrokeProperty, StrokeThicknessProperty, ProgressProperty);
+            IsSelectedProperty, IsHoveredProperty, KindProperty, HoverKindProperty,
+            RoughnessProperty, StrokeProperty, StrokeThicknessProperty, ProgressProperty);
     }
 
     public RoughMark()
@@ -76,16 +107,22 @@ public sealed class RoughMark : Control
 
     public bool IsSelected { get => GetValue(IsSelectedProperty); set => SetValue(IsSelectedProperty, value); }
     public bool IsHovered { get => GetValue(IsHoveredProperty); set => SetValue(IsHoveredProperty, value); }
+    public RoughMarkKind Kind { get => GetValue(KindProperty); set => SetValue(KindProperty, value); }
+    public RoughMarkKind HoverKind { get => GetValue(HoverKindProperty); set => SetValue(HoverKindProperty, value); }
     public double Roughness { get => GetValue(RoughnessProperty); set => SetValue(RoughnessProperty, value); }
     public bool Animates { get => GetValue(AnimatesProperty); set => SetValue(AnimatesProperty, value); }
     public IBrush? Stroke { get => GetValue(StrokeProperty); set => SetValue(StrokeProperty, value); }
     public double StrokeThickness { get => GetValue(StrokeThicknessProperty); set => SetValue(StrokeThicknessProperty, value); }
     public double Progress { get => GetValue(ProgressProperty); set => SetValue(ProgressProperty, value); }
 
-    /// <summary>What is actually drawn right now. The ring wins when a row is both.</summary>
-    private bool ShowsRing => IsSelected;
+    /// <summary>What is actually drawn right now. The selected mark wins when a row is both.</summary>
+    private RoughMarkKind Current =>
+        IsSelected ? Kind
+        : IsHovered ? HoverKind
+        : RoughMarkKind.None;
 
-    private bool ShowsUnderline => !IsSelected && IsHovered;
+    /// <summary>The mark currently on screen, so a redraw is only started when it actually changes.</summary>
+    private RoughMarkKind _drawn = RoughMarkKind.None;
 
     private DispatcherTimer? _timer;
     private DateTime _startedAt;
@@ -95,7 +132,7 @@ public sealed class RoughMark : Control
     // waste — and re-seeding per frame would reintroduce the crawl this design exists to avoid.
     private Rect _cachedFor;
     private double _cachedRoughness = double.NaN;
-    private bool _cachedRing;
+    private RoughMarkKind _cachedKind = RoughMarkKind.None;
     private Point[]? _first;
     private Point[]? _second;
 
@@ -108,17 +145,37 @@ public sealed class RoughMark : Control
             return;
         }
 
-        if (ShowsRing)
+        var next = Current;
+
+        // Only a change of mark is worth drawing.
+        //
+        // Hovering a row that is already selected does not change what is drawn — the selected mark
+        // wins either way — but the pointer still moves in and out of it constantly, and redrawing
+        // on each crossing made the ring rub itself out and draw itself again under the cursor. The
+        // mark a selection wears must not depend on where the pointer happens to be.
+        if (next == _drawn)
         {
-            Begin(RingDuration);
+            return;
         }
-        else if (ShowsUnderline)
+
+        _drawn = next;
+
+        switch (next)
         {
-            Begin(UnderlineDuration);
-        }
-        else
-        {
-            _timer?.Stop();
+            case RoughMarkKind.None:
+                _timer?.Stop();
+                break;
+
+            // The lighter mark is quick, the enclosing ones take a moment. Hover has to keep up with
+            // a pointer moving down a list, where a leisurely draw would still be finishing as the
+            // pointer left.
+            case RoughMarkKind.Underline when !IsSelected:
+                Begin(UnderlineDuration);
+                break;
+
+            default:
+                Begin(RingDuration);
+                break;
         }
     }
 
@@ -171,27 +228,28 @@ public sealed class RoughMark : Control
             return;
         }
 
-        if (!ShowsRing && !ShowsUnderline)
+        var kind = Current;
+        if (kind == RoughMarkKind.None)
         {
             return;
         }
 
         var box = new Rect(Bounds.Size).Deflate(StrokeThickness);
-        EnsurePoints(box, ShowsRing);
+        EnsurePoints(box, kind);
 
         var pen = new Pen(Stroke, StrokeThickness, lineCap: PenLineCap.Round);
         var progress = Math.Clamp(Progress, 0, 1);
 
-        if (ShowsRing)
+        if (kind == RoughMarkKind.Underline)
         {
-            // The second pass sets off before the first has finished, the way a hand comes back
-            // round without pausing at the top.
-            DrawPass(context, pen, _first!, Window(progress, 0.0, 0.72));
-            DrawPass(context, pen, _second!, Window(progress, 0.28, 1.0));
+            DrawPass(context, pen, _first!, progress);
             return;
         }
 
-        DrawPass(context, pen, _first!, progress);
+        // The second pass sets off before the first has finished, the way a hand comes back round
+        // without pausing at the top.
+        DrawPass(context, pen, _first!, Window(progress, 0.0, 0.72));
+        DrawPass(context, pen, _second!, Window(progress, 0.28, 1.0));
     }
 
     private static double Window(double t, double from, double to)
@@ -199,129 +257,40 @@ public sealed class RoughMark : Control
 
     private static void DrawPass(DrawingContext context, IPen pen, Point[] points, double portion)
     {
-        var count = (int)Math.Round((points.Length - 1) * portion);
-        if (count < 2)
+        if (RoughGeometry.Build(points, portion) is { } geometry)
         {
-            return;
+            context.DrawGeometry(null, pen, geometry);
         }
-
-        var geometry = new StreamGeometry();
-
-        using (var sink = geometry.Open())
-        {
-            sink.BeginFigure(points[0], isFilled: false);
-
-            for (var i = 0; i < count; i++)
-            {
-                var p0 = points[Math.Max(i - 1, 0)];
-                var p1 = points[i];
-                var p2 = points[i + 1];
-                var p3 = points[Math.Min(i + 2, points.Length - 1)];
-
-                // Catmull-Rom through the sampled points, written as the cubics Avalonia takes.
-                sink.CubicBezierTo(
-                    new Point(p1.X + ((p2.X - p0.X) / 6), p1.Y + ((p2.Y - p0.Y) / 6)),
-                    new Point(p2.X - ((p3.X - p1.X) / 6), p2.Y - ((p3.Y - p1.Y) / 6)),
-                    p2);
-            }
-
-            sink.EndFigure(isClosed: false);
-        }
-
-        context.DrawGeometry(null, pen, geometry);
     }
 
-    private void EnsurePoints(Rect box, bool ring)
+    private void EnsurePoints(Rect box, RoughMarkKind kind)
     {
         if (_first is not null
             && _cachedFor == box
             && _cachedRoughness.Equals(Roughness)
-            && _cachedRing == ring)
+            && _cachedKind == kind)
         {
             return;
         }
 
-        // Seeded from the size rather than a random number, so the mark is stable across repaints
-        // and two rows of different widths do not get identical wobble.
-        var seed = HashCode.Combine(Math.Round(box.Width), Math.Round(box.Height));
+        var seed = RoughGeometry.SeedFor(box);
 
-        if (ring)
+        if (kind == RoughMarkKind.Underline)
         {
-            var start = new Random(seed).NextDouble() * Math.PI * 2;
-
-            _first = RingPass(box, seed, Roughness, start, (Math.PI * 2) + 0.35);
-            _second = RingPass(box, seed + 977, Roughness, start + 0.5, (Math.PI * 2) + 0.15);
+            _first = RoughGeometry.Underline(box, seed, Roughness);
+            _second = null;
         }
         else
         {
-            _first = UnderlinePass(box, seed, Roughness);
-            _second = null;
+            var isBox = kind == RoughMarkKind.Box;
+            var start = new Random(seed).NextDouble() * Math.PI * 2;
+
+            _first = RoughGeometry.Enclosing(box, seed, Roughness, start, (Math.PI * 2) + 0.35, isBox);
+            _second = RoughGeometry.Enclosing(box, seed + 977, Roughness, start + 0.5, (Math.PI * 2) + 0.15, isBox);
         }
 
         _cachedFor = box;
         _cachedRoughness = Roughness;
-        _cachedRing = ring;
-    }
-
-    private static Point[] RingPass(Rect box, int seed, double roughness, double startAngle, double sweep)
-    {
-        var random = new Random(seed);
-        var cx = box.Center.X;
-        var cy = box.Center.Y;
-        var rx = box.Width / 2;
-        var ry = box.Height / 2;
-
-        // Scaled by the smaller radius, so a wide row does not wobble more than a narrow one.
-        var amplitude = roughness * Math.Min(rx, ry) * 0.09;
-
-        const int steps = 26;
-        var points = new Point[steps + 1];
-
-        for (var i = 0; i <= steps; i++)
-        {
-            var t = startAngle + (sweep * i / steps);
-
-            // Tapered at both ends, so the overshoot settles instead of flying off.
-            var taper = Math.Sin(Math.PI * i / steps);
-            var jx = (random.NextDouble() - 0.5) * 2 * amplitude * taper;
-            var jy = (random.NextDouble() - 0.5) * 2 * amplitude * taper;
-
-            points[i] = new Point(cx + (rx * Math.Cos(t)) + jx, cy + (ry * Math.Sin(t)) + jy);
-        }
-
-        return points;
-    }
-
-    /// <summary>
-    /// A single stroke under the name. One pass, not two: a second would read as a deliberate double
-    /// underline rather than as the lighter-weight sibling of the ring.
-    /// </summary>
-    private static Point[] UnderlinePass(Rect box, int seed, double roughness)
-    {
-        var random = new Random(seed);
-
-        // Wobble in points rather than as a fraction of the row: an underline that scaled its
-        // waviness with the name's length would ripple wildly under a long folder name.
-        var amplitude = roughness * 1.4;
-
-        const int steps = 14;
-        var points = new Point[steps + 1];
-
-        // Runs a little past the name at both ends, the way a hand does not stop exactly on the mark.
-        var left = box.Left - 2;
-        var right = box.Right + 4;
-        var baseline = box.Bottom - 1;
-
-        for (var i = 0; i <= steps; i++)
-        {
-            var t = i / (double)steps;
-            var taper = Math.Sin(Math.PI * t);
-
-            points[i] = new Point(
-                left + ((right - left) * t),
-                baseline + ((random.NextDouble() - 0.5) * 2 * amplitude * taper));
-        }
-
-        return points;
+        _cachedKind = kind;
     }
 }

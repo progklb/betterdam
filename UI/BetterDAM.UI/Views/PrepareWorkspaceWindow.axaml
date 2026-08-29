@@ -6,7 +6,8 @@
         Title="Prepare Workspace"
         Width="560" Height="480"
         MinWidth="480" MinHeight="420"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner"
+        Classes.handDrawn="{DynamicResource AppRingEnabled}">
 
   <Window.Styles>
     <Style Selector="TextBlock.hint">

@@ -43,6 +43,17 @@ public sealed record SearchQuery
     /// </summary>
     public ImmutableArray<KeywordFilter> Keywords { get; init; } = [];
 
+    /// <summary>
+    /// Colour labels to include, matched case-insensitively. Several mean "any of these": a file
+    /// carries one label, so asking for two could only sensibly be a choice between them.
+    /// </summary>
+    public ImmutableArray<string> Labels { get; init; } = [];
+
+    /// <summary>
+    /// Cull flags to include. Several mean "any of these", since a file carries one flag.
+    /// </summary>
+    public ImmutableArray<MediaFlag> Flags { get; init; } = [];
+
     public ImmutableArray<string> Cameras { get; init; } = [];
 
     public ImmutableArray<string> Lenses { get; init; } = [];
@@ -62,6 +73,7 @@ public sealed record SearchQuery
 
     public bool IsEmpty =>
         FreeText.IsDefaultOrEmpty && Keywords.IsDefaultOrEmpty && Cameras.IsDefaultOrEmpty &&
+        Labels.IsDefaultOrEmpty && Flags.IsDefaultOrEmpty &&
         Lenses.IsDefaultOrEmpty && Kinds.IsDefaultOrEmpty && Rating is null && CaptureDate is null;
 }
 

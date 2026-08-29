@@ -223,10 +223,59 @@ public sealed class ExifToolMetadataProvider : IMetadataProvider
         Keywords = ReadKeywords(document),
         Rating = ReadRating(document),
         Label = First(document, "XMP:Label"),
+        Flag = ReadFlag(document),
         Creator = First(document, "XMP:Creator", "IPTC:By-line", "EXIF:Artist", "QuickTime:Artist"),
         Copyright = First(document, "XMP:Rights", "IPTC:CopyrightNotice", "EXIF:Copyright"),
         Headline = First(document, "XMP:Headline", "IPTC:Headline")
     };
+
+    /// <summary>
+    /// The cull flag, read from whichever application last wrote one.
+    ///
+    /// Three conventions are checked in turn, because no single property is understood everywhere:
+    /// digiKam's PickLabel carries both states, Photo Mechanic's Tagged carries "picked", and
+    /// Adobe's rating of -1 carries "rejected". Whichever is present wins, most specific first, so a
+    /// workspace that has been through another application still reads correctly here.
+    /// </summary>
+    private static MediaFlag? ReadFlag(Dictionary<string, JsonElement> document)
+    {
+        if (First(document, "XMP:PickLabel", "XMP-digiKam:PickLabel") is { } pick &&
+            int.TryParse(pick, out var value))
+        {
+            // Unknown numbers are ignored rather than guessed at: the property belongs to another
+            // application, which is free to add values this one has never heard of.
+            if (Enum.IsDefined(typeof(MediaFlag), value))
+            {
+                return (MediaFlag)value;
+            }
+        }
+
+        // ExifTool prints this one as Yes/No, and writes it as True/False.
+        if (First(document, "XMP:Tagged", "XMP-photomech:Tagged") is { } tagged)
+        {
+            if (tagged.Equals("Yes", StringComparison.OrdinalIgnoreCase) ||
+                tagged.Equals("True", StringComparison.OrdinalIgnoreCase))
+            {
+                return MediaFlag.Accepted;
+            }
+
+            if (tagged.Equals("No", StringComparison.OrdinalIgnoreCase) ||
+                tagged.Equals("False", StringComparison.OrdinalIgnoreCase))
+            {
+                return MediaFlag.Rejected;
+            }
+        }
+
+        // Adobe's convention, and the reason ReadRating refuses to clamp a negative into a zero.
+        if (First(document, "XMP:Rating") is { } rating &&
+            double.TryParse(rating, NumberStyles.Any, CultureInfo.InvariantCulture, out var stars) &&
+            stars < 0)
+        {
+            return MediaFlag.Rejected;
+        }
+
+        return null;
+    }
 
     private static CameraInfo ReadCamera(Dictionary<string, JsonElement> document)
     {
@@ -358,7 +407,12 @@ public sealed class ExifToolMetadataProvider : IMetadataProvider
             return null;
         }
 
-        return Math.Clamp((int)Math.Round(value), 0, 5);
+        var rounded = (int)Math.Round(value);
+
+        // A negative rating is not a rating. Adobe writes -1 to mean "rejected", so clamping it to 0
+        // would both lose the rejection and invent a zero-star rating the photographer never gave.
+        // ReadFlag picks the rejection up instead.
+        return rounded < 0 ? null : Math.Clamp(rounded, 0, 5);
     }
 
     private static string? CombineMakeAndModel(string? make, string? model)

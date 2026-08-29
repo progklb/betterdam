@@ -408,6 +408,15 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     private int _rating;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAccepted))]
+    [NotifyPropertyChangedFor(nameof(IsRejected))]
+    private MediaFlag _flag;
+
+    public bool IsAccepted => Flag == MediaFlag.Accepted;
+
+    public bool IsRejected => Flag == MediaFlag.Rejected;
+
+    [ObservableProperty]
     private string? _label;
 
     [ObservableProperty]
@@ -424,6 +433,19 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     partial void OnDescriptionChanged(string? value) => RecordEdit();
 
     partial void OnRatingChanged(int value) => RecordEdit();
+
+    partial void OnFlagChanged(MediaFlag value)
+    {
+        // Rejecting takes the stars over, because Adobe expresses rejection as a rating of -1 and
+        // the two share one property. Shown here rather than only happening on write, so the panel
+        // never claims a rating the file cannot carry.
+        if (value == MediaFlag.Rejected)
+        {
+            Rating = 0;
+        }
+
+        RecordEdit();
+    }
 
     partial void OnLabelChanged(string? value) => RecordEdit();
 
@@ -640,6 +662,20 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         }
     }
 
+    /// <summary>Clicking the flag that is already set clears it, as the stars do.</summary>
+    [RelayCommand]
+    private void SetFlag(string? which)
+    {
+        var wanted = which?.ToLowerInvariant() switch
+        {
+            "accept" => MediaFlag.Accepted,
+            "reject" => MediaFlag.Rejected,
+            _ => MediaFlag.None
+        };
+
+        Flag = Flag == wanted ? MediaFlag.None : wanted;
+    }
+
     /// <summary>
     /// Takes the star position as a string because that is what a XAML <c>CommandParameter="4"</c>
     /// literal produces. Typing this as <c>int</c> makes RelayCommand&lt;int&gt;.CanExecute reject the
@@ -748,6 +784,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
             Title = metadata.Title;
             Description = metadata.Description;
             Rating = metadata.Rating ?? 0;
+            Flag = metadata.Flag ?? MediaFlag.None;
             Label = metadata.Label;
             Creator = metadata.Creator;
             Copyright = metadata.Copyright;
@@ -799,6 +836,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
             Description = NullIfBlank(Description),
             Keywords = Keywords.ToImmutableArray(),
             Rating = Rating == 0 ? null : Rating,
+            Flag = Flag == MediaFlag.None ? null : Flag,
             Label = NullIfBlank(Label),
             Creator = NullIfBlank(Creator),
             Copyright = NullIfBlank(Copyright),

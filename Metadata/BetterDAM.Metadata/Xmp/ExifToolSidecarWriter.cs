@@ -43,6 +43,11 @@ public sealed class ExifToolSidecarWriter : IMetadataWriter
             return SidecarWriteResult.Failed(file.FullPath, "ExifTool is not available.");
         }
 
+        // A rejected file has no stars, because Adobe expresses rejection as a rating of -1 and the
+        // two share one property. Applied before writing and before validating, so what is asked for
+        // is what can be read back.
+        metadata = metadata.Normalised();
+
         // Update the sidecar that already exists (either naming convention), otherwise create the
         // Adobe-style one.
         var sidecarPath = XmpSidecar.Find(file.FullPath) ?? XmpSidecar.GetPreferredPath(file.FullPath);
@@ -248,7 +253,7 @@ public sealed class ExifToolSidecarWriter : IMetadataWriter
         AddValue(arguments, "XMP:Label", metadata.Label, temporaryValueFiles);
         AddValue(arguments, "XMP:Creator", metadata.Creator, temporaryValueFiles);
         AddValue(arguments, "XMP:Rights", metadata.Copyright, temporaryValueFiles);
-        AddValue(arguments, "XMP:Rating", metadata.Rating?.ToString(), temporaryValueFiles);
+        AddFlagArguments(arguments, metadata, temporaryValueFiles);
 
         // Keywords replace the existing list rather than adding to it.
         //
@@ -277,6 +282,55 @@ public sealed class ExifToolSidecarWriter : IMetadataWriter
     /// description, typically — cannot be passed inline. Those are written to a temp file and
     /// referenced with ExifTool's <c>&lt;=</c> "read value from file" syntax.
     /// </summary>
+    /// <summary>
+    /// Writes the cull flag in every convention there is one for, and the rating alongside it.
+    ///
+    /// No single property is read by everything, so rather than pick a winner this writes all three
+    /// and lets each application find the one it knows:
+    ///
+    /// <list type="bullet">
+    /// <item><c>XMP-digiKam:PickLabel</c> — carries accepted and rejected; digiKam.</item>
+    /// <item><c>XMP-photomech:Tagged</c> — carries picked; Photo Mechanic.</item>
+    /// <item><c>xmp:Rating = -1</c> — carries rejected; Bridge and Camera Raw.</item>
+    /// </list>
+    ///
+    /// The rating is written here rather than beside the other fields because rejecting has to take
+    /// it over: Adobe expresses rejection <i>as</i> a rating, so a rejected file's rating is -1 and
+    /// its stars are not representable. Clearing the rejection puts the stars back, since this
+    /// application keeps them separately and has not forgotten them.
+    ///
+    /// Tagged needs the <c>#</c> suffix. Without it ExifTool refuses the value with
+    /// "not in PrintConv", which is a write that fails rather than one that quietly does nothing.
+    /// </summary>
+    private static void AddFlagArguments(
+        List<string> arguments,
+        EditableMetadata metadata,
+        List<string> temporaryValueFiles)
+    {
+        var rejected = metadata.Flag == MediaFlag.Rejected;
+
+        AddValue(
+            arguments,
+            "XMP:Rating",
+            rejected ? "-1" : metadata.Rating?.ToString(),
+            temporaryValueFiles);
+
+        AddValue(
+            arguments,
+            "XMP-digiKam:PickLabel",
+            metadata.Flag is { } flag ? ((int)flag).ToString() : null,
+            temporaryValueFiles);
+
+        var tagged = metadata.Flag switch
+        {
+            MediaFlag.Accepted => "True",
+            MediaFlag.Rejected => "False",
+            _ => null
+        };
+
+        AddValue(arguments, "XMP-photomech:Tagged#", tagged, temporaryValueFiles);
+    }
+
     private static void AddValue(List<string> arguments, string tag, string? value, List<string> temporaryValueFiles)
     {
         if (value is null)

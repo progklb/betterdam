@@ -21,6 +21,12 @@ public sealed record EditableMetadata
 
     public string? Label { get; init; }
 
+    /// <summary>
+    /// The cull decision. Null when the file carries no flag, which is distinct from an explicit
+    /// <see cref="MediaFlag.None"/> — the second says somebody cleared it.
+    /// </summary>
+    public MediaFlag? Flag { get; init; }
+
     public string? Creator { get; init; }
 
     public string? Copyright { get; init; }
@@ -29,7 +35,7 @@ public sealed record EditableMetadata
 
     public bool IsEmpty =>
         Title is null && Description is null && Keywords.IsDefaultOrEmpty && Rating is null &&
-        Label is null && Creator is null && Copyright is null && Headline is null;
+        Label is null && Flag is null && Creator is null && Copyright is null && Headline is null;
 
     /// <summary>
     /// Value comparison. The compiler-generated record equality cannot be used here because
@@ -47,11 +53,23 @@ public sealed record EditableMetadata
             && Description == other.Description
             && Rating == other.Rating
             && Label == other.Label
+            && Flag == other.Flag
             && Creator == other.Creator
             && Copyright == other.Copyright
             && Headline == other.Headline
             && Keywords.AsSpan().SequenceEqual(other.Keywords.AsSpan());
     }
+
+    /// <summary>
+    /// Applies the one rule where two fields cannot both be honoured: a rejected file has no stars.
+    ///
+    /// Adobe expresses rejection <i>as</i> a rating of -1, so the two share one property and the
+    /// rejection has to win. Normalising here rather than only when writing means the model, the
+    /// sidecar and the panel all agree — otherwise asking for "rejected and four stars" would write
+    /// something that could never be read back, and the writer's own validation would reject it.
+    /// </summary>
+    public EditableMetadata Normalised()
+        => Flag == MediaFlag.Rejected && Rating is not null ? this with { Rating = null } : this;
 
     /// <summary>
     /// Overlays <paramref name="overlay"/> on top of this instance. Only properties the overlay
@@ -72,6 +90,7 @@ public sealed record EditableMetadata
             Keywords = overlay.Keywords.IsDefaultOrEmpty ? Keywords : overlay.Keywords,
             Rating = overlay.Rating ?? Rating,
             Label = overlay.Label ?? Label,
+            Flag = overlay.Flag ?? Flag,
             Creator = overlay.Creator ?? Creator,
             Copyright = overlay.Copyright ?? Copyright,
             Headline = overlay.Headline ?? Headline

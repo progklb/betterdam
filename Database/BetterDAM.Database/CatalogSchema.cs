@@ -10,7 +10,7 @@ namespace BetterDAM.Database;
 /// </summary>
 internal static class CatalogSchema
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public static void Apply(SqliteConnection connection)
     {
@@ -31,7 +31,45 @@ internal static class CatalogSchema
             ApplyVersion1(connection);
         }
 
+        if (version < 2)
+        {
+            ApplyVersion2(connection);
+        }
+
         SetVersion(connection, CurrentVersion);
+    }
+
+    /// <summary>
+    /// Adds the cull flag. A migration rather than a column in version 1, so an existing catalog
+    /// gains it without anyone being asked to reindex — the flag simply reads as null until the file
+    /// is next indexed, which is what "not yet judged" means anyway.
+    /// </summary>
+    private static void ApplyVersion2(SqliteConnection connection)
+    {
+        if (!HasColumn(connection, "Media", "Flag"))
+        {
+            Execute(connection, "ALTER TABLE Media ADD COLUMN Flag INTEGER;");
+        }
+
+        Execute(connection, "CREATE INDEX IF NOT EXISTS IX_Media_Flag ON Media(Flag);");
+    }
+
+    private static bool HasColumn(SqliteConnection connection, string table, string column)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table});";
+
+        using var reader = command.ExecuteReader();
+
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void ApplyVersion1(SqliteConnection connection)

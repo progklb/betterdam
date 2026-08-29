@@ -4232,3 +4232,74 @@ sight, since that test exists to catch user input reaching the SQL. It had not; 
 changed.
 
 - `dotnet test` — **643/643 passing** (12 new).
+
+---
+
+## Colour labels and cull flags ✅
+
+### Labels
+
+`label:` / `lb:` now filters, closing the gap flagged when the field catalogue was built. The catalog
+already had the column; only the query and the SQL were missing. Matched case-insensitively on both
+sides, because labels are written by hand and by other applications — `Yellow` and `yellow` are the
+same label, and a case-sensitive `IN` would quietly miss half of them. Several labels mean "any of
+these", since a file carries one.
+
+### Flags, and what other applications actually read
+
+`f:accepted`, `f:rejected`, `f:none`, plus Keep / Reject buttons on the metadata panel and toggles in
+the filter popup. The interesting part was storage, and it was settled by testing rather than
+assuming:
+
+```text
+lr:PickStatus              not a tag ExifTool knows — Lightroom keeps flags in its own catalog
+xmp:Rating = -1            writes and reads back; Adobe's convention for "rejected"
+XMP-digiKam:PickLabel      writes natively, no config file; carries accepted and rejected
+XMP-photomech:Tagged       writes only with a # suffix; without it ExifTool refuses the value
+```
+
+So rather than pick a winner, **all three are written**, and each application finds the one it knows.
+Reading checks all three in turn, most specific first, so a workspace that has been through another
+application reads correctly here.
+
+| | BetterDAM | digiKam | Bridge / Camera Raw | Photo Mechanic |
+|---|---|---|---|---|
+| Accepted | ✅ | ✅ | — | ✅ |
+| Rejected | ✅ | ✅ | ✅ | ✅ |
+
+Accepted has no Adobe equivalent — there is nothing to be compatible with, because Lightroom's pick
+flag never leaves its catalog. That is a real limitation and not one this application can close.
+
+### Rejecting takes the rating over
+
+Adobe expresses rejection *as* a rating of −1, so the two share one property and cannot both be
+honoured. Rejecting therefore clears the stars, in the model and on the panel, not merely on write.
+
+This was found by the writer's own validation rather than by reasoning: asking for "rejected and four
+stars" wrote a file that could not be read back as what was asked for, and the write failed. The rule
+now lives in `EditableMetadata.Normalised()` so the model, the sidecar and the panel agree.
+
+The reader had the matching bug. `ReadRating` clamped to 0–5, so a file rejected in Bridge came back
+as **rating zero with no rejection** — losing the flag and inventing a nought-star rating nobody had
+given. A negative rating is now not a rating at all, and the flag reader picks the rejection up.
+
+### Verified
+
+Round trips run against a real ExifTool, because the whole value of the feature is that another
+application can read what this one writes — an assertion about argument lists would have passed just
+as happily while ExifTool refused the value, which is exactly what `Tagged` does without its `#`.
+
+```text
+accepted        survives a round trip; rating untouched
+rejected        becomes rating -1, reads back as rejected with no stars
+rejected in     a sidecar written by ExifTool directly with nothing but
+another app     xmp:Rating=-1 is understood as rejected
+```
+
+In the application: four stars then Reject cleared the stars and lit the button. The pending change
+was discarded afterwards, so no sidecar was written to the workspace.
+
+Catalog schema is now version 2 — `Flag` added by migration, so an existing catalog gains the column
+without a reindex. Confirmed applied to the live catalog on launch.
+
+- `dotnet test` — **647/647 passing**.

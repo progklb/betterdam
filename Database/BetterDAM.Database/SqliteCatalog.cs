@@ -129,10 +129,10 @@ public sealed class SqliteCatalog : ICatalog
         var id = await connection.ExecuteScalarAsync<long>(
             """
             INSERT INTO Media (Path, FileName, MediaType, SizeBytes, ModifiedUtc, CreatedUtc,
-                               Title, Description, Headline, Label, Creator, Copyright, Rating,
+                               Title, Description, Headline, Label, Creator, Copyright, Rating, Flag,
                                Camera, Lens, CaptureDate, HasSidecar, IndexedUtc)
             VALUES (@Path, @FileName, @MediaType, @SizeBytes, @ModifiedUtc, @CreatedUtc,
-                    @Title, @Description, @Headline, @Label, @Creator, @Copyright, @Rating,
+                    @Title, @Description, @Headline, @Label, @Creator, @Copyright, @Rating, @Flag,
                     @Camera, @Lens, @CaptureDate, @HasSidecar, @IndexedUtc)
             ON CONFLICT(Path) DO UPDATE SET
                 FileName = excluded.FileName, MediaType = excluded.MediaType,
@@ -141,6 +141,7 @@ public sealed class SqliteCatalog : ICatalog
                 Description = excluded.Description, Headline = excluded.Headline,
                 Label = excluded.Label, Creator = excluded.Creator,
                 Copyright = excluded.Copyright, Rating = excluded.Rating,
+                Flag = excluded.Flag,
                 Camera = excluded.Camera, Lens = excluded.Lens,
                 CaptureDate = excluded.CaptureDate, HasSidecar = excluded.HasSidecar,
                 IndexedUtc = excluded.IndexedUtc
@@ -158,6 +159,7 @@ public sealed class SqliteCatalog : ICatalog
                 metadata.Description,
                 metadata.Headline,
                 metadata.Label,
+                Flag = metadata.Flag is { } flag ? (int?)flag : null,
                 metadata.Creator,
                 metadata.Copyright,
                 metadata.Rating,
@@ -404,6 +406,38 @@ public sealed class SqliteCatalog : ICatalog
                               JOIN Keyword k ON k.Id = mk.KeywordId
                               WHERE mk.MediaId = m.Id AND k.Value IN ({string.Join(", ", placeholders)}))
                 """);
+        }
+
+        if (!query.Labels.IsDefaultOrEmpty)
+        {
+            // Lowered on both sides: labels are typed by hand and by other applications, so "Yellow"
+            // and "yellow" are the same label and a case-sensitive IN would quietly miss half of them.
+            var placeholders = new List<string>();
+
+            for (var i = 0; i < query.Labels.Length; i++)
+            {
+                placeholders.Add($"@label{i}");
+                parameters.Add($"label{i}", query.Labels[i].ToLowerInvariant());
+            }
+
+            sql.Append($"\n  AND LOWER(m.Label) IN ({string.Join(", ", placeholders)})");
+        }
+
+        if (!query.Flags.IsDefaultOrEmpty)
+        {
+            // "None" has to include files with no flag at all as well as files explicitly cleared:
+            // an unjudged photograph and one somebody un-flagged are the same thing to look at next.
+            var clauses = new List<string>();
+
+            for (var i = 0; i < query.Flags.Length; i++)
+            {
+                parameters.Add($"flag{i}", (int)query.Flags[i]);
+                clauses.Add(query.Flags[i] == MediaFlag.None
+                    ? $"(m.Flag IS NULL OR m.Flag = @flag{i})"
+                    : $"m.Flag = @flag{i}");
+            }
+
+            sql.Append($"\n  AND ({string.Join(" OR ", clauses)})");
         }
 
         for (var i = 0; i < query.Cameras.Length; i++)

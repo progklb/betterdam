@@ -46,15 +46,16 @@ public sealed record SearchField(
 public static class SearchFields
 {
     /// <summary>
-    /// Every field here must be one the parser understands. Colour label is deliberately absent:
-    /// it is on the metadata panel and in the catalog, but <c>SearchQuery</c> has nowhere to put it,
-    /// so listing it would offer a filter that silently does nothing.
+    /// Every field here must be one the parser understands — asserted by a test, which is what
+    /// caught colour label being advertised before <c>SearchQuery</c> had anywhere to put it.
     /// </summary>
     public static ImmutableArray<SearchField> All { get; } =
     [
         new("keyword", "k", "Files tagged with a word", "k:sand,dust", ["kw"]),
         new("rating", "r", "Stars, with > < >= <=", "r:>=4"),
         new("type", "t", "raw, jpg or video", "t:raw,video"),
+        new("label", "lb", "Colour label", "lb:yellow"),
+        new("flag", "f", "accepted, rejected or none", "f:accepted"),
         new("camera", "c", "Camera make or model", "c:Fujifilm"),
         new("lens", "l", "Lens name; quote it if it has spaces", "l:\"RF 100-500\""),
         new("date", "d", "Capture date, or a bare year", "d:>=2024-01-01")

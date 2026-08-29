@@ -26,6 +26,8 @@ public static class SearchQueryParser
         var freeText = ImmutableArray.CreateBuilder<string>();
         var keywords = ImmutableArray.CreateBuilder<KeywordFilter>();
         var cameras = ImmutableArray.CreateBuilder<string>();
+        var labels = ImmutableArray.CreateBuilder<string>();
+        var flags = ImmutableArray.CreateBuilder<MediaFlag>();
         var lenses = ImmutableArray.CreateBuilder<string>();
         var unrecognised = ImmutableArray.CreateBuilder<string>();
 
@@ -69,6 +71,35 @@ public static class SearchQueryParser
                     if (words.Length > 0)
                     {
                         keywords.Add(KeywordFilter.Of(words));
+                    }
+                    else
+                    {
+                        unrecognised.Add(token);
+                    }
+
+                    break;
+
+                case "label":
+                    // Union rather than AND: a file has one label, so two of them can only be a
+                    // choice between them. Comma does the same thing, as everywhere else.
+                    foreach (var label in value
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        if (!labels.Contains(label, StringComparer.OrdinalIgnoreCase))
+                        {
+                            labels.Add(label);
+                        }
+                    }
+
+                    break;
+
+                case "flag":
+                    if (TryParseFlags(value, out var parsedFlags))
+                    {
+                        foreach (var parsedFlag in parsedFlags.Where(f => !flags.Contains(f)))
+                        {
+                            flags.Add(parsedFlag);
+                        }
                     }
                     else
                     {
@@ -141,6 +172,8 @@ public static class SearchQueryParser
         {
             FreeText = freeText.ToImmutable(),
             Keywords = keywords.ToImmutable(),
+            Labels = labels.ToImmutable(),
+            Flags = flags.ToImmutable(),
             Cameras = cameras.ToImmutable(),
             Lenses = lenses.ToImmutable(),
             Kinds = kinds.ToImmutable(),
@@ -231,6 +264,45 @@ public static class SearchQueryParser
         }
 
         kinds = parsed;
+        return parsed.Count > 0;
+    }
+
+    /// <summary>
+    /// Reads cull flags. The words are the ones a photographer would say rather than digiKam's
+    /// numbers, and "none" is a real answer — "what have I not looked at yet" is the question that
+    /// makes a cull pass finishable.
+    /// </summary>
+    private static bool TryParseFlags(string value, out IReadOnlyList<MediaFlag> flags)
+    {
+        var parsed = new List<MediaFlag>();
+
+        foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            switch (part.ToLowerInvariant())
+            {
+                case "accepted" or "accept" or "pick" or "picked" or "keep":
+                    parsed.Add(MediaFlag.Accepted);
+                    break;
+
+                case "rejected" or "reject" or "rejects":
+                    parsed.Add(MediaFlag.Rejected);
+                    break;
+
+                case "pending" or "maybe":
+                    parsed.Add(MediaFlag.Pending);
+                    break;
+
+                case "none" or "unflagged":
+                    parsed.Add(MediaFlag.None);
+                    break;
+
+                default:
+                    flags = [];
+                    return false;
+            }
+        }
+
+        flags = parsed;
         return parsed.Count > 0;
     }
 

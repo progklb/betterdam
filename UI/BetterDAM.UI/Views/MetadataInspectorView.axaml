@@ -196,6 +196,25 @@
               </StackPanel>
               </StackPanel>
 
+              <!--
+                The cull decision, beside the rating because they are made in the same pass. Written
+                to three XMP conventions so Bridge, digiKam and Photo Mechanic each find one they
+                understand — see MediaFlag.
+              -->
+              <StackPanel>
+                <TextBlock Text="Flag" Classes="label" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <ToggleButton Content="✓ Keep" FontSize="11" Padding="9,3"
+                                IsChecked="{Binding IsAccepted, Mode=OneWay}"
+                                Command="{Binding SetFlagCommand}" CommandParameter="accept"
+                                ToolTip.Tip="Mark as a keeper. Leaves the rating alone." />
+                  <ToggleButton Content="✕ Reject" FontSize="11" Padding="9,3"
+                                IsChecked="{Binding IsRejected, Mode=OneWay}"
+                                Command="{Binding SetFlagCommand}" CommandParameter="reject"
+                                ToolTip.Tip="Mark as a reject. Clears the rating, because Adobe stores a rejection as a rating of -1." />
+                </StackPanel>
+              </StackPanel>
+
               <StackPanel IsVisible="{Binding ShowTitle}">
                 <TextBlock Text="Title" Classes="label" />
                 <TextBox Text="{Binding Title}" />

@@ -318,6 +318,35 @@ public sealed partial class MainWindowViewModel : ObservableObject
         => WriteFilter(() => SearchText = SearchQueryText.WithField(
             SearchText, "rating", value > 0 ? $">={value}" : null));
 
+    [ObservableProperty]
+    private bool _filterAccepted;
+
+    [ObservableProperty]
+    private bool _filterRejected;
+
+    [ObservableProperty]
+    private bool _filterUnflagged;
+
+    partial void OnFilterAcceptedChanged(bool value) => WriteFlags();
+
+    partial void OnFilterRejectedChanged(bool value) => WriteFlags();
+
+    partial void OnFilterUnflaggedChanged(bool value) => WriteFlags();
+
+    private void WriteFlags() => WriteFilter(() =>
+    {
+        var flags = new List<string>();
+
+        if (FilterAccepted) flags.Add("accepted");
+        if (FilterRejected) flags.Add("rejected");
+        if (FilterUnflagged) flags.Add("none");
+
+        // All three, or none, is the same as not filtering — and says so more plainly.
+        var value = flags.Count is 0 or 3 ? null : string.Join(',', flags);
+
+        SearchText = SearchQueryText.WithField(SearchText, "flag", value);
+    });
+
     partial void OnFilterRawChanged(bool value) => WriteKinds();
 
     partial void OnFilterJpegChanged(bool value) => WriteKinds();
@@ -391,6 +420,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
             FilterRaw = all || kinds.Contains(MediaKind.Raw);
             FilterJpeg = all || kinds.Contains(MediaKind.Jpeg);
             FilterVideo = all || kinds.Contains(MediaKind.Video);
+
+            var flags = query.Flags;
+            var everyFlag = flags.IsDefaultOrEmpty;
+
+            FilterAccepted = everyFlag || flags.Contains(MediaFlag.Accepted);
+            FilterRejected = everyFlag || flags.Contains(MediaFlag.Rejected);
+            FilterUnflagged = everyFlag || flags.Contains(MediaFlag.None);
         }
         finally
         {

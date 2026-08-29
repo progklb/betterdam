@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using BetterDAM.Core.Models;
+using BetterDAM.Core.Services;
 using BetterDAM.UI.Controls;
 using BetterDAM.UI.Services;
 using BetterDAM.UI.ViewModels;
@@ -35,6 +36,12 @@ public partial class MainWindow : Window
         // focused item". Waiting for the key to bubble up would mean never seeing it while the grid
         // has focus, which is exactly where it is during playback.
         AddHandler(KeyDownEvent, OnGlobalKeyDown, RoutingStrategies.Tunnel);
+
+        // Tunnelled too: while the field list is open, Down, Enter and Escape belong to it rather
+        // than to the text box or to the search command.
+        SearchBox.AddHandler(KeyDownEvent, OnSearchKeyDown, RoutingStrategies.Tunnel);
+        SearchBox.TextChanged += OnSearchTextChanged;
+        SearchBox.LostFocus += (_, _) => (DataContext as MainWindowViewModel)?.DismissFieldSuggestions();
 
         DataContextChanged += (_, _) =>
         {
@@ -551,5 +558,113 @@ public partial class MainWindow : Window
         viewModel.WorkspacePath = (DataContext as MainWindowViewModel)?.WorkspacePath;
 
         await new SettingsWindow { DataContext = viewModel }.ShowDialog(this);
+    }
+
+    // ---- Search field suggestions ----------------------------------------------------------------
+
+    /// <summary>
+    /// Set while the box is being rewritten by accepting a suggestion. Without it, writing
+    /// "keyword:" back into the box looks exactly like the user typing a colon, and the list
+    /// immediately reopens on the field that was just chosen.
+    /// </summary>
+    private bool _acceptingSuggestion;
+
+    private void OnSearchTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_acceptingSuggestion || DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        viewModel.UpdateFieldSuggestions(SearchBox.Text, SearchBox.CaretIndex);
+    }
+
+    private void OnSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        if (!viewModel.HasFieldSuggestions)
+        {
+            // Enter is handled here rather than as a KeyBinding, because a KeyBinding cannot stand
+            // aside while the list is open.
+            if (e.Key == Key.Enter)
+            {
+                viewModel.SearchCommand.Execute(null);
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Down:
+                viewModel.MoveSuggestion(1);
+                break;
+
+            case Key.Up:
+                viewModel.MoveSuggestion(-1);
+                break;
+
+            case Key.Escape:
+                viewModel.DismissFieldSuggestions();
+                break;
+
+            case Key.Enter or Key.Tab:
+                AcceptSuggestion(viewModel);
+                break;
+
+            default:
+                return;
+        }
+
+        e.Handled = true;
+    }
+
+    private void OnSuggestionClicked(object? sender, PointerReleasedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            AcceptSuggestion(viewModel);
+        }
+    }
+
+    private void AcceptSuggestion(MainWindowViewModel viewModel)
+    {
+        if (viewModel.SelectedSuggestionIndex < 0 ||
+            viewModel.SelectedSuggestionIndex >= viewModel.FieldSuggestions.Count)
+        {
+            return;
+        }
+
+        var field = viewModel.FieldSuggestions[viewModel.SelectedSuggestionIndex];
+        var (text, caret) = SearchSuggestion.Accept(SearchBox.Text, SearchBox.CaretIndex, field.Name);
+
+        _acceptingSuggestion = true;
+
+        try
+        {
+            viewModel.DismissFieldSuggestions();
+            SearchBox.Text = text;
+            SearchBox.CaretIndex = caret;
+        }
+        finally
+        {
+            _acceptingSuggestion = false;
+        }
+
+        // The flag alone is not enough. Text is bound two-way, so writing "rating:" into the box
+        // also travels out to the ViewModel and back, and that return trip raises TextChanged again
+        // after the flag has been cleared — which looks exactly like the user typing a colon, and
+        // reopens the list on the field just chosen. Posting the dismissal puts it after anything
+        // the binding still has to do.
+        Dispatcher.UIThread.Post(viewModel.DismissFieldSuggestions, DispatcherPriority.Background);
+
+        // The click that chose a field landed on the list, so the box has to be given back the
+        // caret or the user is left typing into nothing.
+        SearchBox.Focus();
     }
 }

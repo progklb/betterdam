@@ -8,15 +8,8 @@ namespace BetterDAM.Core.Services;
 /// <summary>
 /// Turns a typed query into a <see cref="SearchQuery"/>.
 ///
-/// Supports the syntax from the project README:
-/// <code>
-/// keyword:motorcycle
-/// rating:&gt;=4
-/// camera:Sony
-/// lens:"RF 100-500"
-/// type:video
-/// date:&gt;=2024-01-01
-/// </code>
+/// The fields it accepts, their short forms and their descriptions all come from
+/// <see cref="SearchFields"/> — <c>keyword:motorcycle</c> and <c>k:motorcycle</c> are the same thing.
 /// Terms combine with implicit AND; a literal <c>AND</c> is accepted and ignored. Bare words become
 /// free text. Anything unrecognised is collected rather than dropped, so the UI can tell the user
 /// their filter did nothing instead of quietly returning the wrong results.
@@ -63,9 +56,11 @@ public static class SearchQueryParser
                 continue;
             }
 
-            switch (field)
+            // Resolved through the shared catalogue so the short forms, the help in the filter popup
+            // and what actually parses cannot drift apart.
+            switch (SearchFields.Resolve(field))
             {
-                case "keyword" or "kw":
+                case "keyword":
                     keywords.Add(value);
                     break;
 

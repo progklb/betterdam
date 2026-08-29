@@ -6,6 +6,7 @@
         xmlns:controls="using:BetterDAM.UI.Controls"
         xmlns:views="using:BetterDAM.UI.Views"
         xmlns:svc="using:BetterDAM.UI.Services"
+        xmlns:search="using:BetterDAM.Core.Services"
         mc:Ignorable="d"
         x:Class="BetterDAM.UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -165,20 +166,105 @@
           </Button.Flyout>
         </Button>
 
-        <!-- Scope, as the filter control on the right of the field. -->
-        <ToggleButton DockPanel.Dock="Right" Margin="8,0,0,0" Padding="10,4"
-                      IsVisible="{Binding HasWorkspace}"
-                      IsChecked="{Binding SearchEverywhere}"
-                      ToolTip.Tip="Search everything indexed, not just the open workspace">
-          <!-- Funnel: wide mouth, converging neck, stem down the middle. -->
-          <PathIcon Width="13" Height="13"
-                    Data="M2 4 H22 L14 13 V20 L10 18 V13 Z" />
-        </ToggleButton>
+        <!--
+          Filters. The syntax was previously discoverable only from a tooltip, which is to say not
+          at all — this is where it is written down, alongside the one setting that changes what a
+          search means.
+        -->
+        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Padding="10,4"
+                IsVisible="{Binding HasWorkspace}"
+                ToolTip.Tip="How to filter, and where to search">
+          <Panel>
+            <!-- Funnel: wide mouth, converging neck, stem down the middle. -->
+            <PathIcon Width="13" Height="13"
+                      Data="M2 4 H22 L14 13 V20 L10 18 V13 Z" />
+            <!--
+              The scope now lives inside the popup, so the button has to carry some sign of it —
+              otherwise "search everywhere" would be on with nothing on screen saying so.
+            -->
+            <Ellipse Width="5" Height="5" Margin="0,0,-3,-3"
+                     HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                     Fill="{DynamicResource SystemAccentColorLight1}"
+                     IsVisible="{Binding SearchEverywhere}" />
+          </Panel>
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedRight">
+              <StackPanel Width="330" Spacing="10" Margin="4">
 
-        <TextBox Text="{Binding SearchText}"
+                <TextBlock Text="Filters" FontSize="13" FontWeight="SemiBold" />
+                <TextBlock FontSize="11" Opacity="0.55" TextWrapping="Wrap"
+                           Text="Type a field and a colon. The short form does the same thing. Terms combine, so several narrow the results together." />
+
+                <ItemsControl ItemsSource="{Binding SearchHelp}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="search:SearchField">
+                      <Grid ColumnDefinitions="52,*" Margin="0,3">
+                        <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold"
+                                   Text="{Binding Short, StringFormat='{}{0}:'}" />
+                        <StackPanel Grid.Column="1" Spacing="1">
+                          <TextBlock FontSize="11" Text="{Binding Summary}" />
+                          <TextBlock FontSize="10" Opacity="0.45" Text="{Binding Example}" />
+                        </StackPanel>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock FontSize="10" Opacity="0.45" TextWrapping="Wrap"
+                           Text="Typing a colon on its own brings this list up in the box." />
+
+                <Separator />
+
+                <TextBlock Text="Where to search" FontSize="12" FontWeight="SemiBold" />
+                <StackPanel Spacing="2">
+                  <RadioButton GroupName="SearchScope" FontSize="11"
+                               Content="{Binding WorkspaceName, StringFormat='Just {0}'}"
+                               IsChecked="{Binding !SearchEverywhere}" />
+                  <RadioButton GroupName="SearchScope" FontSize="11"
+                               Content="Everything indexed"
+                               IsChecked="{Binding SearchEverywhere}"
+                               ToolTip.Tip="Every workspace that has been indexed, not only the open one" />
+                </StackPanel>
+              </StackPanel>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+
+        <!--
+          The suggestion list is a Popup anchored to the box rather than a flyout, so the box keeps
+          focus and the user carries on typing through it.
+        -->
+        <Panel>
+        <Popup PlacementTarget="{Binding #SearchBox}" Placement="BottomEdgeAlignedLeft"
+               IsOpen="{Binding HasFieldSuggestions}" IsLightDismissEnabled="False">
+          <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="#33FFFFFF"
+                  BorderThickness="1" CornerRadius="6" Padding="4" Margin="0,2,0,0">
+            <ListBox x:Name="SuggestionList" Width="300" MaxHeight="230"
+                     Background="Transparent" BorderThickness="0"
+                     ItemsSource="{Binding FieldSuggestions}"
+                     SelectedIndex="{Binding SelectedSuggestionIndex}"
+                     PointerReleased="OnSuggestionClicked">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="search:SearchField">
+                  <Grid ColumnDefinitions="58,*" Margin="0,1">
+                    <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold"
+                               Text="{Binding Short, StringFormat='{}{0}:'}" />
+                    <StackPanel Grid.Column="1" Spacing="1">
+                      <TextBlock FontSize="11" Text="{Binding Name, StringFormat='{}{0}:'}" />
+                      <TextBlock FontSize="10" Opacity="0.45" Text="{Binding Summary}" />
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Border>
+        </Popup>
+
+        <TextBox x:Name="SearchBox"
+                 Text="{Binding SearchText}"
                  Watermark="{Binding SearchWatermark}"
                  HorizontalAlignment="Stretch"
-                 ToolTip.Tip="Words search titles, descriptions, keywords and creators. Filters: keyword: rating: camera: lens: type: date:">
+                 ToolTip.Tip="Words search titles, descriptions, keywords and creators. Type a colon to see the filters.">
           <TextBox.InnerLeftContent>
             <TextBlock Text="🔍" Margin="8,0,4,0" FontSize="12" Opacity="0.6"
                        VerticalAlignment="Center" />
@@ -189,10 +275,13 @@
                     IsVisible="{Binding IsShowingSearchResults}"
                     Command="{Binding ClearSearchCommand}" />
           </TextBox.InnerRightContent>
-          <TextBox.KeyBindings>
-            <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
-          </TextBox.KeyBindings>
+          <!--
+            Enter is not a KeyBinding any more: while the field list is open it has to accept the
+            highlighted field instead of running the search, and a KeyBinding cannot be conditional.
+            See OnSearchKeyDown.
+          -->
         </TextBox>
+        </Panel>
       </DockPanel>
     </Border>
 

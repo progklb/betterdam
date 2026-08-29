@@ -4096,3 +4096,73 @@ tree and metadata panel all absorbed it. The setting says so plainly rather than
 discovered.
 
 - `dotnet test` — **602/602 passing**.
+
+---
+
+## Search: short forms, a list at the colon, and a filter popup ✅
+
+The filter syntax existed and was discoverable only from a tooltip, which is to say not at all.
+
+### One catalogue, three consumers
+
+`SearchFields` states each field once — canonical name, short form, what it matches, a worked
+example. The parser resolves through it, the filter popup renders from it, and the list offered at a
+colon is filtered from it.
+
+That is the whole design decision. The alternative is three lists that agree on the day they are
+written: a field that works but is undocumented, or one the interface offers and the parser then
+rejects. The catalogue refuses to build if two fields claim one spelling, since that would make a
+search filter by the wrong thing rather than fail.
+
+**It caught its first mistake immediately.** Colour label was in the first draft — it is on the
+metadata panel and in the catalog, but `SearchQuery` has nowhere to put it, so the popup would have
+advertised a filter that silently did nothing. `EveryFieldsExampleActuallyFilters` parses every
+advertised example and fails if it is not understood, filters nothing, or falls through to free
+text. Label is now absent with a comment saying why.
+
+### Short forms
+
+`k` `r` `t` `c` `l` `d`, alongside the spelled-out names. `kw` still works: an alias that once
+shipped cannot be withdrawn without breaking a habit someone has already formed.
+
+### The list at a colon
+
+Typing `:` opens a list of fields under the box; `k:` narrows it to one. Arrow keys move, Enter or
+Tab accepts, Escape dismisses, and it closes by itself once a value is being typed — by then the
+user is answering rather than asking.
+
+The trigger and the text rewriting live in `SearchSuggestion`, out of the view, because the
+interesting cases — a colon mid-word, a second colon, a caret that is not at the end — are far
+easier to state as tests than to reproduce by typing into a window.
+
+Two things had to change in the view for it:
+
+- **Enter is no longer a `KeyBinding`.** While the list is open it must accept the highlighted field
+  rather than run the search, and a `KeyBinding` cannot stand aside.
+- **A flag was not enough to stop the list reopening.** Writing `rating:` back into the box also
+  travels out to the ViewModel through the two-way binding and back, and the return trip raises
+  `TextChanged` *after* the flag clears — which looks exactly like the user typing a colon. Found by
+  accepting a suggestion and watching the list reopen on the field just chosen. The dismissal is now
+  posted so it lands after the binding has finished.
+
+### The filter button
+
+The funnel was a bare toggle for search scope. It is now a popup holding the syntax help and the
+scope, as two radio buttons naming the workspace rather than an unlabelled toggle. The button keeps
+an accent dot when the scope is "everything indexed", since that state would otherwise be on with
+nothing on screen saying so.
+
+Room was left for the rating, keyword, label and flag controls to follow; nothing was stubbed out
+for them.
+
+### Verified
+
+```text
+:            the field list opens, first entry highlighted
+↓ Enter      inserts "rating:" and closes
+:  Enter     inserts "keyword:" and closes — no reopening
+filter       help and scope render; scope names the open workspace
+t:video      199 matches, all video
+```
+
+- `dotnet test` — **631/631 passing** (29 new).

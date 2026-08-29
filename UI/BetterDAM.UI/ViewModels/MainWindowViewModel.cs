@@ -232,6 +232,71 @@ public sealed partial class MainWindowViewModel : ObservableObject
         : $"Search {WorkspaceName}";
 
     /// <summary>
+    /// The search vocabulary, for the help in the filter popup and the list offered at a colon.
+    /// Read straight from the parser's own catalogue rather than restated here, so the help cannot
+    /// describe a field that does not work or miss one that does.
+    /// </summary>
+    public static IReadOnlyList<SearchField> SearchHelp => SearchFields.All;
+
+    /// <summary>
+    /// The fields worth offering for what is currently half-typed. Empty when the box is not asking,
+    /// which is also what hides the popup.
+    /// </summary>
+    public ObservableCollection<SearchField> FieldSuggestions { get; } = [];
+
+    [ObservableProperty]
+    private int _selectedSuggestionIndex = -1;
+
+    public bool HasFieldSuggestions => FieldSuggestions.Count > 0;
+
+    /// <summary>
+    /// Recomputes what to offer for a caret position. Returns true when the popup should be open.
+    /// </summary>
+    public bool UpdateFieldSuggestions(string? text, int caret)
+    {
+        var prefix = SearchSuggestion.PrefixAt(text, caret);
+
+        FieldSuggestions.Clear();
+
+        if (prefix is not null)
+        {
+            foreach (var field in SearchFields.Matching(prefix))
+            {
+                FieldSuggestions.Add(field);
+            }
+        }
+
+        SelectedSuggestionIndex = FieldSuggestions.Count > 0 ? 0 : -1;
+        OnPropertyChanged(nameof(HasFieldSuggestions));
+
+        return FieldSuggestions.Count > 0;
+    }
+
+    public void DismissFieldSuggestions()
+    {
+        if (FieldSuggestions.Count == 0)
+        {
+            return;
+        }
+
+        FieldSuggestions.Clear();
+        SelectedSuggestionIndex = -1;
+        OnPropertyChanged(nameof(HasFieldSuggestions));
+    }
+
+    /// <summary>Moves through the offered fields, wrapping at both ends.</summary>
+    public void MoveSuggestion(int delta)
+    {
+        if (FieldSuggestions.Count == 0)
+        {
+            return;
+        }
+
+        var next = SelectedSuggestionIndex + delta;
+        SelectedSuggestionIndex = (next % FieldSuggestions.Count + FieldSuggestions.Count) % FieldSuggestions.Count;
+    }
+
+    /// <summary>
     /// The selection decoded at native resolution, for the viewer. Null until asked for: it costs
     /// tens of megabytes and a decode, neither of which is worth spending on the inline preview.
     /// </summary>

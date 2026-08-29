@@ -279,6 +279,37 @@ public class ThemeTests
         Assert.Equal(expected, settings.ClampedRoughness);
     }
 
+    /// <summary>
+    /// The pencil takes the selection's hue but not its value. Those colours were chosen to sit
+    /// behind text as a filled block; a one-and-a-half pixel line has no area to carry a dark tone
+    /// and reads as a smudge. This asserts the lift is real, and that it is a lift rather than a
+    /// wash — a colour blended so far towards white that the hue is gone would "match the theme"
+    /// only in the sense that white matches everything.
+    /// </summary>
+    [Fact]
+    public void RingInkLiftsTheSelectionColourWithoutLosingItsHue()
+    {
+        Assert.All(Enum.GetValues<AppTheme>(), theme =>
+        {
+            var selection = AppThemes.For(theme).Selection;
+            var ink = AppThemes.InkFor(selection);
+
+            static int Luma(Color c) => (int)((0.299 * c.R) + (0.587 * c.G) + (0.114 * c.B));
+
+            Assert.True(Luma(ink) > Luma(selection) + 20,
+                $"{theme}: ink at luma {Luma(ink)} is not clear of the selection at {Luma(selection)}.");
+
+            // The channel that led in the selection must still lead in the ink, so a red theme does
+            // not acquire a green pencil.
+            var selectionMax = Math.Max(selection.R, Math.Max(selection.G, selection.B));
+            var inkMax = Math.Max(ink.R, Math.Max(ink.G, ink.B));
+
+            Assert.Equal(
+                selection.R == selectionMax ? 'r' : selection.G == selectionMax ? 'g' : 'b',
+                ink.R == inkMax ? 'r' : ink.G == inkMax ? 'g' : 'b');
+        });
+    }
+
     [Fact]
     public void HandDrawnSettingsSurviveARoundTrip()
     {

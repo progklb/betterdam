@@ -39,6 +39,22 @@ public static class AppThemes
     public const string PanelKey = "AppPanelBrush";
 
     /// <summary>
+    /// The key Fluent publishes the platform's own accent under. Read rather than asked of
+    /// <c>PlatformSettings</c>, which needs a window to exist — the theme is applied before there
+    /// is one.
+    /// </summary>
+    private const string PlatformAccentKey = "SystemAccentColor";
+
+    /// <summary>Used only if the platform accent cannot be read at all.</summary>
+    private static readonly Color FallbackAccent = Color.FromRgb(0x00, 0x7A, 0xFF);
+
+    private static Color? ReadPlatformAccent(Application application)
+        => application.TryGetResource(PlatformAccentKey, application.ActualThemeVariant, out var value)
+            && value is Color colour
+                ? colour
+                : null;
+
+    /// <summary>
     /// Selection colours are a clear step lighter than the tile they land on — a tile is the panel
     /// plus 9% white, so anything close to that reads as a hover rather than a choice.
     /// </summary>
@@ -100,22 +116,32 @@ public static class AppThemes
         application.Resources[SurfaceKey] = new SolidColorBrush(palette.Surface);
         application.Resources[PanelKey] = new SolidColorBrush(palette.Panel);
 
-        ApplyAccent(application, settings);
-        ApplySelectionStyle(application, settings);
+        // The accent is applied first and hands back the colour that ended up in force, so the ring
+        // can be tinted to match it. Returned rather than read back out of the resources: reading
+        // it back is precisely the bug that once painted a system-coloured selection in the previous
+        // theme's colour, because the read happened while this application's own override was still
+        // in the dictionary.
+        var accent = ApplyAccent(application, settings);
+
+        ApplySelectionStyle(application, settings, accent);
     }
 
     public const string RingEnabledKey = "AppRingEnabled";
     public const string RingRoughnessKey = "AppRingRoughness";
     public const string RingAnimatesKey = "AppRingAnimates";
 
-    /// <summary>
-    /// The ink the ring is drawn in. Deliberately not the theme's selection colour: a pencil line in
-    /// dark teal on dark teal would be invisible. It is a light neutral that reads on all four
-    /// surfaces, which is what a pencil on dark paper actually looks like.
-    /// </summary>
-    private static readonly Color RingInk = Color.FromRgb(0xE8, 0xF2, 0xEE);
-
     public const string RingInkKey = "AppRingInk";
+
+    /// <summary>
+    /// The ink, taken from whatever colour a selection is currently drawn in — but lifted.
+    ///
+    /// Not the raw selection colour, and the reason is not aesthetic. Those colours were picked to
+    /// sit <i>behind</i> text as a filled block, where a large area carries a dark tone perfectly
+    /// well. A one-and-a-half pixel line has no area to carry it, and the same value that reads as
+    /// a solid highlight reads as a smudge. Light1 of the accent ramp keeps the hue plainly — teal
+    /// stays teal, red stays red — while lifting it enough to be a line.
+    /// </summary>
+    public static Color InkFor(Color selection) => AccentRamp(selection)[1];
 
     /// <summary>
     /// Publishes the ring's settings. The style that suppresses the filled row lives in App.axaml
@@ -128,12 +154,12 @@ public static class AppThemes
     /// revert a setter that has already been applied to a realised template part. A class does —
     /// re-evaluating on a class change is the mechanism the styling system is built around.
     /// </summary>
-    private static void ApplySelectionStyle(Application application, AppSettings settings)
+    private static void ApplySelectionStyle(Application application, AppSettings settings, Color accent)
     {
         application.Resources[RingEnabledKey] = settings.SelectionStyle == SelectionStyle.HandDrawn;
         application.Resources[RingRoughnessKey] = settings.ClampedRoughness;
         application.Resources[RingAnimatesKey] = settings.HandDrawnAnimates;
-        application.Resources[RingInkKey] = new SolidColorBrush(RingInk);
+        application.Resources[RingInkKey] = new SolidColorBrush(InkFor(accent));
     }
 
     /// <summary>
@@ -152,7 +178,7 @@ public static class AppThemes
     /// system. Writing the values back would freeze them, and the point of System is that it follows
     /// a change made in System Settings.
     /// </summary>
-    private static void ApplyAccent(Application application, AppSettings settings)
+    private static Color ApplyAccent(Application application, AppSettings settings)
     {
         if (settings.SelectionColour != SelectionColour.Theme)
         {
@@ -161,19 +187,24 @@ public static class AppThemes
                 application.Resources.Remove(key);
             }
 
-            return;
+            // Read only after the overrides are gone, so this is the platform's value and not one
+            // of ours. Kept inside this method so the ordering cannot be got wrong from outside.
+            return ReadPlatformAccent(application) ?? FallbackAccent;
         }
 
         // Fluent expects a ramp, not a single colour: the variants are what a checkbox uses when it
         // is hovered, pressed or disabled. Supplying only the base would leave those states on the
         // platform blue, which is worse than not overriding at all — the control would change colour
         // under the pointer.
-        var ramp = AccentRamp(For(settings.Theme).Selection);
+        var accent = For(settings.Theme).Selection;
+        var ramp = AccentRamp(accent);
 
         for (var i = 0; i < AccentKeys.Length; i++)
         {
             application.Resources[AccentKeys[i]] = ramp[i];
         }
+
+        return accent;
     }
 
     /// <summary>

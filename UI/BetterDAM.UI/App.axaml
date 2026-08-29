@@ -61,15 +61,18 @@
       one place. When the experiment is off the ring is collapsed and costs nothing.
     -->
     <!--
-      With the experiment on, the ring is the only mark of selection, so the filled row goes. The
-      part name was read from a live visual tree rather than guessed: the fill sits on
-      Border#PART_LayoutRoot, and PART_HeaderPresenter inside it is transparent.
+      With the experiment on, the pencil is the only mark a row gets — for hover as well as
+      selection, since a standard hover highlight that vanished the instant a hand-drawn ring
+      appeared was the jarring part. Every state of the fill goes, not just the selected one, which
+      is why this matches the part unqualified. The part name was read from a live visual tree
+      rather than guessed: the fill sits on Border#PART_LayoutRoot, and PART_HeaderPresenter inside
+      it is transparent.
     -->
-    <Style Selector="TreeView.handDrawn TreeViewItem:selected /template/ Border#PART_LayoutRoot">
+    <Style Selector="TreeView.handDrawn TreeViewItem /template/ Border#PART_LayoutRoot">
       <Setter Property="Background" Value="Transparent" />
     </Style>
 
-    <Style Selector="controls|RoughRing">
+    <Style Selector="controls|RoughMark">
       <Setter Property="IsVisible" Value="{DynamicResource AppRingEnabled}" />
       <Setter Property="Roughness" Value="{DynamicResource AppRingRoughness}" />
       <Setter Property="Animates" Value="{DynamicResource AppRingAnimates}" />

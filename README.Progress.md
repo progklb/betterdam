@@ -3673,3 +3673,61 @@ TreeViewItem
   anyway, and it is now a setting rather than an argument.
 
 - `dotnet test` — **593/593 passing**.
+
+---
+
+## The pencil now matches the theme, and hovers in pencil too ✅
+
+### Ink follows the selection colour
+
+The ring and underline are drawn in whatever colour a selection currently is — the theme's under
+*Match the theme*, the platform's under *System default* — so the mark belongs to the palette
+instead of being the one white thing on screen.
+
+Not the raw colour, though, and the reason is not taste. Those values were chosen to sit *behind*
+text as a filled block, where a large area carries a dark tone perfectly well. A one-and-a-half
+pixel line has no area to carry it, and the same value that reads as a solid highlight reads as a
+smudge. The ink is Light1 of the accent ramp — the hue plainly kept, the value lifted enough to be
+a line. A test asserts both halves: that the lift is real, and that the leading channel is unchanged,
+so a red theme cannot acquire a green pencil.
+
+Resolving it also had to avoid the trap from earlier in this session. `ApplyAccent` now **returns**
+the colour that ended up in force rather than the caller reading it back out of the resources —
+reading it back is exactly what once painted a system-coloured selection in the previous theme's
+colour, because the read happened while this application's own override was still in the dictionary.
+The read that remains is inside `ApplyAccent`, after the removal, where the ordering is local and
+cannot be got wrong from outside.
+
+### Hover is drawn too
+
+Reported: the standard hover highlight vanishing the instant a hand-drawn ring appeared felt jarring
+— two different visual languages a click apart. With the experiment on, the fill is now suppressed
+in *every* state, not just the selected one, and hover gets its own pencil mark: a single wobbly
+underline, in the same ink, at the same roughness.
+
+An underline rather than an arrow or an ellipsis. Both of those need horizontal room the row has not
+got and would clip against a long folder name, and an underline is already the conventional "you
+could choose this" mark, which makes it read as the lighter-weight sibling of the ring rather than
+as a competing idea.
+
+Details that matter in use:
+
+- **190ms, against the ring's 520.** Hover has to keep up with a pointer moving down a list; a
+  leisurely draw would still be finishing as the pointer left.
+- **One pass, not two.** A second would read as a deliberate double underline rather than as a
+  lighter mark.
+- **Wobble in points, not as a fraction of the row.** Scaling it with the name's length, which is
+  right for the ring, would make a long folder name ripple wildly.
+- **Selected wins.** A row that is both selected and hovered gets the ring only. That is decided
+  inside the control, which is why the two marks are one class: two controls would need a converter
+  to express it and would occasionally draw both.
+
+`RoughRing` became `RoughMark`, since it no longer only draws rings.
+
+### Checked before building it
+
+Whether `IsPointerOver` on a `TreeViewItem` also fires for its ancestors — if it did, hovering a
+child would underline every folder above it. It does not: hovering a child highlights only that row.
+Verified in the running application before the binding was written rather than after it misbehaved.
+
+- `dotnet test` — **594/594 passing**.

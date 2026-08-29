@@ -276,7 +276,8 @@
                 whatever the folder was called. Hugging the name is what makes the ring fit it.
               -->
               <Panel HorizontalAlignment="Left">
-                <controls:RoughRing IsActive="{Binding $parent[TreeViewItem].IsSelected}" />
+                <controls:RoughMark IsSelected="{Binding $parent[TreeViewItem].IsSelected}"
+                                    IsHovered="{Binding $parent[TreeViewItem].IsPointerOver}" />
                 <TextBlock Text="{Binding Name}" Margin="10,3" />
               </Panel>
             </TreeDataTemplate>

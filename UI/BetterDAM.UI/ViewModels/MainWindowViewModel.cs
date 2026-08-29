@@ -106,6 +106,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _noiseReduction = develop.NoiseReduction;
         _rawQuality = develop.Quality;
 
+        // Otherwise the kind toggles start unticked on an empty query, which reads as "showing
+        // nothing" when it means "showing everything".
+        ReadFiltersFromQuery();
+
         StatusText = _ffmpeg.IsAvailable
             ? "Ready. Choose a folder to begin."
             : "Ready. FFmpeg was not found — video thumbnails are unavailable.";
@@ -282,6 +286,135 @@ public sealed partial class MainWindowViewModel : ObservableObject
         FieldSuggestions.Clear();
         SelectedSuggestionIndex = -1;
         OnPropertyChanged(nameof(HasFieldSuggestions));
+    }
+
+    // ---- Filter controls -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Set while a control is rewriting the query, so the write-back does not immediately re-read
+    /// and fight what was just set.
+    /// </summary>
+    private bool _syncingFilters;
+
+    /// <summary>
+    /// The rating floor the query currently asks for, 0 when it asks for none. Clicking the star
+    /// that is already the floor clears it, which is the only way back to "any rating" without
+    /// editing the text.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RatingFilterSummary))]
+    private int _filterRating;
+
+    [ObservableProperty]
+    private bool _filterRaw;
+
+    [ObservableProperty]
+    private bool _filterJpeg;
+
+    [ObservableProperty]
+    private bool _filterVideo;
+
+    partial void OnFilterRatingChanged(int value)
+        => WriteFilter(() => SearchText = SearchQueryText.WithField(
+            SearchText, "rating", value > 0 ? $">={value}" : null));
+
+    partial void OnFilterRawChanged(bool value) => WriteKinds();
+
+    partial void OnFilterJpegChanged(bool value) => WriteKinds();
+
+    partial void OnFilterVideoChanged(bool value) => WriteKinds();
+
+    private void WriteKinds() => WriteFilter(() =>
+    {
+        var kinds = new List<string>();
+
+        if (FilterRaw) kinds.Add("raw");
+        if (FilterJpeg) kinds.Add("jpg");
+        if (FilterVideo) kinds.Add("video");
+
+        // All three ticked is the same as no filter at all, and says so more plainly.
+        var value = kinds.Count is 0 or 3 ? null : string.Join(',', kinds);
+
+        SearchText = SearchQueryText.WithField(SearchText, "type", value);
+    });
+
+    private void WriteFilter(Action write)
+    {
+        if (_syncingFilters)
+        {
+            return;
+        }
+
+        _syncingFilters = true;
+
+        try
+        {
+            write();
+        }
+        finally
+        {
+            _syncingFilters = false;
+        }
+
+        _ = SearchCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>
+    /// Brings the controls in line with the query, so opening the popup shows what is actually being
+    /// filtered — including filters that were typed rather than clicked.
+    ///
+    /// Read by parsing rather than by matching text, so <c>rating:&gt;=3</c> and <c>r:&gt;=3</c> and
+    /// a query where the term sits in the middle all light the same three stars.
+    /// </summary>
+    private void ReadFiltersFromQuery()
+    {
+        if (_syncingFilters)
+        {
+            return;
+        }
+
+        var query = SearchQueryParser.Parse(SearchText);
+
+        _syncingFilters = true;
+
+        try
+        {
+            // Only a floor is representable as stars; anything else leaves them dark rather than
+            // claiming a filter the query does not have.
+            FilterRating = query.Rating is { Operator: ComparisonOperator.GreaterThanOrEqual } rating
+                ? rating.Value
+                : 0;
+
+            var kinds = query.Kinds;
+            var all = kinds.IsDefaultOrEmpty;
+
+            FilterRaw = all || kinds.Contains(MediaKind.Raw);
+            FilterJpeg = all || kinds.Contains(MediaKind.Jpeg);
+            FilterVideo = all || kinds.Contains(MediaKind.Video);
+        }
+        finally
+        {
+            _syncingFilters = false;
+        }
+    }
+
+    public string RatingFilterSummary => FilterRating > 0 ? "and up" : string.Empty;
+
+    /// <summary>
+    /// Clicking a star sets the floor, or clears it when it is already the floor — the only way back
+    /// to "any rating" without editing the text.
+    /// </summary>
+    /// <param name="stars">
+    /// Taken as a string because that is what a XAML CommandParameter is; parsing here keeps five
+    /// buttons' markup free of x:Int32 wrappers.
+    /// </param>
+    [RelayCommand]
+    private void SetRatingFilter(string? stars)
+    {
+        if (int.TryParse(stars, out var value))
+        {
+            FilterRating = FilterRating == value ? 0 : value;
+        }
     }
 
     /// <summary>Moves through the offered fields, wrapping at both ends.</summary>
@@ -999,6 +1132,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string? _searchText;
+
+    /// <summary>
+    /// Keeps the filter controls showing what the query actually says, however it was arrived at —
+    /// typed, pasted, or clicked.
+    /// </summary>
+    partial void OnSearchTextChanged(string? value) => ReadFiltersFromQuery();
 
     /// <summary>True while showing search results rather than a folder's contents.</summary>
     [ObservableProperty]

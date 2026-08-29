@@ -30,7 +30,7 @@ public class SearchQueryParserTests
     {
         var query = SearchQueryParser.Parse("keyword:motorcycle kw:travel");
 
-        Assert.Equal(["motorcycle", "travel"], query.Keywords.ToArray());
+        Assert.Equal([["motorcycle"], ["travel"]], query.Keywords.Select(k => k.AnyOf.ToArray()).ToArray());
         Assert.Empty(query.FreeText);
     }
 
@@ -63,19 +63,23 @@ public class SearchQueryParserTests
     }
 
     [Theory]
-    [InlineData("type:video", MediaType.Video)]
-    [InlineData("type:videos", MediaType.Video)]
-    [InlineData("type:image", MediaType.Image)]
-    [InlineData("type:photos", MediaType.Image)]
-    public void Media_type_filters_are_parsed(string text, MediaType expected)
-        => Assert.Equal(expected, SearchQueryParser.Parse(text).MediaType);
+    [InlineData("type:video", new[] { MediaKind.Video })]
+    [InlineData("type:videos", new[] { MediaKind.Video })]
+    [InlineData("type:raw", new[] { MediaKind.Raw })]
+    [InlineData("type:jpg", new[] { MediaKind.Jpeg })]
+    // "image" is every still, raw or not, which is what it meant before raw became separable.
+    [InlineData("type:image", new[] { MediaKind.Raw, MediaKind.Jpeg })]
+    [InlineData("type:photos", new[] { MediaKind.Raw, MediaKind.Jpeg })]
+    [InlineData("type:raw,video", new[] { MediaKind.Raw, MediaKind.Video })]
+    public void Media_kind_filters_are_parsed(string text, MediaKind[] expected)
+        => Assert.Equal(expected, SearchQueryParser.Parse(text).Kinds.ToArray());
 
     [Fact]
     public void An_unknown_media_type_is_reported()
     {
         var query = SearchQueryParser.Parse("type:audio");
 
-        Assert.Null(query.MediaType);
+        Assert.Empty(query.Kinds);
         Assert.Contains("type:audio", query.UnrecognisedTerms);
     }
 
@@ -93,8 +97,8 @@ public class SearchQueryParserTests
         var query = SearchQueryParser.Parse("rating:>=4 AND keyword:motorcycle AND type:video");
 
         Assert.Equal(4, query.Rating!.Value);
-        Assert.Equal(["motorcycle"], query.Keywords.ToArray());
-        Assert.Equal(MediaType.Video, query.MediaType);
+        Assert.Equal([["motorcycle"]], query.Keywords.Select(k => k.AnyOf.ToArray()).ToArray());
+        Assert.Equal([MediaKind.Video], query.Kinds.ToArray());
 
         // A literal AND is accepted but is not itself a search term.
         Assert.Empty(query.FreeText);
@@ -174,7 +178,9 @@ public class CatalogQueryBuilderTests
         Assert.Contains("@keyword0", sql);
         Assert.Contains("@camera0", sql);
         Assert.Contains("@rating", sql);
-        Assert.Contains("keyword0", parameters.ParameterNames);
+        // keyword0_0 rather than keyword0: a keyword filter is now a group of alternatives, and
+        // each word in it gets its own parameter.
+        Assert.Contains("keyword0_0", parameters.ParameterNames);
     }
 }
 
@@ -933,5 +939,64 @@ public class CatalogKeywordTests
 
         Assert.Equal(2, library.Roots.Length);
         Assert.Equal("animal", library.Roots.Single(r => r.Name == "Subject").Children.Single().Name);
+    }
+}
+
+/// <summary>The SQL the new filters build, checked without needing a database.</summary>
+public class KindAndKeywordSqlTests
+{
+    [Fact]
+    public void AlternativeKeywordsBecomeOneExistsWithIn()
+    {
+        var (sql, parameters) = SqliteCatalog.BuildSearch(
+            SearchQueryParser.Parse("k:sand,dust"), null, 100);
+
+        // One EXISTS, two parameters inside an IN: any of them satisfies the filter.
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(sql, "EXISTS"));
+        Assert.Contains("@keyword0_0, @keyword0_1", sql);
+        Assert.Contains("keyword0_0", parameters.ParameterNames);
+        Assert.Contains("keyword0_1", parameters.ParameterNames);
+
+        Assert.DoesNotContain("sand", sql);
+        Assert.DoesNotContain("dust", sql);
+    }
+
+    [Fact]
+    public void RepeatedKeywordsBecomeSeveralExists()
+    {
+        var (sql, _) = SqliteCatalog.BuildSearch(SearchQueryParser.Parse("k:sand k:dust"), null, 100);
+
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(sql, "EXISTS").Count);
+    }
+
+    /// <summary>
+    /// Raw has no column of its own, so it is drawn from the extension — and the list must be the
+    /// registry's, not a second copy that could fall behind it.
+    /// </summary>
+    [Fact]
+    public void RawIsFilteredByTheRegistrysExtensions()
+    {
+        var (sql, _) = SqliteCatalog.BuildSearch(SearchQueryParser.Parse("t:raw"), null, 100);
+
+        Assert.All(MediaTypeRegistry.RawFileExtensions, extension =>
+            Assert.Contains(extension.ToLowerInvariant(), sql));
+
+        Assert.DoesNotContain("NOT (", sql);
+    }
+
+    [Fact]
+    public void JpegIsEverythingThatIsNotRaw()
+    {
+        var (sql, _) = SqliteCatalog.BuildSearch(SearchQueryParser.Parse("t:jpg"), null, 100);
+
+        Assert.Contains("NOT (", sql);
+    }
+
+    [Fact]
+    public void SeveralKindsAreOredTogether()
+    {
+        var (sql, _) = SqliteCatalog.BuildSearch(SearchQueryParser.Parse("t:raw,video"), null, 100);
+
+        Assert.Contains(" OR ", sql);
     }
 }

@@ -24,12 +24,12 @@ public static class SearchQueryParser
         }
 
         var freeText = ImmutableArray.CreateBuilder<string>();
-        var keywords = ImmutableArray.CreateBuilder<string>();
+        var keywords = ImmutableArray.CreateBuilder<KeywordFilter>();
         var cameras = ImmutableArray.CreateBuilder<string>();
         var lenses = ImmutableArray.CreateBuilder<string>();
         var unrecognised = ImmutableArray.CreateBuilder<string>();
 
-        MediaType? mediaType = null;
+        var kinds = ImmutableArray.CreateBuilder<MediaKind>();
         RatingFilter? rating = null;
         DateFilter? captureDate = null;
 
@@ -61,7 +61,20 @@ public static class SearchQueryParser
             switch (SearchFields.Resolve(field))
             {
                 case "keyword":
-                    keywords.Add(value);
+                    // Comma means "any of these", as it does for type. Repeating the field still
+                    // means "all of these", so both questions can be asked.
+                    var words = value
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                    if (words.Length > 0)
+                    {
+                        keywords.Add(KeywordFilter.Of(words));
+                    }
+                    else
+                    {
+                        unrecognised.Add(token);
+                    }
+
                     break;
 
                 case "camera":
@@ -73,9 +86,17 @@ public static class SearchQueryParser
                     break;
 
                 case "type":
-                    if (TryParseMediaType(value, out var parsedType))
+                    // Comma means "any of these": a file is one kind, so t:raw,video can only
+                    // sensibly be read as either.
+                    if (TryParseKinds(value, out var parsedKinds))
                     {
-                        mediaType = parsedType;
+                        foreach (var kind in parsedKinds)
+                        {
+                            if (!kinds.Contains(kind))
+                            {
+                                kinds.Add(kind);
+                            }
+                        }
                     }
                     else
                     {
@@ -122,7 +143,7 @@ public static class SearchQueryParser
             Keywords = keywords.ToImmutable(),
             Cameras = cameras.ToImmutable(),
             Lenses = lenses.ToImmutable(),
-            MediaType = mediaType,
+            Kinds = kinds.ToImmutable(),
             Rating = rating,
             CaptureDate = captureDate,
             UnrecognisedTerms = unrecognised.ToImmutable()
@@ -133,7 +154,7 @@ public static class SearchQueryParser
     /// Splits on whitespace but keeps quoted runs together, so <c>lens:"RF 100-500"</c> survives as
     /// one token.
     /// </summary>
-    internal static IEnumerable<string> Tokenize(string text)
+    public static IEnumerable<string> Tokenize(string text)
     {
         var current = new StringBuilder();
         var inQuotes = false;
@@ -172,22 +193,45 @@ public static class SearchQueryParser
             ? value[1..^1]
             : value.Replace("\"", string.Empty);
 
-    private static bool TryParseMediaType(string value, out MediaType mediaType)
+    /// <summary>
+    /// Reads one or more kinds from a comma-separated value. All of them must be understood — half
+    /// a filter silently applied is worse than being told the whole term was not understood.
+    /// </summary>
+    private static bool TryParseKinds(string value, out IReadOnlyList<MediaKind> kinds)
     {
-        switch (value.ToLowerInvariant())
+        var parsed = new List<MediaKind>();
+
+        foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            case "video" or "videos" or "movie":
-                mediaType = Models.MediaType.Video;
-                return true;
+            switch (part.ToLowerInvariant())
+            {
+                case "video" or "videos" or "movie":
+                    parsed.Add(MediaKind.Video);
+                    break;
 
-            case "image" or "images" or "photo" or "photos" or "still":
-                mediaType = Models.MediaType.Image;
-                return true;
+                case "raw":
+                    parsed.Add(MediaKind.Raw);
+                    break;
 
-            default:
-                mediaType = Models.MediaType.Unsupported;
-                return false;
+                case "jpg" or "jpeg":
+                    parsed.Add(MediaKind.Jpeg);
+                    break;
+
+                // "image" is every still, raw or not — which is what it meant before raw became
+                // separately selectable, so an old query keeps working.
+                case "image" or "images" or "photo" or "photos" or "still":
+                    parsed.Add(MediaKind.Raw);
+                    parsed.Add(MediaKind.Jpeg);
+                    break;
+
+                default:
+                    kinds = [];
+                    return false;
+            }
         }
+
+        kinds = parsed;
+        return parsed.Count > 0;
     }
 
     private static bool TryParseRating(string value, out RatingFilter? filter)

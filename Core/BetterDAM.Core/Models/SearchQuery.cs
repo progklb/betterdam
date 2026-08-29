@@ -16,6 +16,17 @@ public sealed record RatingFilter(ComparisonOperator Operator, int Value);
 public sealed record DateFilter(ComparisonOperator Operator, DateTimeOffset Value);
 
 /// <summary>
+/// One keyword condition: a file matches it by carrying any of these words.
+///
+/// A list rather than a single word because <c>k:sand,dust</c> has to mean "either", while
+/// <c>k:sand k:dust</c> still means "both" — two useful questions that need telling apart.
+/// </summary>
+public sealed record KeywordFilter(ImmutableArray<string> AnyOf)
+{
+    public static KeywordFilter Of(params string[] words) => new([.. words]);
+}
+
+/// <summary>
 /// A parsed search. Everything here is structured — the parser turns the user's typed string into
 /// this, and the catalog turns this into SQL. Nothing downstream re-parses text.
 /// </summary>
@@ -26,14 +37,21 @@ public sealed record SearchQuery
     /// <summary>Bare words, matched across title, description, headline, keywords and creator.</summary>
     public ImmutableArray<string> FreeText { get; init; } = [];
 
-    /// <summary>Exact keyword matches — <c>keyword:motorcycle</c>.</summary>
-    public ImmutableArray<string> Keywords { get; init; } = [];
+    /// <summary>
+    /// Keyword filters. Each one must be satisfied, and a filter is satisfied by any of its words —
+    /// so repeating the field means "all of these" and a comma means "any of these".
+    /// </summary>
+    public ImmutableArray<KeywordFilter> Keywords { get; init; } = [];
 
     public ImmutableArray<string> Cameras { get; init; } = [];
 
     public ImmutableArray<string> Lenses { get; init; } = [];
 
-    public MediaType? MediaType { get; init; }
+    /// <summary>
+    /// What kinds of file to include. Empty means all of them. Several combine as "any of these" —
+    /// a file is one kind, so asking for RAW and video can only sensibly mean either.
+    /// </summary>
+    public ImmutableArray<MediaKind> Kinds { get; init; } = [];
 
     public RatingFilter? Rating { get; init; }
 
@@ -44,7 +62,7 @@ public sealed record SearchQuery
 
     public bool IsEmpty =>
         FreeText.IsDefaultOrEmpty && Keywords.IsDefaultOrEmpty && Cameras.IsDefaultOrEmpty &&
-        Lenses.IsDefaultOrEmpty && MediaType is null && Rating is null && CaptureDate is null;
+        Lenses.IsDefaultOrEmpty && Kinds.IsDefaultOrEmpty && Rating is null && CaptureDate is null;
 }
 
 /// <summary>One row of a search result — enough to render a tile without touching the disk.</summary>

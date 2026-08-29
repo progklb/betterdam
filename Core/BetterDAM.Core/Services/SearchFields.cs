@@ -52,9 +52,9 @@ public static class SearchFields
     /// </summary>
     public static ImmutableArray<SearchField> All { get; } =
     [
-        new("keyword", "k", "Files tagged with a word", "k:motorcycle", ["kw"]),
+        new("keyword", "k", "Files tagged with a word", "k:sand,dust", ["kw"]),
         new("rating", "r", "Stars, with > < >= <=", "r:>=4"),
-        new("type", "t", "image or video", "t:video"),
+        new("type", "t", "raw, jpg or video", "t:raw,video"),
         new("camera", "c", "Camera make or model", "c:Fujifilm"),
         new("lens", "l", "Lens name; quote it if it has spaces", "l:\"RF 100-500\""),
         new("date", "d", "Capture date, or a bare year", "d:>=2024-01-01")

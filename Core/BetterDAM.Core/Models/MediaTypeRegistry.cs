@@ -17,6 +17,13 @@ public static class MediaTypeRegistry
     /// Sensor data rather than a finished picture. These need developing to be viewed properly;
     /// everything else in the image set is already an image.
     /// </summary>
+    /// <summary>
+    /// Exposed so the catalog can filter raw from rendered in SQL. The database stores no flag for
+    /// it, so the query has to test the extension — and it must test the same list the rest of the
+    /// application uses, not a second copy of it.
+    /// </summary>
+    public static IReadOnlyCollection<string> RawFileExtensions => RawExtensions;
+
     private static readonly HashSet<string> RawExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".dng", ".cr2", ".cr3", ".nef", ".arw", ".raf", ".orf", ".rw2", ".srw", ".pef"

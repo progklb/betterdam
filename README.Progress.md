@@ -4166,3 +4166,69 @@ t:video      199 matches, all video
 ```
 
 - `dotnet test` — **631/631 passing** (29 new).
+
+---
+
+## Filtering by hand ✅
+
+The filter popup now opens with rating stars and RAW / JPEG / Video toggles above the syntax help.
+
+### The controls write into the search box
+
+They hold no filter state of their own. Clicking three stars puts `r:>=3` in the box and runs the
+search; turning RAW off makes it `r:>=3 t:jpg,video`. Reading works the other way too — a typed
+`rating:>=3` lights three stars, because the state is read by *parsing* the query rather than by
+matching text.
+
+One query, visible and editable, and the GUI teaches the syntax it is a shortcut for. A parallel set
+of filters would have needed reconciling with the text every time either changed, and would have
+made the box and the popup capable of disagreeing.
+
+### RAW became a thing you can filter by
+
+`SearchQuery.MediaType` only knew image from video, and RAW against JPEG is the distinction a
+photographer actually wants. It is now `Kinds`, a set of `MediaKind` — Raw, Jpeg, Video — where
+several mean "any of these", since a file is only ever one of them.
+
+The catalog stores no raw flag, so the SQL tests the extension, built from
+`MediaTypeRegistry.RawFileExtensions` rather than a second list that could fall behind the first.
+`t:image` still means every still, raw or not, so an older query keeps working.
+
+### The comma question, answered by fixing it
+
+**`kw:motorcycle,night` did not work.** It looked for one keyword literally named
+`motorcycle,night`, matched nothing, and looked entirely valid while doing it — the worst kind of
+wrong. Having just made a comma mean "any of these" for `type`, leaving keywords inconsistent would
+have been a wart introduced in the same sitting.
+
+`SearchQuery.Keywords` is now a list of `KeywordFilter`, each holding alternatives. One `EXISTS` per
+filter gives AND across them; `IN` inside one gives OR within it:
+
+```text
+k:sand k:dust    both      two EXISTS
+k:sand,dust      either    one EXISTS with IN
+```
+
+Checked against the catalog rather than trusted — `Wide` and `Tree` in the open workspace:
+
+```text
+SQL ground truth   either 85   both 17
+BetterDAM          either 85   both 17
+```
+
+**And yes, fields combine.** `r:>=4 k:sand,dust k:wide t:raw c:Fujifilm` is one query and every term
+narrows it. Verified in the application: `r:>=3 t:jpg,video` gave 27 matches.
+
+**Colour label still cannot be searched.** It is on the metadata panel and in the catalog, but
+`SearchQuery` has nowhere to put it, so it is deliberately absent from the field catalogue rather
+than offered and ignored. It needs a query field and a SQL clause before a label control can drive
+anything.
+
+### A guard fired, correctly
+
+`Every_value_is_parameterised` failed on the first run — keyword parameters are now named
+`keyword0_0` per alternative rather than `keyword0`. Worth reading carefully rather than updating on
+sight, since that test exists to catch user input reaching the SQL. It had not; only the naming had
+changed.
+
+- `dotnet test` — **643/643 passing** (12 new).

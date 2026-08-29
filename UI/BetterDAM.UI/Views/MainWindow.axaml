@@ -34,6 +34,13 @@
       <Setter Property="Opacity" Value="0.6" />
       <Setter Property="Margin" Value="0,10,0,2" />
     </Style>
+    <!-- Stars in the filter popup: a glyph and a hit area, with none of a button's chrome. -->
+    <Style Selector="Button.star">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="3,1" />
+      <Setter Property="FontSize" Value="15" />
+    </Style>
   </Window.Styles>
 
   <!--
@@ -192,8 +199,45 @@
               <StackPanel Width="330" Spacing="10" Margin="4">
 
                 <TextBlock Text="Filters" FontSize="13" FontWeight="SemiBold" />
+
+                <!--
+                  These write into the search box rather than holding a filter state of their own, so
+                  there is one query, it is visible, and clicking three stars shows what to type next
+                  time. Reading works the other way too: a typed r:>=3 lights three stars.
+                -->
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="Rating" FontSize="11"
+                             VerticalAlignment="Center" Width="52" />
+                  <StackPanel Orientation="Horizontal" Spacing="1" HorizontalAlignment="Left">
+                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=1}"
+                            Command="{Binding SetRatingFilterCommand}" CommandParameter="1" />
+                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=2}"
+                            Command="{Binding SetRatingFilterCommand}" CommandParameter="2" />
+                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=3}"
+                            Command="{Binding SetRatingFilterCommand}" CommandParameter="3" />
+                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=4}"
+                            Command="{Binding SetRatingFilterCommand}" CommandParameter="4" />
+                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=5}"
+                            Command="{Binding SetRatingFilterCommand}" CommandParameter="5" />
+                    <TextBlock FontSize="10" Opacity="0.45" VerticalAlignment="Center" Margin="6,0,0,0"
+                               Text="{Binding RatingFilterSummary}" />
+                  </StackPanel>
+                </DockPanel>
+
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="Show" FontSize="11"
+                             VerticalAlignment="Center" Width="52" />
+                  <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">
+                    <ToggleButton Content="RAW" FontSize="11" Padding="9,3" IsChecked="{Binding FilterRaw}" />
+                    <ToggleButton Content="JPEG" FontSize="11" Padding="9,3" IsChecked="{Binding FilterJpeg}"
+                                  ToolTip.Tip="Any image that is not a RAW — JPEG, PNG, HEIC" />
+                    <ToggleButton Content="Video" FontSize="11" Padding="9,3" IsChecked="{Binding FilterVideo}" />
+                  </StackPanel>
+                </DockPanel>
+
+                <Separator />
                 <TextBlock FontSize="11" Opacity="0.55" TextWrapping="Wrap"
-                           Text="Type a field and a colon. The short form does the same thing. Terms combine, so several narrow the results together." />
+                           Text="Type a field and a colon; the short form does the same thing. Different fields narrow together, so rating, keywords and type can all apply at once." />
 
                 <ItemsControl ItemsSource="{Binding SearchHelp}">
                   <ItemsControl.ItemTemplate>
@@ -211,7 +255,7 @@
                 </ItemsControl>
 
                 <TextBlock FontSize="10" Opacity="0.45" TextWrapping="Wrap"
-                           Text="Typing a colon on its own brings this list up in the box." />
+                           Text="Repeat a field to ask for all of them — k:sand k:dust. Use commas to ask for any of them — k:sand,dust. Typing a colon on its own brings this list up in the box." />
 
                 <Separator />
 

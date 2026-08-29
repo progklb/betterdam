@@ -357,10 +357,20 @@ public sealed class SqliteCatalog : ICatalog
             parameters.Add("match", BuildMatchExpression(query.FreeText));
         }
 
-        if (query.MediaType is { } mediaType)
+        if (!query.Kinds.IsDefaultOrEmpty)
         {
-            sql.Append("\n  AND m.MediaType = @mediaType");
-            parameters.Add("mediaType", (int)mediaType);
+            // Any of the chosen kinds, so the clauses are ORed inside one bracket and ANDed with
+            // everything else. Raw has no column of its own — the catalog only knows image from
+            // video — so it is drawn from the extension, against the same list the rest of the
+            // application uses rather than a second copy of it.
+            var clauses = query.Kinds.Select(kind => kind switch
+            {
+                MediaKind.Video => $"m.MediaType = {(int)MediaType.Video}",
+                MediaKind.Raw => $"(m.MediaType = {(int)MediaType.Image} AND {RawExtensionTest})",
+                _ => $"(m.MediaType = {(int)MediaType.Image} AND NOT {RawExtensionTest})"
+            });
+
+            sql.Append($"\n  AND ({string.Join(" OR ", clauses)})");
         }
 
         if (query.Rating is { } rating)
@@ -377,14 +387,23 @@ public sealed class SqliteCatalog : ICatalog
 
         for (var i = 0; i < query.Keywords.Length; i++)
         {
-            // EXISTS per keyword gives AND semantics: all of them must be present.
+            // One EXISTS per filter gives AND across them — all must be satisfied — while IN gives
+            // OR inside one, so "k:sand k:dust" wants both and "k:sand,dust" wants either.
+            var placeholders = new List<string>();
+
+            for (var j = 0; j < query.Keywords[i].AnyOf.Length; j++)
+            {
+                var name = $"keyword{i}_{j}";
+                placeholders.Add($"@{name}");
+                parameters.Add(name, query.Keywords[i].AnyOf[j]);
+            }
+
             sql.Append($"""
 
                   AND EXISTS (SELECT 1 FROM MediaKeyword mk
                               JOIN Keyword k ON k.Id = mk.KeywordId
-                              WHERE mk.MediaId = m.Id AND k.Value = @keyword{i})
+                              WHERE mk.MediaId = m.Id AND k.Value IN ({string.Join(", ", placeholders)}))
                 """);
-            parameters.Add($"keyword{i}", query.Keywords[i]);
         }
 
         for (var i = 0; i < query.Cameras.Length; i++)
@@ -414,6 +433,15 @@ public sealed class SqliteCatalog : ICatalog
             .Select(t => t.Replace("\"", string.Empty).Trim())
             .Where(t => t.Length > 0)
             .Select(t => $"\"{t}\"*"));
+
+    /// <summary>
+    /// True for a raw file, by extension. Built once from the registry so adding a raw format in one
+    /// place teaches the search about it too. The values are extensions from a hard-coded list, not
+    /// user input, so composing them into the SQL introduces nothing to inject.
+    /// </summary>
+    private static readonly string RawExtensionTest =
+        "(" + string.Join(" OR ", MediaTypeRegistry.RawFileExtensions
+            .Select(extension => $"LOWER(m.FileName) LIKE '%{extension.ToLowerInvariant()}'")) + ")";
 
     private static string ToSql(ComparisonOperator op) => op switch
     {

@@ -1,3 +1,4 @@
+using BetterDAM.Core.Models;
 using BetterDAM.Core.Services;
 using Xunit;
 
@@ -75,9 +76,10 @@ public class SearchFieldTests
         // whose equality is by underlying reference, so two identical queries are never Equal.
         // ToArray on both sides: xUnit compares an ImmutableArray against a string[] as different
         // collection types and reports "Collections differ" over two identical lists.
-        Assert.Equal(spelledOut.Keywords.ToArray(), shortForm.Keywords.ToArray());
+        Assert.Equal(spelledOut.Keywords.Select(k => k.AnyOf.ToArray()).ToArray(),
+            shortForm.Keywords.Select(k => k.AnyOf.ToArray()).ToArray());
         Assert.Equal(spelledOut.Rating, shortForm.Rating);
-        Assert.Equal(spelledOut.MediaType, shortForm.MediaType);
+        Assert.Equal(spelledOut.Kinds.ToArray(), shortForm.Kinds.ToArray());
         Assert.Equal(spelledOut.FreeText.ToArray(), shortForm.FreeText.ToArray());
     }
 
@@ -85,7 +87,7 @@ public class SearchFieldTests
     [Fact]
     public void TheOlderKeywordAliasStillWorks()
     {
-        Assert.Equal(["sand"], SearchQueryParser.Parse("kw:sand").Keywords.ToArray());
+        Assert.Equal([["sand"]], SearchQueryParser.Parse("kw:sand").Keywords.Select(k => k.AnyOf.ToArray()).ToArray());
     }
 
     [Fact]
@@ -204,5 +206,65 @@ public class SearchSuggestionTests
 
         Assert.Equal("type:", text);
         Assert.Equal(5, caret);
+    }
+}
+
+/// <summary>
+/// How several values combine, which was the thing nobody could tell from the interface.
+/// </summary>
+public class SearchCombinationTests
+{
+    /// <summary>Repeating a field asks for all of them.</summary>
+    [Fact]
+    public void RepeatingKeywordMeansAllOfThem()
+    {
+        var query = SearchQueryParser.Parse("k:sand k:dust");
+
+        Assert.Equal(2, query.Keywords.Length);
+        Assert.Equal(["sand"], query.Keywords[0].AnyOf.ToArray());
+        Assert.Equal(["dust"], query.Keywords[1].AnyOf.ToArray());
+    }
+
+    /// <summary>
+    /// A comma asks for any of them. Before this, "k:sand,dust" looked for a single keyword
+    /// literally named "sand,dust" and therefore matched nothing at all — valid-looking and silent.
+    /// </summary>
+    [Fact]
+    public void CommaInKeywordMeansAnyOfThem()
+    {
+        var query = SearchQueryParser.Parse("k:sand,dust");
+
+        Assert.Single(query.Keywords);
+        Assert.Equal(["sand", "dust"], query.Keywords[0].AnyOf.ToArray());
+    }
+
+    [Fact]
+    public void CommaInTypeMeansAnyOfThem()
+    {
+        Assert.Equal(
+            [MediaKind.Raw, MediaKind.Video],
+            SearchQueryParser.Parse("t:raw,video").Kinds.ToArray());
+    }
+
+    /// <summary>
+    /// The question that prompted all this: do rating, keyword and type combine? They do, and every
+    /// field narrows the result together with the others.
+    /// </summary>
+    [Fact]
+    public void RatingKeywordAndTypeCombine()
+    {
+        var query = SearchQueryParser.Parse("r:>=4 k:sand,dust k:wide t:raw c:Fujifilm");
+
+        Assert.Equal(4, query.Rating!.Value);
+        Assert.Equal(ComparisonOperator.GreaterThanOrEqual, query.Rating.Operator);
+        Assert.Equal([MediaKind.Raw], query.Kinds.ToArray());
+        Assert.Equal(["Fujifilm"], query.Cameras.ToArray());
+
+        Assert.Equal(2, query.Keywords.Length);
+        Assert.Equal(["sand", "dust"], query.Keywords[0].AnyOf.ToArray());
+        Assert.Equal(["wide"], query.Keywords[1].AnyOf.ToArray());
+
+        Assert.Empty(query.UnrecognisedTerms);
+        Assert.Empty(query.FreeText);
     }
 }

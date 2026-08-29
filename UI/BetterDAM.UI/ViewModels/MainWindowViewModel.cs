@@ -297,13 +297,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private bool _syncingFilters;
 
     /// <summary>
-    /// The rating floor the query currently asks for, 0 when it asks for none. Clicking the star
-    /// that is already the floor clears it, which is the only way back to "any rating" without
-    /// editing the text.
+    /// How many stars the query asks for, 0 when it asks for none. Written by the star cycle and by
+    /// reading the query back; never bound two-way.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RatingFilterSummary))]
     private int _filterRating;
+
+    /// <summary>True when the query asks for exactly that many stars rather than that many and up.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RatingFilterSummary))]
+    private bool _filterRatingExact;
 
     [ObservableProperty]
     private bool _filterRaw;
@@ -314,9 +318,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _filterVideo;
 
-    partial void OnFilterRatingChanged(int value)
-        => WriteFilter(() => SearchText = SearchQueryText.WithField(
-            SearchText, "rating", value > 0 ? $">={value}" : null));
 
     [ObservableProperty]
     private bool _filterAccepted;
@@ -408,11 +409,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         try
         {
-            // Only a floor is representable as stars; anything else leaves them dark rather than
-            // claiming a filter the query does not have.
-            FilterRating = query.Rating is { Operator: ComparisonOperator.GreaterThanOrEqual } rating
-                ? rating.Value
-                : 0;
+            var rating = RatingFilterCycle.From(query.Rating);
+            FilterRating = rating.Stars;
+            FilterRatingExact = rating.Exact;
 
             var kinds = query.Kinds;
             var all = kinds.IsDefaultOrEmpty;
@@ -434,11 +433,18 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    public string RatingFilterSummary => FilterRating > 0 ? "and up" : string.Empty;
+    /// <summary>
+    /// Which of the three states the stars are in. Needed because "exactly 3" and "3 and up" fill
+    /// the same three stars, so the stars alone cannot say which is meant.
+    /// </summary>
+    public string RatingFilterSummary => FilterRating switch
+    {
+        <= 0 => string.Empty,
+        _ => FilterRatingExact ? "exactly" : "and up"
+    };
 
     /// <summary>
-    /// Clicking a star sets the floor, or clears it when it is already the floor — the only way back
-    /// to "any rating" without editing the text.
+    /// Clicking a star walks it round: once for "and up", again for "exactly", again to clear.
     /// </summary>
     /// <param name="stars">
     /// Taken as a string because that is what a XAML CommandParameter is; parsing here keeps five
@@ -447,10 +453,20 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void SetRatingFilter(string? stars)
     {
-        if (int.TryParse(stars, out var value))
+        if (!int.TryParse(stars, out var clicked))
         {
-            FilterRating = FilterRating == value ? 0 : value;
+            return;
         }
+
+        var next = RatingFilterCycle.Next(new RatingFilterState(FilterRating, FilterRatingExact), clicked);
+
+        WriteFilter(() =>
+        {
+            FilterRating = next.Stars;
+            FilterRatingExact = next.Exact;
+
+            SearchText = SearchQueryText.WithField(SearchText, "rating", RatingFilterCycle.ToTerm(next));
+        });
     }
 
     /// <summary>Moves through the offered fields, wrapping at both ends.</summary>

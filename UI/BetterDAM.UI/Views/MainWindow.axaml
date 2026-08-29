@@ -209,16 +209,46 @@
                   <TextBlock DockPanel.Dock="Left" Text="Rating" FontSize="11"
                              VerticalAlignment="Center" Width="52" />
                   <StackPanel Orientation="Horizontal" Spacing="1" HorizontalAlignment="Left">
-                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=1}"
-                            Command="{Binding SetRatingFilterCommand}" CommandParameter="1" />
-                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=2}"
-                            Command="{Binding SetRatingFilterCommand}" CommandParameter="2" />
-                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=3}"
-                            Command="{Binding SetRatingFilterCommand}" CommandParameter="3" />
-                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=4}"
-                            Command="{Binding SetRatingFilterCommand}" CommandParameter="4" />
-                    <Button Classes="star" Content="{Binding FilterRating, Converter={StaticResource StarGlyph}, ConverterParameter=5}"
-                            Command="{Binding SetRatingFilterCommand}" CommandParameter="5" />
+                    <Button Classes="star" Command="{Binding SetRatingFilterCommand}" CommandParameter="1">
+                      <Button.Content>
+                        <MultiBinding Converter="{StaticResource FilterStarGlyph}" ConverterParameter="1">
+                          <Binding Path="FilterRating" />
+                          <Binding Path="FilterRatingExact" />
+                        </MultiBinding>
+                      </Button.Content>
+                    </Button>
+                    <Button Classes="star" Command="{Binding SetRatingFilterCommand}" CommandParameter="2">
+                      <Button.Content>
+                        <MultiBinding Converter="{StaticResource FilterStarGlyph}" ConverterParameter="2">
+                          <Binding Path="FilterRating" />
+                          <Binding Path="FilterRatingExact" />
+                        </MultiBinding>
+                      </Button.Content>
+                    </Button>
+                    <Button Classes="star" Command="{Binding SetRatingFilterCommand}" CommandParameter="3">
+                      <Button.Content>
+                        <MultiBinding Converter="{StaticResource FilterStarGlyph}" ConverterParameter="3">
+                          <Binding Path="FilterRating" />
+                          <Binding Path="FilterRatingExact" />
+                        </MultiBinding>
+                      </Button.Content>
+                    </Button>
+                    <Button Classes="star" Command="{Binding SetRatingFilterCommand}" CommandParameter="4">
+                      <Button.Content>
+                        <MultiBinding Converter="{StaticResource FilterStarGlyph}" ConverterParameter="4">
+                          <Binding Path="FilterRating" />
+                          <Binding Path="FilterRatingExact" />
+                        </MultiBinding>
+                      </Button.Content>
+                    </Button>
+                    <Button Classes="star" Command="{Binding SetRatingFilterCommand}" CommandParameter="5">
+                      <Button.Content>
+                        <MultiBinding Converter="{StaticResource FilterStarGlyph}" ConverterParameter="5">
+                          <Binding Path="FilterRating" />
+                          <Binding Path="FilterRatingExact" />
+                        </MultiBinding>
+                      </Button.Content>
+                    </Button>
                     <TextBlock FontSize="10" Opacity="0.45" VerticalAlignment="Center" Margin="6,0,0,0"
                                Text="{Binding RatingFilterSummary}" />
                   </StackPanel>
@@ -232,6 +262,20 @@
                     <ToggleButton Content="JPEG" FontSize="11" Padding="9,3" IsChecked="{Binding FilterJpeg}"
                                   ToolTip.Tip="Any image that is not a RAW — JPEG, PNG, HEIC" />
                     <ToggleButton Content="Video" FontSize="11" Padding="9,3" IsChecked="{Binding FilterVideo}" />
+                  </StackPanel>
+                </DockPanel>
+
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="Flag" FontSize="11"
+                             VerticalAlignment="Center" Width="52" />
+                  <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">
+                    <ToggleButton Content="✓ Keep" FontSize="11" Padding="9,3"
+                                  IsChecked="{Binding FilterAccepted}" />
+                    <ToggleButton Content="✕ Reject" FontSize="11" Padding="9,3"
+                                  IsChecked="{Binding FilterRejected}" />
+                    <ToggleButton Content="Unflagged" FontSize="11" Padding="9,3"
+                                  IsChecked="{Binding FilterUnflagged}"
+                                  ToolTip.Tip="Not yet judged — what is left to look at" />
                   </StackPanel>
                 </DockPanel>
 

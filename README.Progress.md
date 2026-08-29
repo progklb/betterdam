@@ -4402,3 +4402,65 @@ Preparation of …20260523 Kalahari Trip 7D/ was cancelled after 29 of 1837
 ```
 
 CPU agrees — the instance with the fix settled to 7–16% after the window closed.
+
+---
+
+## Rating stars now cycle through three states ✅
+
+Clicking a star walks it round: once for **that many and up**, again for **exactly that many**, again
+to clear.
+
+```text
+click 1    ★★★☆☆  and up     r:>=3
+click 2    ★★★☆☆  exactly    r:3
+click 3    ☆☆☆☆☆             (cleared)
+```
+
+"Exactly" needs no operator: a bare number already parses as equality, so the box reads `r:3`, which
+is also the shortest way to type it.
+
+Since the same three stars are filled either way, the stars alone cannot say which is meant — the
+label beside them does, and so does the query in the box.
+
+### Why the state machine is not in the ViewModel
+
+`RatingFilterCycle` is a pure function in Core, because the interesting cases are awkward to reach by
+clicking and trivial to state as tests:
+
+- Clicking a **different** star starts that star's own cycle rather than inheriting the exactness.
+  Otherwise clicking 4 while "exactly 3" was showing would silently ask for "exactly 4" — a different
+  question from the one the click looks like it is asking.
+- No sequence of clicks may leave a filter asking for zero stars.
+- Reading back only accepts `>=` and `=`. There is no way to draw "fewer than three stars", so
+  `r:<3` leaves the stars dark rather than showing a filter that is not what was asked.
+- What the cycle writes is what the parser reads, asserted by round-tripping every state.
+
+- `dotnet test` — **672/672 passing** (16 new).
+
+### Also fixed: the flag toggles were never actually in the popup
+
+They were reported as delivered last time and were not. The ViewModel had `FilterAccepted`,
+`FilterRejected` and `FilterUnflagged`; the markup did not — a scripted edit whose anchor text did
+not match, applied without checking the result. The row is there now, and was confirmed on screen
+rather than assumed.
+
+### Follow-up — "exactly" now fills only the star chosen
+
+```text
+and up     ★★★★☆
+exactly    ☆☆☆★☆
+```
+
+The two states filled the same stars before, so the word beside them was doing all the work. Now the
+picture says it and the label only confirms it.
+
+`RatingFilterCycle.IsStarFilled` holds the rule, next to the cycle it belongs to. Drawing it needs
+both the count and the mode, so the filter's stars use a small multi-value converter of their own —
+the inspector's stars are unchanged, since a rating being *edited* is always "this many" and has no
+second state to distinguish.
+
+One case cannot be drawn: at one star, "1 and up" and "exactly 1" both fill the first star alone.
+That is unavoidable and the label still separates them; a test states it so it reads as a known
+limit rather than a gap.
+
+- `dotnet test` — **677/677 passing** (5 new).

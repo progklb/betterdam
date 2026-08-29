@@ -261,10 +261,24 @@
         </Border>
 
         <TreeView ItemsSource="{Binding FolderRoots}"
-                  SelectedItem="{Binding SelectedFolder}">
+                  SelectedItem="{Binding SelectedFolder}"
+                  Classes.handDrawn="{DynamicResource AppRingEnabled}">
           <TreeView.ItemTemplate>
             <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:FolderNodeViewModel">
-              <TextBlock Text="{Binding Name}" />
+              <!--
+                The ring is given room by padding the name rather than by growing outside the row,
+                which the header presenter would clip. The padding is small enough to pass for
+                ordinary breathing space when the experiment is switched off.
+              -->
+              <!--
+                Left-aligned, and this matters: the header presenter stretches to the full width of
+                the panel, so a panel that filled it drew one wide thin oval across the whole row
+                whatever the folder was called. Hugging the name is what makes the ring fit it.
+              -->
+              <Panel HorizontalAlignment="Left">
+                <controls:RoughRing IsActive="{Binding $parent[TreeViewItem].IsSelected}" />
+                <TextBlock Text="{Binding Name}" Margin="10,3" />
+              </Panel>
             </TreeDataTemplate>
           </TreeView.ItemTemplate>
         </TreeView>

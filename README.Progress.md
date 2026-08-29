@@ -3567,3 +3567,109 @@ list tile. That is its own convention and was true before any of this work; each
 within itself, which was the actual complaint.
 
 - `dotnet test` — **587/587 passing** (three tests removed with the code they covered).
+
+---
+
+## Demo — the hand-drawn selection ring 🔬
+
+Still an experiment, still outside BetterDAM. Earlier the question was "is this possible"; this time
+it was "what does it look like in action", which needed something that moves.
+
+Two pieces, both in the scratchpad:
+
+```text
+roughnav/    an Avalonia app — click the items, ring redraws; roughness slider, animation toggle
+roughgif/    renders the draw-on to frames; ffmpeg assembles handdrawn.gif
+```
+
+Run the interactive one with `dotnet run --project <scratchpad>/roughnav`.
+
+`RoughRing` is a real Avalonia `Control` overriding `Render` — `StreamGeometry` and `CubicBezierTo`,
+no bitmaps and no SVG. Points are generated at the control's actual size and cached; the draw-on
+animates a `Progress` property that decides how many of them are used, so no geometry is rebuilt
+per frame.
+
+### The easing was wrong, and only motion showed it
+
+The first version used a cubic ease-out, which is the reflex choice and is badly wrong for a pen
+stroke. It spent five sixths of the duration on the last sliver of line: the ring appeared almost
+complete immediately and then crept to a finish.
+
+```text
+cubic ease-out   the whole visible draw happened in frames 1-4 of 16
+smoothstep       an even progression across all 16
+```
+
+Smoothstep — accelerate in, decelerate out, even between — is what a hand actually does. This is the
+kind of fault a still frame cannot show, which is the argument for having built the moving version
+rather than describing it.
+
+### What the demo confirms
+
+- The effect holds up on a short fixed menu, and the draw-on is what sells it.
+- Stroke weight stays even across item widths, because geometry is built at real size.
+- The seeded wobble is stable: no crawling on repaint or resize.
+- The wide case is as bad as predicted. A 360px item reads as a stretched oval, not a drawn circle —
+  the right-hand column of the demo exists to make that visible rather than assertable.
+
+Unchanged conclusion: cheap to build, good on a short fixed nav, wrong for a folder tree of
+arbitrary names. Worth revisiting alongside a decision about what that sidebar should be.
+
+---
+
+## Hand-drawn folder selection — shipped as an experiment ✅
+
+Off by default; Settings › General › Experimental. Rings the selected folder as if by pencil
+instead of filling the row, with the tuning knobs from the demo: **roughness** (0.2–2.4) and
+**draw it on**.
+
+`RoughRing` moved into `UI/Controls` from the scratchpad demo, keeping the two properties that carry
+the effect — geometry built at real size so the stroke stays even, and a seed taken from that size so
+a row draws the same ring every frame instead of crawling. Roughness is clamped on read rather than
+validated on write, so a hand-edited settings file cannot produce a ring that misses its own row.
+
+### Two faults found by running it, neither visible in the demo
+
+**The ring spanned the whole row.** `PART_HeaderPresenter` stretches to the full width of the panel,
+so a `Panel` filling it drew one wide thin oval across the row whatever the folder was called —
+"D2" got the same 300px ellipse as a long name. `HorizontalAlignment="Left"` makes it hug the name,
+which is what makes the effect read at all.
+
+**Switching the experiment off left the folder unmarked.** The suppression style was being added to
+and removed from `Application.Styles`. Adding worked; removing did not bring the fill back, so a
+selected folder had no mark at all until restart — *worse than either state on purpose*. Removing a
+style does not revert a setter already applied to a realised template part.
+
+The fix is a class on the tree, `TreeView.handDrawn`, bound to the same resource the ring reads.
+Class changes are what the styling system re-evaluates live, so the style can stay permanently
+registered and simply stop matching. Verified as a full round trip rather than one direction:
+
+```text
+off        filled row  — stock Fluent
+on         pencil ring, no fill
+off again  filled row restored
+```
+
+### Where the part name came from
+
+`Border#PART_LayoutRoot`, read out of a live visual tree rather than guessed — the same probe that
+explained the earlier nested-band bug:
+
+```text
+TreeViewItem
+  StackPanel
+    Border           name=PART_LayoutRoot          bg=#ff007aff   ← the selection
+      Grid           name=PART_Header
+        ContentPresenter name=PART_HeaderPresenter bg=Transparent ← what had been overridden
+```
+
+### Notes
+
+- The ink is a fixed light neutral, not the theme's selection colour: a pencil line in dark teal on
+  dark teal would be invisible.
+- Scoped to the folder tree. A ring around a thumbnail tile would fight the tile's own rectangle,
+  and the grid is a different shape of problem.
+- Long names do become wide ellipses. That was the reservation, the answer was that it looks good
+  anyway, and it is now a setting rather than an argument.
+
+- `dotnet test` — **593/593 passing**.

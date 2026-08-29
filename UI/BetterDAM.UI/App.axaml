@@ -1,6 +1,7 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="using:BetterDAM.UI.Converters"
+             xmlns:controls="using:BetterDAM.UI.Controls"
              xmlns:svc="using:BetterDAM.UI.Services"
              x:Class="BetterDAM.UI.App"
              Name="BetterDAM"
@@ -51,10 +52,29 @@
     </Style>
 
     <!--
-      Selection is not styled here. It follows the accent, which AppThemes sets from the theme or
-      leaves to the platform — see ApplyAccent for why overriding individual controls turned out to
-      be the wrong lever.
+      Selection colour is not styled here. It follows the accent, which AppThemes sets from the theme
+      or leaves to the platform — see ApplyAccent for why overriding individual controls turned out
+      to be the wrong lever.
+
+      The hand-drawn ring takes its settings from resources rather than being configured at each use
+      site, so the folder tree's template says only "there is a ring here" and the tuning lives in
+      one place. When the experiment is off the ring is collapsed and costs nothing.
     -->
+    <!--
+      With the experiment on, the ring is the only mark of selection, so the filled row goes. The
+      part name was read from a live visual tree rather than guessed: the fill sits on
+      Border#PART_LayoutRoot, and PART_HeaderPresenter inside it is transparent.
+    -->
+    <Style Selector="TreeView.handDrawn TreeViewItem:selected /template/ Border#PART_LayoutRoot">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <Style Selector="controls|RoughRing">
+      <Setter Property="IsVisible" Value="{DynamicResource AppRingEnabled}" />
+      <Setter Property="Roughness" Value="{DynamicResource AppRingRoughness}" />
+      <Setter Property="Animates" Value="{DynamicResource AppRingAnimates}" />
+      <Setter Property="Stroke" Value="{DynamicResource AppRingInk}" />
+    </Style>
   </Application.Styles>
 
 </Application>

@@ -84,6 +84,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             SelectionColours.FirstOrDefault(choice => choice.Source == current.SelectionColour)
             ?? SelectionColours[0];
 
+        _handDrawnSelection = current.SelectionStyle == SelectionStyle.HandDrawn;
+        _handDrawnRoughness = current.ClampedRoughness;
+        _handDrawnAnimates = current.HandDrawnAnimates;
+
         _isCacheLimited = current.IsCacheLimited;
         _selectedLimitIndex = current.IsCacheLimited
             ? NearestChoice(current.CacheSizeLimitBytes)
@@ -479,6 +483,64 @@ public sealed partial class SettingsViewModel : ObservableObject
             _ = SaveAsync(_settings.Current with { SelectionColour = value.Source });
         }
     }
+
+    // ---- Experimental -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Whether the selected folder is ringed by hand rather than filled. Experimental, and off
+    /// unless asked for — the look is a matter of taste, and it grows eccentric around a long
+    /// folder name in a way that some will like and some will not.
+    /// </summary>
+    [ObservableProperty]
+    private bool _handDrawnSelection;
+
+    partial void OnHandDrawnSelectionChanged(bool value)
+    {
+        OnPropertyChanged(nameof(HandDrawnSummary));
+
+        var style = value ? SelectionStyle.HandDrawn : SelectionStyle.Standard;
+
+        if (_settings.Current.SelectionStyle != style)
+        {
+            _ = SaveAsync(_settings.Current with { SelectionStyle = style });
+        }
+    }
+
+    /// <summary>
+    /// How far the ring wanders off a true ellipse. Offered as a slider because the pleasing value
+    /// is a matter of taste and cannot be argued to from first principles.
+    /// </summary>
+    [ObservableProperty]
+    private double _handDrawnRoughness;
+
+    partial void OnHandDrawnRoughnessChanged(double value)
+    {
+        OnPropertyChanged(nameof(HandDrawnSummary));
+
+        if (Math.Abs(_settings.Current.HandDrawnRoughness - value) > 0.001)
+        {
+            _ = SaveAsync(_settings.Current with { HandDrawnRoughness = value });
+        }
+    }
+
+    [ObservableProperty]
+    private bool _handDrawnAnimates;
+
+    partial void OnHandDrawnAnimatesChanged(bool value)
+    {
+        if (_settings.Current.HandDrawnAnimates != value)
+        {
+            _ = SaveAsync(_settings.Current with { HandDrawnAnimates = value });
+        }
+    }
+
+    public static double MinRoughness => AppSettings.MinRoughness;
+
+    public static double MaxRoughness => AppSettings.MaxRoughness;
+
+    public string HandDrawnSummary => HandDrawnSelection
+        ? $"Roughness {HandDrawnRoughness:0.00} — below about 0.4 it reads as a plain oval, above about 1.6 it starts to look scribbled."
+        : "The selected folder is filled, as everywhere else.";
 
     // ---- Keywords -----------------------------------------------------------------------------
 

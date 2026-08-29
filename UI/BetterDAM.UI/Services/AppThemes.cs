@@ -1,5 +1,7 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Styling;
 using BetterDAM.Core.Models;
 
 namespace BetterDAM.UI.Services;
@@ -99,6 +101,39 @@ public static class AppThemes
         application.Resources[PanelKey] = new SolidColorBrush(palette.Panel);
 
         ApplyAccent(application, settings);
+        ApplySelectionStyle(application, settings);
+    }
+
+    public const string RingEnabledKey = "AppRingEnabled";
+    public const string RingRoughnessKey = "AppRingRoughness";
+    public const string RingAnimatesKey = "AppRingAnimates";
+
+    /// <summary>
+    /// The ink the ring is drawn in. Deliberately not the theme's selection colour: a pencil line in
+    /// dark teal on dark teal would be invisible. It is a light neutral that reads on all four
+    /// surfaces, which is what a pencil on dark paper actually looks like.
+    /// </summary>
+    private static readonly Color RingInk = Color.FromRgb(0xE8, 0xF2, 0xEE);
+
+    public const string RingInkKey = "AppRingInk";
+
+    /// <summary>
+    /// Publishes the ring's settings. The style that suppresses the filled row lives in App.axaml
+    /// and is switched by a class on the tree, not added and removed here.
+    ///
+    /// That is not a stylistic preference. Adding and removing the style from
+    /// <c>Application.Styles</c> was tried first and half worked: switching the experiment on
+    /// suppressed the fill, and switching it off did <b>not</b> bring it back, leaving a selected
+    /// folder with no mark at all until the application was restarted. Removing a style does not
+    /// revert a setter that has already been applied to a realised template part. A class does —
+    /// re-evaluating on a class change is the mechanism the styling system is built around.
+    /// </summary>
+    private static void ApplySelectionStyle(Application application, AppSettings settings)
+    {
+        application.Resources[RingEnabledKey] = settings.SelectionStyle == SelectionStyle.HandDrawn;
+        application.Resources[RingRoughnessKey] = settings.ClampedRoughness;
+        application.Resources[RingAnimatesKey] = settings.HandDrawnAnimates;
+        application.Resources[RingInkKey] = new SolidColorBrush(RingInk);
     }
 
     /// <summary>

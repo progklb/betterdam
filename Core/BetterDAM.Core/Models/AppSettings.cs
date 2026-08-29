@@ -55,6 +55,30 @@ public sealed record AppSettings
     public SelectionColour SelectionColour { get; init; } = SelectionColour.System;
 
     /// <summary>
+    /// How the selected folder is marked out. <see cref="SelectionStyle.Standard"/> by default —
+    /// the alternative is an experiment, and an experiment nobody opted into is a bug.
+    /// </summary>
+    public SelectionStyle SelectionStyle { get; init; } = SelectionStyle.Standard;
+
+    /// <summary>
+    /// How much the hand-drawn ring wanders off a true ellipse. Below about 0.4 it reads as a plain
+    /// oval; above about 1.6 it starts to look scribbled. Clamped rather than validated on the way
+    /// in, so a hand-edited settings file cannot produce a ring that misses its own control.
+    /// </summary>
+    public double HandDrawnRoughness { get; init; } = 1.0;
+
+    public const double MinRoughness = 0.2;
+    public const double MaxRoughness = 2.4;
+
+    public double ClampedRoughness => Math.Clamp(HandDrawnRoughness, MinRoughness, MaxRoughness);
+
+    /// <summary>
+    /// Whether the ring draws itself on when a folder is chosen, rather than simply appearing. The
+    /// drawing motion is most of the effect; without it the ring is only a wobbly oval.
+    /// </summary>
+    public bool HandDrawnAnimates { get; init; } = true;
+
+    /// <summary>
     /// Whether the viewer takes over the whole screen or just fills the current one.
     ///
     /// Two different things on macOS: real fullscreen hides the menu bar but moves the window to a

@@ -248,6 +248,55 @@ public class ThemeTests
         });
     }
 
+    // ---- Hand-drawn selection ------------------------------------------------------------------
+
+    /// <summary>
+    /// An experiment nobody opted into is a bug. This is the guard on that, and it also pins the
+    /// stored numbers so a saved preference keeps meaning what it meant.
+    /// </summary>
+    [Fact]
+    public void HandDrawnSelectionIsOffUntilAskedFor()
+    {
+        Assert.Equal(SelectionStyle.Standard, AppSettings.Default.SelectionStyle);
+        Assert.Equal(0, (int)SelectionStyle.Standard);
+        Assert.Equal(1, (int)SelectionStyle.HandDrawn);
+        Assert.True(AppSettings.Default.HandDrawnAnimates);
+    }
+
+    /// <summary>
+    /// Roughness is clamped rather than trusted. A hand-edited settings file carrying a wild value
+    /// would otherwise produce a ring that wanders clean off the row it is meant to mark.
+    /// </summary>
+    [Theory]
+    [InlineData(-40, AppSettings.MinRoughness)]
+    [InlineData(0, AppSettings.MinRoughness)]
+    [InlineData(1.0, 1.0)]
+    [InlineData(999, AppSettings.MaxRoughness)]
+    public void RoughnessIsClampedToAUsableRange(double stored, double expected)
+    {
+        var settings = AppSettings.Default with { HandDrawnRoughness = stored };
+
+        Assert.Equal(expected, settings.ClampedRoughness);
+    }
+
+    [Fact]
+    public void HandDrawnSettingsSurviveARoundTrip()
+    {
+        var settings = AppSettings.Default with
+        {
+            SelectionStyle = SelectionStyle.HandDrawn,
+            HandDrawnRoughness = 1.4,
+            HandDrawnAnimates = false
+        };
+
+        var restored = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings));
+
+        Assert.NotNull(restored);
+        Assert.Equal(SelectionStyle.HandDrawn, restored.SelectionStyle);
+        Assert.Equal(1.4, restored.HandDrawnRoughness);
+        Assert.False(restored.HandDrawnAnimates);
+    }
+
     [Fact]
     public void EverySelectionColourIsOfferedInSettings()
     {

@@ -370,13 +370,14 @@
                      SelectedIndex="{Binding SelectedSuggestionIndex}"
                      PointerReleased="OnSuggestionClicked">
               <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="search:SearchField">
+                <DataTemplate x:DataType="vm:SearchSuggestionItem">
                   <Grid ColumnDefinitions="58,*" Margin="0,1">
-                    <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold"
-                               Text="{Binding Short, StringFormat='{}{0}:'}" />
+                    <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold" Opacity="0.7"
+                               Text="{Binding Lead}" />
                     <StackPanel Grid.Column="1" Spacing="1">
-                      <TextBlock FontSize="11" Text="{Binding Name, StringFormat='{}{0}:'}" />
-                      <TextBlock FontSize="10" Opacity="0.45" Text="{Binding Summary}" />
+                      <TextBlock FontSize="11" Text="{Binding Text}" />
+                      <TextBlock FontSize="10" Opacity="0.45" Text="{Binding Detail}"
+                                 IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel>
                   </Grid>
                 </DataTemplate>

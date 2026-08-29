@@ -246,10 +246,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public static IReadOnlyList<SearchField> SearchHelp => SearchFields.All;
 
     /// <summary>
-    /// The fields worth offering for what is currently half-typed. Empty when the box is not asking,
-    /// which is also what hides the popup.
+    /// What to offer for what is currently half-typed. Empty when the box is not asking, which is
+    /// also what hides the popup.
     /// </summary>
-    public ObservableCollection<SearchField> FieldSuggestions { get; } = [];
+    public ObservableCollection<SearchSuggestionItem> FieldSuggestions { get; } = [];
 
     [ObservableProperty]
     private int _selectedSuggestionIndex = -1;
@@ -257,26 +257,118 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool HasFieldSuggestions => FieldSuggestions.Count > 0;
 
     /// <summary>
-    /// Recomputes what to offer for a caret position. Returns true when the popup should be open.
+    /// Keywords in scope, with counts, cached because this is consulted on every keystroke.
+    ///
+    /// The catalog rather than the library: offering a keyword nothing carries is a dead end, and
+    /// the catalog is also where words that arrived from another application show up — which are
+    /// exactly the ones worth finding.
     /// </summary>
+    private IReadOnlyList<KeywordUsage> _keywordsInScope = [];
+
+    private string? _keywordsLoadedFor;
+
+    /// <summary>
+    /// Reloads the keyword list when the scope changes. Cheap to call: it does nothing unless the
+    /// workspace it was loaded for has changed.
+    /// </summary>
+    private async Task EnsureKeywordsLoadedAsync()
+    {
+        var scope = SearchEverywhere ? null : WorkspacePath;
+
+        if (string.Equals(_keywordsLoadedFor, scope ?? string.Empty, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        try
+        {
+            _keywordsInScope = await _catalog.GetKeywordsAsync(scope).ConfigureAwait(true);
+            _keywordsLoadedFor = scope ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            // A missing suggestion list is a small loss; failing the keystroke is not.
+            _logger.LogDebug(ex, "Could not read keywords for suggestions");
+            _keywordsInScope = [];
+        }
+    }
+
+    /// <summary>Recomputes what to offer for a caret position. True when the popup should be open.</summary>
     public bool UpdateFieldSuggestions(string? text, int caret)
     {
-        var prefix = SearchSuggestion.PrefixAt(text, caret);
+        var request = SearchSuggestion.At(text, caret);
 
         FieldSuggestions.Clear();
 
-        if (prefix is not null)
+        switch (request.Kind)
         {
-            foreach (var field in SearchFields.Matching(prefix))
-            {
-                FieldSuggestions.Add(field);
-            }
+            case SuggestionKind.Field:
+                foreach (var field in SearchFields.Matching(request.Prefix))
+                {
+                    FieldSuggestions.Add(SearchSuggestionItem.ForField(field));
+                }
+
+                break;
+
+            case SuggestionKind.Value:
+                foreach (var item in ValuesFor(request.Field, request.Prefix))
+                {
+                    FieldSuggestions.Add(item);
+                }
+
+                break;
         }
 
         SelectedSuggestionIndex = FieldSuggestions.Count > 0 ? 0 : -1;
         OnPropertyChanged(nameof(HasFieldSuggestions));
 
+        // Loaded after answering, so the first keystroke is never blocked on a query; the next one
+        // has the list.
+        if (request.Kind == SuggestionKind.Value && request.Field == "keyword")
+        {
+            _ = EnsureKeywordsLoadedAsync();
+        }
+
         return FieldSuggestions.Count > 0;
+    }
+
+    private const int MaxSuggestions = 40;
+
+    private IEnumerable<SearchSuggestionItem> ValuesFor(string field, string prefix)
+    {
+        bool Matches(string value) =>
+            prefix.Length == 0 || value.Contains(prefix, StringComparison.OrdinalIgnoreCase);
+
+        switch (field)
+        {
+            case "keyword":
+                // Already ordered by how many files carry them, so the most useful come first.
+                return _keywordsInScope
+                    .Where(k => Matches(k.Value))
+                    .Take(MaxSuggestions)
+                    .Select(k => SearchSuggestionItem.ForValue(k.Value, k.Count));
+
+            case "label":
+                return _settings.Current.Labels.Labels
+                    .Select(l => l.Name)
+                    .Append("none")
+                    .Where(Matches)
+                    .Select(name => SearchSuggestionItem.ForValue(name, null));
+
+            case "type":
+                return new[] { "raw", "jpg", "video", "image" }
+                    .Where(Matches)
+                    .Select(v => SearchSuggestionItem.ForValue(v, null));
+
+            case "flag":
+                return new[] { "accepted", "rejected", "none" }
+                    .Where(Matches)
+                    .Select(v => SearchSuggestionItem.ForValue(v, null));
+
+            // Ratings and dates are written, not chosen from a list, and a filename is whatever it is.
+            default:
+                return [];
+        }
     }
 
     public void DismissFieldSuggestions()
@@ -321,7 +413,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _filterVideo;
 
-
     [ObservableProperty]
     private bool _filterAccepted;
 
@@ -330,6 +421,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _filterUnflagged;
+
+    partial void OnFilterRawChanged(bool value) => WriteKinds();
+
+    partial void OnFilterJpegChanged(bool value) => WriteKinds();
+
+    partial void OnFilterVideoChanged(bool value) => WriteKinds();
 
     partial void OnFilterAcceptedChanged(bool value) => WriteFlags();
 
@@ -365,26 +462,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
             SearchText, "label", chosen.Count == 0 ? null : string.Join(',', chosen));
     });
 
-    private void WriteFlags() => WriteFilter(() =>
-    {
-        var flags = new List<string>();
-
-        if (FilterAccepted) flags.Add("accepted");
-        if (FilterRejected) flags.Add("rejected");
-        if (FilterUnflagged) flags.Add("none");
-
-        // All three, or none, is the same as not filtering — and says so more plainly.
-        var value = flags.Count is 0 or 3 ? null : string.Join(',', flags);
-
-        SearchText = SearchQueryText.WithField(SearchText, "flag", value);
-    });
-
-    partial void OnFilterRawChanged(bool value) => WriteKinds();
-
-    partial void OnFilterJpegChanged(bool value) => WriteKinds();
-
-    partial void OnFilterVideoChanged(bool value) => WriteKinds();
-
     private void WriteKinds() => WriteFilter(() =>
     {
         var kinds = new List<string>();
@@ -397,6 +474,19 @@ public sealed partial class MainWindowViewModel : ObservableObject
         var value = kinds.Count is 0 or 3 ? null : string.Join(',', kinds);
 
         SearchText = SearchQueryText.WithField(SearchText, "type", value);
+    });
+
+    private void WriteFlags() => WriteFilter(() =>
+    {
+        var flags = new List<string>();
+
+        if (FilterAccepted) flags.Add("accepted");
+        if (FilterRejected) flags.Add("rejected");
+        if (FilterUnflagged) flags.Add("none");
+
+        var value = flags.Count is 0 or 3 ? null : string.Join(',', flags);
+
+        SearchText = SearchQueryText.WithField(SearchText, "flag", value);
     });
 
     private void WriteFilter(Action write)
@@ -424,8 +514,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// Brings the controls in line with the query, so opening the popup shows what is actually being
     /// filtered — including filters that were typed rather than clicked.
     ///
-    /// Read by parsing rather than by matching text, so <c>rating:&gt;=3</c> and <c>r:&gt;=3</c> and
-    /// a query where the term sits in the middle all light the same three stars.
+    /// Read by parsing rather than by matching text, so rating:&gt;=3 and r:&gt;=3 and a query where
+    /// the term sits in the middle all light the same three stars.
     /// </summary>
     private void ReadFiltersFromQuery()
     {
@@ -451,11 +541,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
             FilterJpeg = all || kinds.Contains(MediaKind.Jpeg);
             FilterVideo = all || kinds.Contains(MediaKind.Video);
 
-            var labels = query.Labels;
-
             foreach (var chip in LabelChips)
             {
-                chip.SetSelected(labels.Any(l => string.Equals(l, chip.Term, StringComparison.OrdinalIgnoreCase)));
+                chip.SetSelected(query.Labels.Any(l => string.Equals(l, chip.Term, StringComparison.OrdinalIgnoreCase))
+                    || (chip.Term == "none" && query.IncludeUnlabelled));
             }
 
             var flags = query.Flags;

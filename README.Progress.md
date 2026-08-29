@@ -4537,3 +4537,54 @@ because they are the same kind of thing: a vocabulary the user maintains, rather
 Moving it also removed a duplicated explanation — a tab-level hint added during the move said the
 same thing as the card's own text, which is the sort of thing that reads fine while writing it and
 badly once both are on screen.
+
+---
+
+## Value autocomplete in the search box ✅
+
+Typing a colon has offered field names for a while. It now offers **values** too, once the field is
+known — so `k:` lists the keywords actually in the workspace, with counts.
+
+### The rule is one line
+
+**If the word before the colon is already a field, offer its values; otherwise offer field names.**
+
+```text
+:        every field                  "remind me what there is"
+key:     narrowed to keyword          not yet a field, so still choosing one
+k:       the keywords themselves      k is a field, so move on
+k:sa     narrowed to Sand             filtered as you type
+k:sand,  the keywords again           only the alternative being typed is completed
+```
+
+Completing a field re-offers immediately rather than closing, because a caret sitting after a colon
+is a new question rather than an answer.
+
+### Counts, and where they come from
+
+The **catalog**, not the library — offering a keyword nothing carries is a dead end, and the catalog
+is where words that arrived from another application show up, which are exactly the ones worth
+finding. `GetKeywordsAsync(workspace)` already returned exactly this, ordered by use, from when the
+keyword library learned to import from a workspace.
+
+The count is the point: `Bush 238` says the filter will find something before it is applied. The
+list follows the search scope, cached per workspace and loaded after answering the keystroke rather
+than before it, so typing is never blocked on a query.
+
+Labels, media kinds and flags are offered the same way. Ratings, dates and filenames are not — those
+are written, not chosen from a list.
+
+Values with a space come back quoted, since otherwise the term would end at the space and the rest
+would become free text.
+
+- `dotnet test` — **685/685 passing** (8 new).
+
+### A self-inflicted scare worth recording
+
+Restructuring the suggestion code with a scripted edit, the region I cut ran from one anchor to
+another — and the whole filter-controls section happened to sit between them. Every rating, kind,
+flag and label-chip member was deleted in one step. The compiler caught it immediately and it was
+rewritten and re-verified, but nothing was committed, so nothing would have brought it back.
+
+The lesson is the one from the flag toggles that never reached the markup: a scripted edit that
+matches on surrounding text needs its result checked, not just its exit code.

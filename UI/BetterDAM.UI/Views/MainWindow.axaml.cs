@@ -640,8 +640,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        var field = viewModel.FieldSuggestions[viewModel.SelectedSuggestionIndex];
-        var (text, caret) = SearchSuggestion.Accept(SearchBox.Text, SearchBox.CaretIndex, field.Name);
+        var chosen = viewModel.FieldSuggestions[viewModel.SelectedSuggestionIndex];
+
+        // A field completes to "name:" and leaves the caret ready for the value; a value completes
+        // in place, keeping any alternatives already listed in the same term.
+        var (text, caret) = chosen.IsField
+            ? SearchSuggestion.AcceptField(SearchBox.Text, SearchBox.CaretIndex, chosen.Text.TrimEnd(':'))
+            : SearchSuggestion.AcceptValue(SearchBox.Text, SearchBox.CaretIndex, chosen.Text);
 
         _acceptingSuggestion = true;
 
@@ -661,7 +666,21 @@ public partial class MainWindow : Window
         // after the flag has been cleared — which looks exactly like the user typing a colon, and
         // reopens the list on the field just chosen. Posting the dismissal puts it after anything
         // the binding still has to do.
-        Dispatcher.UIThread.Post(viewModel.DismissFieldSuggestions, DispatcherPriority.Background);
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                // Completing a field leaves the caret after a colon, which is a new question rather
+                // than an answer — so offer that field's values instead of closing.
+                if (chosen.IsField)
+                {
+                    viewModel.UpdateFieldSuggestions(SearchBox.Text, SearchBox.CaretIndex);
+                }
+                else
+                {
+                    viewModel.DismissFieldSuggestions();
+                }
+            },
+            DispatcherPriority.Background);
 
         // The click that chose a field landed on the list, so the box has to be given back the
         // caret or the user is left typing into nothing.

@@ -139,73 +139,156 @@ public class SearchFieldTests
 }
 
 /// <summary>
-/// When the search box offers the field list, and what happens to the text when one is picked.
+/// What the search box offers at the caret, and what happens to the text when something is picked.
 /// </summary>
 public class SearchSuggestionTests
 {
+    private static SuggestionRequest At(string text, int caret) => SearchSuggestion.At(text, caret);
+
+    // ---- Choosing a field -------------------------------------------------------------------------
+
     [Theory]
-    [InlineData(":", 1, "")]                       // a bare colon means "remind me"
-    [InlineData("k:", 2, "k")]                     // a partly typed field
-    [InlineData("key:", 4, "key")]
-    [InlineData("sand k:", 7, "k")]                // the token being typed, not the whole box
-    public void OffersCompletionsAtAColon(string text, int caret, string expected)
+    [InlineData(":", 1, "")]              // a bare colon means "remind me"
+    [InlineData("key:", 4, "key")]        // a partly typed field, not yet a real one
+    [InlineData("sand ke:", 8, "ke")]     // the token being typed, not the whole box
+    public void OffersFieldsWhileTheWordIsNotYetAField(string text, int caret, string expected)
     {
-        Assert.Equal(expected, SearchSuggestion.PrefixAt(text, caret));
+        var request = At(text, caret);
+
+        Assert.Equal(SuggestionKind.Field, request.Kind);
+        Assert.Equal(expected, request.Prefix);
+    }
+
+    /// <summary>
+    /// The rule that makes it feel immediate: a colon after something that <i>is</i> already a field
+    /// moves straight on to that field's values rather than confirming the field back at you.
+    /// </summary>
+    [Theory]
+    [InlineData("k:", 2, "keyword", "")]
+    [InlineData("keyword:", 8, "keyword", "")]
+    [InlineData("k:sa", 4, "keyword", "sa")]
+    [InlineData("lb:sel", 6, "label", "sel")]
+    public void OffersValuesOnceTheFieldIsKnown(string text, int caret, string field, string prefix)
+    {
+        var request = At(text, caret);
+
+        Assert.Equal(SuggestionKind.Value, request.Kind);
+        Assert.Equal(field, request.Field);
+        Assert.Equal(prefix, request.Prefix);
+    }
+
+    /// <summary>Commas separate alternatives, so only the one being typed is completed.</summary>
+    [Theory]
+    [InlineData("k:sand,", 7, "")]
+    [InlineData("k:sand,du", 9, "du")]
+    public void OnlyTheAlternativeBeingTypedIsCompleted(string text, int caret, string expected)
+    {
+        var request = At(text, caret);
+
+        Assert.Equal(SuggestionKind.Value, request.Kind);
+        Assert.Equal(expected, request.Prefix);
     }
 
     [Theory]
-    [InlineData("", 0)]                            // nothing typed
-    [InlineData("sand", 4)]                        // free text
-    [InlineData("k:motorcycle", 12)]               // a value is being typed, so the asking is over
-    [InlineData("lens:RF:", 8)]                    // a colon inside a value must not reopen it
+    [InlineData("", 0)]
+    [InlineData("sand", 4)]                  // free text, no colon
+    [InlineData("http://example.com", 18)]   // a word with a colon is not a filter
     public void StaysQuietOtherwise(string text, int caret)
     {
-        Assert.Null(SearchSuggestion.PrefixAt(text, caret));
+        Assert.Equal(SuggestionKind.None, At(text, caret).Kind);
     }
 
-    /// <summary>The caret is rarely at the end; a colon typed mid-string still offers.</summary>
+    /// <summary>The caret is rarely at the end; what follows it is another term, not a prefix.</summary>
     [Fact]
     public void OffersWhereTheCaretIsRatherThanAtTheEnd()
     {
-        Assert.Equal("k", SearchSuggestion.PrefixAt("k: sand", 2));
-        Assert.Null(SearchSuggestion.PrefixAt("k: sand", 7));
+        var request = At("k:sa t:video", 4);
+
+        Assert.Equal(SuggestionKind.Value, request.Kind);
+        Assert.Equal("keyword", request.Field);
+        Assert.Equal("sa", request.Prefix);
     }
 
+    // ---- Accepting --------------------------------------------------------------------------------
+
     [Fact]
-    public void AcceptingReplacesTheHalfTypedField()
+    public void AcceptingAFieldReplacesTheHalfTypedName()
     {
-        var (text, caret) = SearchSuggestion.Accept("k:", 2, "keyword");
+        var (text, caret) = SearchSuggestion.AcceptField("key:", 4, "keyword");
 
         Assert.Equal("keyword:", text);
         Assert.Equal(8, caret);
     }
 
     [Fact]
-    public void AcceptingLeavesTheRestOfTheQueryAlone()
+    public void AcceptingAFieldLeavesTheRestOfTheQueryAlone()
     {
-        var (text, caret) = SearchSuggestion.Accept("sand r:", 7, "rating");
+        var (text, caret) = SearchSuggestion.AcceptField("sand r:", 7, "rating");
 
         Assert.Equal("sand rating:", text);
         Assert.Equal(12, caret);
     }
 
-    /// <summary>What follows the caret survives, so completing mid-query does not truncate it.</summary>
     [Fact]
-    public void AcceptingKeepsWhatComesAfterTheCaret()
+    public void AcceptingAValueCompletesIt()
     {
-        var (text, caret) = SearchSuggestion.Accept("k: t:video", 2, "keyword");
+        var (text, caret) = SearchSuggestion.AcceptValue("k:sa", 4, "sand");
 
-        Assert.Equal("keyword: t:video", text);
-        Assert.Equal(8, caret);
+        Assert.Equal("k:sand", text);
+        Assert.Equal(6, caret);
+    }
+
+    /// <summary>Earlier alternatives in the same term survive.</summary>
+    [Fact]
+    public void AcceptingAValueKeepsTheOnesAlreadyChosen()
+    {
+        var (text, caret) = SearchSuggestion.AcceptValue("k:sand,du", 9, "dust");
+
+        Assert.Equal("k:sand,dust", text);
+        Assert.Equal(11, caret);
     }
 
     [Fact]
-    public void AcceptingIntoAnEmptyBoxJustWritesTheField()
+    public void AcceptingAValueIntoAnEmptyTermJustWritesIt()
     {
-        var (text, caret) = SearchSuggestion.Accept(":", 1, "type");
+        var (text, caret) = SearchSuggestion.AcceptValue("k:", 2, "sand");
 
-        Assert.Equal("type:", text);
-        Assert.Equal(5, caret);
+        Assert.Equal("k:sand", text);
+        Assert.Equal(6, caret);
+    }
+
+    /// <summary>What comes after the caret survives, so completing mid-query does not truncate it.</summary>
+    [Fact]
+    public void AcceptingAValueKeepsWhatComesAfterTheCaret()
+    {
+        var (text, caret) = SearchSuggestion.AcceptValue("k:sa t:video", 4, "sand");
+
+        Assert.Equal("k:sand t:video", text);
+        Assert.Equal(6, caret);
+    }
+
+    /// <summary>
+    /// A keyword with a space has to come back quoted, or the term ends at the space and the rest
+    /// becomes free text.
+    /// </summary>
+    [Fact]
+    public void AValueWithASpaceComesBackQuoted()
+    {
+        var (text, _) = SearchSuggestion.AcceptValue("k:gol", 5, "Golden Hour");
+
+        Assert.Equal("k:\"Golden Hour\"", text);
+    }
+
+    /// <summary>Completing a value has to leave something the parser understands.</summary>
+    [Fact]
+    public void WhatIsCompletedIsWhatIsParsed()
+    {
+        var (text, _) = SearchSuggestion.AcceptValue("k:sand,du", 9, "dust");
+
+        var query = SearchQueryParser.Parse(text);
+
+        Assert.Single(query.Keywords);
+        Assert.Equal(["sand", "dust"], query.Keywords[0].AnyOf.ToArray());
     }
 }
 

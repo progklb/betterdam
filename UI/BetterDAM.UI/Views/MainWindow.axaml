@@ -298,7 +298,7 @@
           flyout rather than in a strip here: a strip docked above the splitter competed with it
           for space and had to be kept clear of it by hand.
         -->
-        <Panel Grid.Row="1" Background="#10FFFFFF">
+        <Panel Grid.Row="1" Background="{DynamicResource AppPanelBrush}">
 
         <!--
           Sits in the same cell as the grid, after it so it draws on top. IsHitTestVisible is left
@@ -404,7 +404,7 @@
 
         <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="#22FFFFFF" />
 
-        <Border Grid.Row="3" Background="#10FFFFFF">
+        <Border Grid.Row="3" Background="{DynamicResource AppPanelBrush}">
           <Panel>
 
             <!-- ============ Video player ============ -->

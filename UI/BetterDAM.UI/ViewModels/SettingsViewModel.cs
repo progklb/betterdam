@@ -34,6 +34,12 @@ public sealed partial class MetadataFieldToggle : ObservableObject
     partial void OnIsVisibleChanged(bool value) => _changed(Field, value);
 }
 
+/// <summary>
+/// A theme as the dropdown offers it. The description is worth carrying: the two themes differ by a
+/// single step of grey, which a name alone does not convey to someone choosing between them.
+/// </summary>
+public sealed record ThemeChoice(AppTheme Theme, string Name, string Description);
+
 public sealed partial class SettingsViewModel : ObservableObject
 {
     /// <summary>
@@ -67,6 +73,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         Keywords = keywords;
 
         var current = settings.Current;
+
+        // Matched by value, and falling back to the first entry so a theme this build no longer
+        // offers leaves the dropdown showing something rather than blank.
+        _selectedTheme = Themes.FirstOrDefault(choice => choice.Theme == current.Theme) ?? Themes[0];
+
         _isCacheLimited = current.IsCacheLimited;
         _selectedLimitIndex = current.IsCacheLimited
             ? NearestChoice(current.CacheSizeLimitBytes)
@@ -417,6 +428,29 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
 
         _ = SaveAsync(_settings.Current with { HiddenMetadataFields = hidden });
+    }
+
+    // ---- General ------------------------------------------------------------------------------
+
+    public static IReadOnlyList<ThemeChoice> Themes { get; } =
+    [
+        new(AppTheme.Darkroom, "Darkroom", "Near-black, so nothing competes with the photograph."),
+        new(AppTheme.Graphite, "Graphite", "One dark grey throughout, with no panel lighter than another.")
+    ];
+
+    /// <summary>
+    /// Applied the moment it is picked, and to windows that are already open — the point of choosing
+    /// between two shades of dark is seeing them, which a preview swatch or a restart both defeat.
+    /// </summary>
+    [ObservableProperty]
+    private ThemeChoice _selectedTheme;
+
+    partial void OnSelectedThemeChanged(ThemeChoice value)
+    {
+        if (_settings.Current.Theme != value.Theme)
+        {
+            _ = SaveAsync(_settings.Current with { Theme = value.Theme });
+        }
     }
 
     // ---- Keywords -----------------------------------------------------------------------------

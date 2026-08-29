@@ -42,6 +42,12 @@ public sealed record AppSettings
     public IReadOnlyList<string> RecentWorkspaces { get; init; } = [];
 
     /// <summary>
+    /// The colours the application paints itself in. Purely cosmetic — nothing about how media is
+    /// decoded, displayed or judged depends on it, and the fullscreen viewer stays black regardless.
+    /// </summary>
+    public AppTheme Theme { get; init; } = AppTheme.Darkroom;
+
+    /// <summary>
     /// Whether the viewer takes over the whole screen or just fills the current one.
     ///
     /// Two different things on macOS: real fullscreen hides the menu bar but moves the window to a

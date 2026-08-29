@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.UI.Services;
 using BetterDAM.UI.ViewModels;
@@ -42,6 +43,13 @@ public partial class App : Application
         {
             var settings = Settings ?? new Core.Services.JsonSettingsService(
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<Core.Services.JsonSettingsService>.Instance);
+
+            // Before any window exists, so the application never shows in one theme and repaints
+            // into another. Changed fires from whichever thread called SaveAsync, so the repaint is
+            // posted rather than applied where it lands.
+            AppThemes.Apply(this, settings.Current.Theme);
+            settings.Changed += (_, updated) =>
+                Dispatcher.UIThread.Post(() => AppThemes.Apply(this, updated.Theme));
 
             var services = new ServiceCollection()
                 .AddBetterDam(Paths ?? new Core.Services.AppPaths(settings), settings)

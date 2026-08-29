@@ -20,6 +20,15 @@
   </NativeMenu.Menu>
 
   <Application.Resources>
+
+    <!--
+      The themed surfaces. Defined here so the keys always resolve — including in the designer, and
+      during the moment before AppThemes.Apply runs at startup — and replaced wholesale at runtime
+      when the theme changes. These values are Darkroom; see AppThemes for what each one paints.
+    -->
+    <SolidColorBrush x:Key="AppSurfaceBrush" Color="#000000" />
+    <SolidColorBrush x:Key="AppPanelBrush" Color="#101010" />
+
     <conv:MediaTypeGlyphConverter x:Key="MediaTypeGlyph" />
     <conv:StarGlyphConverter x:Key="StarGlyph" />
     <conv:StatusBrushConverter x:Key="StatusBrush" />
@@ -31,6 +40,15 @@
 
   <Application.Styles>
     <FluentTheme />
+
+    <!--
+      The application's base colour, in one place rather than on each window. A Style setter outranks
+      the one in Fluent's control theme, which is what makes this take effect; a window that sets
+      Background itself still wins over both, which is how the media viewer stays black.
+    -->
+    <Style Selector="Window">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
+    </Style>
   </Application.Styles>
 
 </Application>

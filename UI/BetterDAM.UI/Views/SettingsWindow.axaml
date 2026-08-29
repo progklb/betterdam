@@ -56,6 +56,42 @@
 
     <TabControl Margin="10,8,10,0">
 
+      <TabItem Header="General">
+        <ScrollViewer>
+          <StackPanel Margin="4,10" Spacing="12">
+
+            <TextBlock Classes="hint"
+                       Text="How the application looks. Nothing here affects your files, or how a photograph is decoded and displayed." />
+
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Theme" Classes="section" />
+
+                <!--
+                  Sizes and opacities are set on the template rather than through the hint class:
+                  dropdown items are built in a popup of their own, which this window's styles do
+                  not reach into.
+                -->
+                <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}"
+                          HorizontalAlignment="Stretch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ThemeChoice">
+                      <StackPanel Spacing="1" Margin="0,3">
+                        <TextBlock Text="{Binding Name}" FontSize="12" />
+                        <TextBlock Text="{Binding Description}" FontSize="11" Opacity="0.55" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <TextBlock Classes="hint"
+                           Text="Applies straight away, including to windows already open. The fullscreen viewer stays black whichever theme is chosen — a photograph is judged against black, not against the application." />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
       <TabItem Header="Cache">
         <ScrollViewer>
           <StackPanel Margin="4,10" Spacing="12">

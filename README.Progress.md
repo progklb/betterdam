@@ -3215,3 +3215,80 @@ collapsed    back to hugging the top; the cap is lifted, so scrolling works agai
 ### Verified
 
 - `dotnet test` — **570/570 passing**, unchanged; layout with no logic behind it.
+
+---
+
+## Interlude — themes ✅
+
+Asked for: keep the current look as a very dark theme with a name of its own, add a second that
+shades the whole application in the grey the preview panel already uses, and put a theme dropdown
+on a new General tab in Settings.
+
+### What the application was actually painted with
+
+Measured rather than assumed, by capturing the running window and sampling it:
+
+```text
+chrome — tree, toolbar, metadata panel, status bar    #000000
+grid and preview panels                               #101010
+tile behind a thumbnail                               #262626
+```
+
+Pure black is Fluent's dark window background. The panels were black with a `#10FFFFFF` overlay —
+white at 6%, which composites to exactly `#101010`.
+
+### Two colours, not a palette
+
+Almost every colour in this application is already a translucent white or black laid *over* one of
+those two surfaces: splitters at 13% white, badges at 69% black, the thumbnail tile at 9% white,
+Fluent's own text fields at 40% black. They composite against whatever is beneath them. So a theme
+is two opaque colours — `AppSurfaceBrush` and `AppPanelBrush` — and nothing else has to be restated
+per theme. No accent, border or overlay was touched.
+
+| | Surface | Panel |
+|---|---|---|
+| **Darkroom** | `#000000` | `#101010` |
+| **Graphite** | `#101010` | `#101010` |
+
+**Darkroom** is the application exactly as it was — named for where a photograph is judged.
+Expressing its panels as opaque `#101010` rather than a white overlay is a no-op, and a test proves
+that by compositing the old overlay onto the new surface rather than trusting that they match.
+
+**Graphite** is deliberately flat: both surfaces at the tone Darkroom reserves for the grid alone.
+Panels are told apart by their splitters and borders instead of by a change of shade. If the panels
+should still lift a step in Graphite, that is one colour in `AppThemes`.
+
+### Where it is applied
+
+One style in `App.axaml` sets every window's background, rather than each window setting its own. A
+`Style` setter outranks the one in Fluent's control theme, which is what makes it take; a window
+that sets `Background` itself outranks both, which is how the media viewer stays black. That is not
+an accident of ordering — a photograph is judged against black, not against the application — and
+the Settings hint says so.
+
+Themes are stored as pinned enum numbers, since settings.json holds them as integers. Unpinned,
+inserting a theme later would silently repaint every existing user's application.
+
+### Verified in the GUI
+
+Run against a scratch workspace, and the user's settings restored afterwards.
+
+```text
+Darkroom     all six sample points byte-identical to the pre-change app
+Graphite     chrome, tree, grid, preview, metadata, status bar all #101010
+             search field #0A0A0A — 40% black over #101010, composing as designed
+switching    repaints windows already open, both directions, no restart
+viewer       #000000 in all four corners while Graphite is active
+tab order    General · Cache · Catalog · Display · Keywords
+```
+
+### Verified
+
+- `dotnet test` — **579/579 passing** (570 + 9 new).
+
+### Worth knowing
+
+- General is placed first, which displaces Cache from the top. Conventional, but say if you would
+  rather keep Cache and Catalog leading.
+- The batch editor and the media viewer's chrome were left alone; both already sit on their own
+  overlays.

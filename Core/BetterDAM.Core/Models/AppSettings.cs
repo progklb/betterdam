@@ -79,6 +79,12 @@ public sealed record AppSettings
     public bool HandDrawnAnimates { get; init; } = true;
 
     /// <summary>
+    /// The typeface the interface is set in. Separate from the hand-drawn marks, which some will
+    /// want without the font and the other way round.
+    /// </summary>
+    public UiFont UiFont { get; init; } = UiFont.System;
+
+    /// <summary>
     /// Whether the viewer takes over the whole screen or just fills the current one.
     ///
     /// Two different things on macOS: real fullscreen hides the menu bar but moves the window to a

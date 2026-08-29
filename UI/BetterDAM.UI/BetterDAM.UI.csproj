@@ -39,4 +39,15 @@
     <InternalsVisibleTo Include="BetterDAM.Tests" />
   </ItemGroup>
 
+  <!--
+    Bundled rather than relied on from the system: the faces the handwritten option offers are not
+    present on Linux or Windows, and a font setting that silently does nothing on two platforms is
+    worse than not having one. Both are SIL Open Font Licence; the licence text ships beside them,
+    which is all the OFL asks.
+  -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/Fonts/*.ttf" />
+    <None Include="Assets/Fonts/*.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

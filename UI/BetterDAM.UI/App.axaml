@@ -47,8 +47,13 @@
       the one in Fluent's control theme, which is what makes this take effect; a window that sets
       Background itself still wins over both, which is how the media viewer stays black.
     -->
+    <!--
+      Background and typeface both set on the window rather than per control: FontFamily is an
+      inherited property, so one setter here reaches everything that does not override it.
+    -->
     <Style Selector="Window">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
+      <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
     </Style>
 
     <!--

@@ -125,6 +125,28 @@ public static class AppThemes
         var accent = ApplyAccent(application, settings);
 
         ApplySelectionStyle(application, settings, accent);
+        ApplyFont(application, settings);
+    }
+
+    public const string FontKey = "AppFontFamily";
+
+    /// <summary>
+    /// Where the bundled faces live. The family name after the hash is the one recorded inside the
+    /// font file, not the file name — a wrong name here falls back to the system font silently,
+    /// which looks exactly like the setting not being wired up.
+    /// </summary>
+    private const string Bundled = "avares://BetterDAM/Assets/Fonts#";
+
+    private static void ApplyFont(Application application, AppSettings settings)
+    {
+        var family = settings.UiFont switch
+        {
+            UiFont.Andika => new FontFamily(Bundled + "Andika"),
+            UiFont.Delius => new FontFamily(Bundled + "Delius"),
+            _ => FontFamily.Default
+        };
+
+        application.Resources[FontKey] = family;
     }
 
     public const string RingEnabledKey = "AppRingEnabled";

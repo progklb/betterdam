@@ -3962,3 +3962,137 @@ than as something dangling.
 A crossing is right for a mark the size of a folder ring and wrong for one twelve pixels across.
 
 - `dotnet test` — **599/599 passing**.
+
+---
+
+## Investigation — a handwritten UI font 🔬
+
+Prototype in the scratchpad: `handfont/`. Run with `dotnet run --project <scratchpad>/handfont`,
+or `-- --check` for the resolution report described below.
+
+### Tested on the content the application actually shows
+
+Handwriting faces are chosen by how a sentence looks in them. BetterDAM mostly shows filenames,
+paths, exposure values and file sizes — strings of digits, full stops and capitals, which is exactly
+where a casual face falls apart. So every candidate is drawn on `DSCF7755.JPG · 16,1 MB`,
+`1/250 s · f/2.8 · ISO 3200`, a folder name and a sentence of hint text, at the sizes the
+application really uses.
+
+### Every family was checked for silent fallback first
+
+Avalonia falls back without complaint, so a list of nine fonts can quietly be one font drawn nine
+times — and it would look entirely plausible in a screenshot. `--check` measures a fixed string in
+each family and compares:
+
+```text
+System default       width=170.43  height=14.00
+Noteworthy           width=172.64  height=22.61
+Chalkboard SE        width=173.12  height=19.99
+Bradley Hand         width=175.94  height=17.49
+Marker Felt          width=151.07  height=15.20
+Comic Sans MS        width=182.85  height=19.51
+Skia                 width=154.96  height=14.00
+American Typewriter  width=183.83  height=16.16
+Snell Roundhand      width=161.53  height=17.65
+```
+
+### The hidden cost is line height, not looks
+
+That third column is the finding. Noteworthy is **61% taller** than the current font at the same
+point size. Swapping it in does not merely restyle the application — it grows every tree row, every
+tile caption and every metadata row, and reflows the panels around them. Skia is the only candidate
+with identical metrics; Marker Felt and American Typewriter are close.
+
+### Where a handwritten font should not go
+
+A filename and an exposure row are *data*: read carefully, compared against each other, sometimes
+copied. The same argument that keeps the loupe's frame white applies — the font should take the
+chrome (headings, labels, buttons, hints) and leave filenames, paths and EXIF values alone. The
+prototype deliberately shows both so the difference can be judged rather than argued.
+
+### Cross-platform
+
+Every one of these is a macOS system font. Shipping would mean bundling an open-licence face —
+Virgil (Excalidraw's, and the closest match to the pencil marks), Shantell Sans (drawn for UI
+legibility), Caveat, Patrick Hand or Comic Neue are the obvious candidates. Worth settling before
+the setting is built, since it changes what the dropdown can offer.
+
+### Open-licence candidates
+
+Chalkboard SE and Comic Sans MS are both macOS-only, so the prototype now bundles seven OFL faces as
+`AvaloniaResource` and shows them beside the two originals. They are addressed by the family name
+recorded inside each file rather than by file name — read out of the fonts' own `name` tables, since
+a wrong family name falls back silently and would look convincing.
+
+```text
+                       width    line height     size
+System default        170.43       14.00
+Chalkboard SE         173.12       19.99         macOS only
+Comic Sans MS         182.85       19.51         macOS only
+Comic Neue            158.45       16.10          57 KB
+Short Stack           187.86       17.24          68 KB
+Delius                163.65       17.58          77 KB
+Patrick Hand          136.08       18.96         215 KB
+Andika                176.54       22.56         670 KB
+Shantell Sans         171.88       18.76         1.3 MB
+Architects Daughter   182.60       19.46          43 KB
+```
+
+**Closest to Chalkboard SE: Short Stack.** Same rounded, chunky, slightly wide letterforms, and its
+digits survive `6240×4160` at 11px, which is where most of these fail.
+
+**Closest to Comic Sans MS: Comic Neue** — literally a redrawing of it — though it is lighter and
+tamer than the original. **Delius** is nearer in weight and warmth if the point was the friendliness
+rather than the shapes.
+
+**Best of the set on its own merits: Shantell Sans.** Drawn for interfaces, so it is unmistakably
+handwritten and still the most even at small sizes. The cost is 1.3 MB, being a variable font,
+against Short Stack's 68 KB.
+
+Ruled out: Andika is beautifully clear but barely reads as handwriting at all, and Architects
+Daughter goes thin and hard to read on the filename row.
+
+Bundling any of these means shipping the OFL licence text alongside — the licence permits
+redistribution and embedding, and asks only that it travel with the font and that the font not be
+sold on its own.
+
+---
+
+## Andika and Delius, bundled ✅
+
+Chosen: **Andika**, with **Delius** as the second option. Settings › General › Experimental, a
+dropdown beside the hand-drawn marks. `System default` remains the default.
+
+### Bundled, not borrowed
+
+Both ship in `UI/BetterDAM.UI/Assets/Fonts` as `AvaloniaResource`, with their OFL licence text
+beside them — which is all the licence asks, and it permits embedding and redistribution. Andika
+brings a real Bold as well as Regular, so headings are set rather than synthesised.
+
+The alternative was reading them from the system, and that would have been a setting which silently
+did nothing on Linux and Windows. About 1.4 MB for the three files.
+
+The family name after the hash in an `avares://` URI is the one recorded inside the font file, not
+the file name. A wrong name there falls back to the system font without a word, which looks exactly
+like the setting not being wired up — so both names were read out of the fonts' own `name` tables.
+
+### One setter, because FontFamily inherits
+
+The typeface is set on the `Window` style next to the background, and inheritance carries it to
+everything that does not override it. No view was touched.
+
+### It went everywhere, and that was the point
+
+The earlier recommendation was to keep a handwritten face off filenames, paths and EXIF values. That
+argument does not apply to this choice and it would have been wrong to apply it anyway: Andika is
+drawn by SIL for teaching reading, so unambiguous digits and letterforms are the whole design brief.
+Being friendly *without* being a handwriting face is exactly what makes it safe on
+`DSCF7755.JPG · 1/250 s · f/2.8`. Checked in the running application on real filenames and paths
+rather than reasoned about.
+
+Its line box is the tallest of every candidate measured — 22.56 against the system font's 14 — so
+rows and panels do grow. In practice nothing broke: most of the text is single-line, and the grid,
+tree and metadata panel all absorbed it. The setting says so plainly rather than leaving it to be
+discovered.
+
+- `dotnet test` — **602/602 passing**.

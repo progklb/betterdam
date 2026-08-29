@@ -43,6 +43,9 @@ public sealed record ThemeChoice(AppTheme Theme, string Name, string Description
 /// <summary>Where the selection highlight takes its colour from, as the dropdown offers it.</summary>
 public sealed record SelectionChoice(SelectionColour Source, string Name, string Description);
 
+/// <summary>A typeface as the dropdown offers it.</summary>
+public sealed record FontChoice(UiFont Font, string Name, string Description);
+
 public sealed partial class SettingsViewModel : ObservableObject
 {
     /// <summary>
@@ -84,6 +87,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             SelectionColours.FirstOrDefault(choice => choice.Source == current.SelectionColour)
             ?? SelectionColours[0];
 
+        _selectedFont = Fonts.FirstOrDefault(choice => choice.Font == current.UiFont) ?? Fonts[0];
         _handDrawnSelection = current.SelectionStyle == SelectionStyle.HandDrawn;
         _handDrawnRoughness = current.ClampedRoughness;
         _handDrawnAnimates = current.HandDrawnAnimates;
@@ -537,6 +541,30 @@ public sealed partial class SettingsViewModel : ObservableObject
     public static double MinRoughness => AppSettings.MinRoughness;
 
     public static double MaxRoughness => AppSettings.MaxRoughness;
+
+    public static IReadOnlyList<FontChoice> Fonts { get; } =
+    [
+        new(UiFont.System, "System default", "Whatever this computer normally uses."),
+        new(UiFont.Andika, "Andika",
+            "Friendly but plainly legible — drawn for teaching reading, so it stays clear on filenames and numbers."),
+        new(UiFont.Delius, "Delius",
+            "Properly handwritten and still even. Warmer than Andika, and a little less clear on long numbers.")
+    ];
+
+    /// <summary>
+    /// The interface typeface. Separate from the hand-drawn marks: some will want one without the
+    /// other, and the font is by far the more far-reaching of the two.
+    /// </summary>
+    [ObservableProperty]
+    private FontChoice _selectedFont;
+
+    partial void OnSelectedFontChanged(FontChoice value)
+    {
+        if (_settings.Current.UiFont != value.Font)
+        {
+            _ = SaveAsync(_settings.Current with { UiFont = value.Font });
+        }
+    }
 
     public string HandDrawnSummary => HandDrawnSelection
         ? $"Roughness {HandDrawnRoughness:0.00} — below about 0.4 it reads as a plain oval, above about 1.6 it starts to look scribbled."

@@ -310,6 +310,45 @@ public class ThemeTests
         });
     }
 
+    // ---- Interface font ------------------------------------------------------------------------
+
+    [Fact]
+    public void FontDefaultsToTheSystemOne()
+    {
+        Assert.Equal(UiFont.System, AppSettings.Default.UiFont);
+        Assert.Equal(0, (int)UiFont.System);
+        Assert.Equal(1, (int)UiFont.Andika);
+        Assert.Equal(2, (int)UiFont.Delius);
+    }
+
+    [Fact]
+    public void FontSurvivesARoundTrip()
+    {
+        var settings = AppSettings.Default with { UiFont = UiFont.Andika };
+
+        var restored = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings));
+
+        Assert.NotNull(restored);
+        Assert.Equal(UiFont.Andika, restored.UiFont);
+    }
+
+    /// <summary>
+    /// A font in the enum but not in the dropdown would be unreachable, and would leave the dropdown
+    /// blank for anyone whose settings already named it.
+    /// </summary>
+    [Fact]
+    public void EveryFontIsOfferedInSettings()
+    {
+        var offered = SettingsViewModel.Fonts.Select(choice => choice.Font).ToArray();
+
+        Assert.Equal(Enum.GetValues<UiFont>(), offered);
+        Assert.All(SettingsViewModel.Fonts, choice =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(choice.Name));
+            Assert.False(string.IsNullOrWhiteSpace(choice.Description));
+        });
+    }
+
     [Fact]
     public void HandDrawnSettingsSurviveARoundTrip()
     {

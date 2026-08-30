@@ -124,6 +124,18 @@
           </StackPanel>
         </Border>
 
+      </StackPanel>
+
+      <!--
+        Everything about saving, along the bottom edge.
+
+        It used to sit above the fields, which meant that the moment anything was edited the whole
+        panel jumped down by the height of this banner — on every edit, since editing is exactly
+        what makes it appear. Docked to the bottom it grows into the panel's own edge and nothing
+        above it moves. The conflict warning stays at the top, because that one is asking to be
+        settled before any of the fields below it are touched, and it is rare enough not to jar.
+      -->
+      <StackPanel DockPanel.Dock="Bottom" Margin="8,6,8,8" Spacing="6">
         <Border IsVisible="{Binding HasPendingChanges}"
                 Background="#2622A0F2" BorderBrush="#6622A0F2" BorderThickness="1"
                 CornerRadius="4" Padding="8,6">

@@ -931,6 +931,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsLoupeFullResolution))]
     [NotifyPropertyChangedFor(nameof(LoupeTargetWidth))]
     [NotifyPropertyChangedFor(nameof(PreviewSourceLabel))]
+    [NotifyPropertyChangedFor(nameof(PreviewSourceTooltip))]
+    [NotifyPropertyChangedFor(nameof(CanSwitchPreviewSource))]
     [NotifyPropertyChangedFor(nameof(IsShowingDevelopedRaw))]
     private Bitmap? _fullPreview;
 
@@ -951,6 +953,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(DevelopSettingsApply))]
     [NotifyPropertyChangedFor(nameof(RendererNote))]
     [NotifyPropertyChangedFor(nameof(PreviewSourceLabel))]
+    [NotifyPropertyChangedFor(nameof(PreviewSourceTooltip))]
+    [NotifyPropertyChangedFor(nameof(CanSwitchPreviewSource))]
     [NotifyPropertyChangedFor(nameof(IsShowingDevelopedRaw))]
     private string? _fullPreviewRenderer;
 
@@ -986,6 +990,25 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     /// <summary>True while the viewer is showing developed sensor data, for the badge to colour by.</summary>
     public bool IsShowingDevelopedRaw => FullPreview is not null && IsRawSelected && FullPreviewRenderer is not null;
+
+    /// <summary>
+    /// Whether the badge is worth clicking. Only a RAW has two renderings to move between; for
+    /// anything else the badge is a label and nothing more.
+    /// </summary>
+    public bool CanSwitchPreviewSource => IsRawSelected;
+
+    /// <summary>
+    /// What clicking the badge will do, said before it is clicked.
+    ///
+    /// The badge was already saying which rendering was on screen, and the key that flips it was
+    /// discoverable only from the hint strip that fades out. Naming the effect and the key together
+    /// means one hover answers both "can I change this?" and "how?".
+    /// </summary>
+    public string PreviewSourceTooltip => !IsRawSelected
+        ? "This is not a RAW file, so there is only one rendering of it."
+        : IsShowingDevelopedRaw
+            ? "Showing the developed RAW. Click, or press \\, for the JPEG the camera embedded."
+            : "Showing the JPEG the camera embedded. Click, or press \\, to develop the RAW.";
 
     /// <summary>Says why the controls are doing nothing, rather than leaving them looking broken.</summary>
     public string? RendererNote => DevelopSettingsApply
@@ -1794,6 +1817,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsRawSelected));
         OnPropertyChanged(nameof(PreviewSourceLabel));
         OnPropertyChanged(nameof(IsShowingDevelopedRaw));
+        OnPropertyChanged(nameof(PreviewSourceTooltip));
+        OnPropertyChanged(nameof(CanSwitchPreviewSource));
 
         // A video is handed to the player; only stills use the static image preview, so the two
         // never fight over the same pane.

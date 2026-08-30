@@ -102,15 +102,23 @@
       </Border>
 
       <!--
-        Which rendering is on screen. The developed sensor data and the JPEG the camera embedded can
-        look similar at a glance and are not the same thing to judge a photograph by, so it says so
-        rather than leaving it to be inferred. Tinted when developed, so the answer reads at a glance.
+        Which rendering is on screen, and the way to change it. The developed sensor data and the
+        JPEG the camera embedded can look similar at a glance and are not the same thing to judge a
+        photograph by, so it says so rather than leaving it to be inferred. Tinted when developed.
+
+        A button rather than a label: the thing it names is the thing you want to change when you
+        read it, and \ was discoverable only from a hint strip that fades away. Disabled for
+        anything that is not a RAW, where there is nothing to switch between.
       -->
-      <Border CornerRadius="6" Padding="10,6" VerticalAlignment="Stretch"
-              Background="{Binding IsShowingDevelopedRaw, Converter={StaticResource SourceBadgeBrush}}">
+      <Button CornerRadius="6" Padding="10,6" VerticalAlignment="Stretch"
+              BorderThickness="0"
+              Background="{Binding IsShowingDevelopedRaw, Converter={StaticResource SourceBadgeBrush}}"
+              IsEnabled="{Binding CanSwitchPreviewSource}"
+              ToolTip.Tip="{Binding PreviewSourceTooltip}"
+              Command="{Binding ToggleRawDevelopmentCommand}">
         <TextBlock Text="{Binding PreviewSourceLabel}" FontSize="12" FontWeight="SemiBold"
                    VerticalAlignment="Center" />
-      </Border>
+      </Button>
     </StackPanel>
 
     <!-- The same transport as the main window, not a second implementation of it. -->
@@ -143,8 +151,32 @@
           <DoubleTransition Property="Opacity" Duration="0:0:0.8" />
         </Transitions>
       </Border.Transitions>
-      <!-- Set in code: the keys that apply depend on whether a video or a still is on screen. -->
-      <TextBlock x:Name="HintText" FontSize="11" Opacity="0.85" />
+      <!--
+        Set in code: the keys that apply depend on whether a video or a still is on screen.
+
+        Each key is drawn as a key, and what it does is written beside it in plain text. The strip
+        is meant to be taken in at a glance and put out of mind, which a run of prose at this size
+        is not.
+      -->
+      <ItemsControl x:Name="HintText">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="controls:ShortcutHint">
+            <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,12,0">
+              <Border Background="#33FFFFFF" BorderBrush="#40FFFFFF" BorderThickness="1"
+                      CornerRadius="3" Padding="5,1" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Key}" FontSize="10" FontWeight="SemiBold" />
+              </Border>
+              <TextBlock Text="{Binding Action}" FontSize="11" Opacity="0.75"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
     </Border>
 
   </Panel>

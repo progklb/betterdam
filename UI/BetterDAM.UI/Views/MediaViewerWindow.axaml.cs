@@ -21,6 +21,12 @@ public partial class MediaViewerWindow : Window
 {
     private static readonly TimeSpan HintDuration = TimeSpan.FromSeconds(4);
 
+    /// <summary>
+    /// How long the strip takes to fade. Matches the transition declared on the Hint border in the
+    /// markup; the two have to agree, and there is no way to say so in one place.
+    /// </summary>
+    private static readonly TimeSpan HintFadeDuration = TimeSpan.FromSeconds(0.8);
+
     private MainWindowViewModel? _viewModel;
     private DispatcherTimer? _hintTimer;
 
@@ -74,9 +80,67 @@ public partial class MediaViewerWindow : Window
         _hintTimer = new DispatcherTimer { Interval = HintDuration };
         _hintTimer.Tick += (_, _) =>
         {
+            // Reading it is a reason to keep it. The timer is left running rather than stopped, so
+            // it asks again in another few seconds and fades once the pointer has moved off.
+            if (_hintHovered)
+            {
+                return;
+            }
+
             Hint.Opacity = 0;
             _hintTimer?.Stop();
+
+            // It is still on screen while it fades, so hovering during that brings it back. Only
+            // once it has actually gone does hovering stop meaning anything.
+            DispatcherTimer.RunOnce(() => _hintGone = true, HintFadeDuration);
         };
+        _hintTimer.Start();
+
+        // Tunnelled, and the strip itself stays untouchable: making it hit-testable would have it
+        // swallow a drag that began over it, and dragging is how the picture is panned. Watching
+        // where the pointer is costs nothing and takes nothing away from the viewer.
+        AddHandler(PointerMovedEvent, OnPointerMovedOverHint, RoutingStrategies.Tunnel);
+    }
+
+    /// <summary>True while the pointer is within the hint strip, whether or not it can be clicked.</summary>
+    private bool _hintHovered;
+
+    /// <summary>
+    /// Set once the strip has faded. Hovering keeps it, and brings it back while it is still on its
+    /// way out, but does not resurrect it afterwards — a strip that reappeared whenever the pointer
+    /// crossed a patch of empty screen would be worse than one that goes.
+    /// </summary>
+    private bool _hintGone;
+
+    private void OnPointerMovedOverHint(object? sender, PointerEventArgs e)
+    {
+        if (_hintGone || _hintTimer is null)
+        {
+            return;
+        }
+
+        // Relative to the strip, so there is no parent chain to walk and no scrolling to account for.
+        var point = e.GetPosition(Hint);
+
+        var over = point.X >= 0 && point.Y >= 0
+            && point.X <= Hint.Bounds.Width && point.Y <= Hint.Bounds.Height;
+
+        if (over == _hintHovered)
+        {
+            return;
+        }
+
+        _hintHovered = over;
+
+        if (over)
+        {
+            // Full strength again: it may already have started fading when the pointer arrived.
+            Hint.Opacity = 1;
+        }
+
+        // Either way the clock starts again, so it lingers for the usual few seconds after the
+        // pointer leaves rather than vanishing the moment it does.
+        _hintTimer.Stop();
         _hintTimer.Start();
     }
 
@@ -154,7 +218,7 @@ public partial class MediaViewerWindow : Window
         }
 
         UpdateCounter();
-        HintText.Text = ViewerShortcuts.Hint(viewModel.IsVideoSelected);
+        HintText.ItemsSource = ViewerShortcuts.Hint(viewModel.IsVideoSelected);
 
         if (viewModel.IsVideoSelected)
         {

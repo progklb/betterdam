@@ -59,8 +59,34 @@ public static class ViewerShortcuts
         _ => ViewerAction.None
     };
 
-    /// <summary>The hint shown on arrival, which has to describe the keys that actually apply.</summary>
-    public static string Hint(bool isVideo) => isVideo
-        ? "Scroll to zoom · drag to pan · space to play · 0 to fit · ← → to browse · Esc to close"
-        : "Scroll to zoom · drag to pan · space to fit · ← → to browse · \\ RAW/JPEG · Esc to close";
+    /// <summary>
+    /// The hint shown on arrival, which has to describe the keys that actually apply.
+    ///
+    /// A list of pairs rather than a sentence. As one run of prose it was six instructions with the
+    /// keys buried inside them, and at the size and opacity this is drawn at that is a paragraph to
+    /// read rather than a strip to glance at. Split, the keys can be set apart from what they do.
+    /// </summary>
+    public static IReadOnlyList<ShortcutHint> Hint(bool isVideo) => isVideo
+        ?
+        [
+            new("scroll", "zoom"),
+            new("drag", "pan"),
+            new("space", "play"),
+            new("0", "fit"),
+            new("← →", "browse"),
+            new("esc", "close")
+        ]
+        :
+        [
+            new("scroll", "zoom"),
+            new("drag", "pan"),
+            new("space", "fit"),
+            new("← →", "browse"),
+            new("\\", "RAW / JPEG"),
+            new("esc", "close")
+        ];
 }
+
+/// <param name="Key">What to press, drawn as a key.</param>
+/// <param name="Action">What it does, in as few words as it takes.</param>
+public sealed record ShortcutHint(string Key, string Action);

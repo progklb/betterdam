@@ -5037,3 +5037,71 @@ watchers, buffer overflows under bulk changes, and editors that save by writing 
 renaming it, which arrives as a delete and a create rather than a change. The focus trigger covers
 the case that prompted this and has none of that to go wrong, so the watcher is worth doing only if
 watching a folder while working in another window turns out to be something you actually do.
+
+## Three small things
+
+### The RAW/JPEG badge is a button
+
+It was already saying which rendering was on screen; now clicking it switches. The thing the badge
+names is exactly the thing you want to change when you read it, and `\\` — the key that flips it —
+was discoverable only from a hint strip that fades away after a second.
+
+The tooltip says what the click will do rather than what the badge is, and names the key alongside
+it, so one hover answers both "can I change this?" and "how?". It is disabled for anything that is
+not a RAW, where there is only one rendering and nothing to move between.
+
+### The hint strip sets its keys apart
+
+It was one run of prose — six instructions with the keys buried in them, drawn small and at low
+opacity. Legible in the sense that the letters were there, and a paragraph to read rather than a
+strip to glance at.
+
+Each key is now drawn as a key, with what it does beside it in plain text:
+
+```
+[scroll] zoom   [drag] pan   [space] fit   [← →] browse   [\\] RAW / JPEG   [esc] close
+```
+
+That meant giving `ViewerShortcuts.Hint` structure — a list of key-and-action pairs instead of a
+sentence — which brought a test with it that would have been awkward before: **every key named in
+the strip has to be one the viewer actually answers to**. A hint that advertises a key which does
+nothing is worse than no hint.
+
+### Saving no longer moves the panel
+
+The "Modified — not yet written to disk" banner sat above the fields, so the moment anything was
+edited the whole panel jumped down by its height. On every edit, since editing is precisely what
+makes it appear.
+
+It is docked to the bottom now: it grows into the panel's own edge and nothing above it moves. The
+conflict warning stays at the top — that one is asking to be settled before the fields below it are
+touched, and it is rare enough not to jar.
+
+- `dotnet test` — **764/764 passing** (2 new).
+
+Checked in the app: the badge flips RAW to JPEG on click, the strip renders as pills, and rating a
+file makes the banner appear at the foot of the panel with Rating, Flag, Keywords and Label staying
+exactly where they were. Reverted afterwards — the file has no sidecar and its rating is still 0.
+
+### Hovering the hint strip keeps it
+
+Reading something is a reason not to take it away.
+
+The strip stays **untouchable** — `IsHitTestVisible="False"` as before. Making it hit-testable would
+be the obvious way to notice a hover and would have it swallow any drag that began over it, and
+dragging is how the picture is panned. Instead a tunnelled `PointerMoved` handler on the window asks
+where the pointer is, relative to the strip itself so there is no parent chain to walk. That takes
+nothing away from the viewer.
+
+The timer keeps running while hovered rather than being cancelled, so it asks again a few seconds
+later and fades once the pointer has moved off — the strip lingers for the usual few seconds after
+you leave rather than vanishing the instant you do.
+
+Hovering while it is *fading* brings it back, since it is still on screen and still readable. Once
+it has actually gone, hovering does nothing: a strip that reappeared whenever the pointer crossed a
+patch of empty screen would be worse than one that goes.
+
+- `dotnet test` — **764/764 passing**.
+
+Checked in the app: parked on the strip it was still at full strength after **12 seconds**, against
+a four-second timer; moved away, it faded within seven.

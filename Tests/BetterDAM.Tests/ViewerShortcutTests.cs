@@ -81,8 +81,42 @@ public class ViewerShortcutTests
     [Fact]
     public void The_hint_follows_the_medium()
     {
-        Assert.Contains("space to play", ViewerShortcuts.Hint(isVideo: true));
-        Assert.Contains("0 to fit", ViewerShortcuts.Hint(isVideo: true));
-        Assert.Contains("space to fit", ViewerShortcuts.Hint(isVideo: false));
+        var video = ViewerShortcuts.Hint(isVideo: true);
+        var still = ViewerShortcuts.Hint(isVideo: false);
+
+        Assert.Equal("play", Assert.Single(video.Where(h => h.Key == "space")).Action);
+        Assert.Equal("fit", Assert.Single(still.Where(h => h.Key == "space")).Action);
+
+        // 0 fits a video, where space is spoken for; a still has no need of it.
+        Assert.Contains(video, h => h.Key == "0");
+        Assert.DoesNotContain(still, h => h.Key == "0");
+    }
+
+    /// <summary>
+    /// Every key named in the strip has to be one the viewer answers to, or the hint is a lie. The
+    /// pointer gestures are the exception: they are not keys and there is nothing to resolve.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Every_key_in_the_hint_does_something(bool isVideo)
+    {
+        var gestures = (string[])["scroll", "drag"];
+
+        foreach (var hint in ViewerShortcuts.Hint(isVideo).Where(h => !gestures.Contains(h.Key)))
+        {
+            var keys = hint.Key switch
+            {
+                "space" => (Key[])[Key.Space],
+                "0" => [Key.D0],
+                "← →" => [Key.Left, Key.Right],
+                "\\" => [Key.OemBackslash],
+                "esc" => [Key.Escape],
+                _ => throw new InvalidOperationException($"The hint names '{hint.Key}', which this test does not know about.")
+            };
+
+            Assert.All(keys, key =>
+                Assert.NotEqual(ViewerAction.None, ViewerShortcuts.Resolve(key, isVideo)));
+        }
     }
 }

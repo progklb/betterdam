@@ -34,6 +34,28 @@
       <Setter Property="Opacity" Value="0.6" />
       <Setter Property="Margin" Value="0,10,0,2" />
     </Style>
+    <!--
+      Section headers in the filter popup that open and shut. A plain Button rather than a
+      ToggleButton: the triangle already says which way it is, and a ToggleButton would paint an
+      accent block behind the header to say it again.
+    -->
+    <Style Selector="Button.disclosure">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <!--
+        The padding keeps the text off the edge of the hover band; the negative margin of the same
+        size puts the band back where it was, so the header still lines up with the rows above it.
+      -->
+      <Setter Property="Padding" Value="6,4" />
+      <Setter Property="Margin" Value="-6,0" />
+      <!--
+        Both, and for different reasons: Stretch makes the whole row a hit area, and stretching the
+        content is what lets anything docked right actually reach the right edge.
+      -->
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+
     <!-- Stars in the filter popup: a glyph and a hit area, with none of a button's chrome. -->
     <Style Selector="Button.star">
       <Setter Property="Background" Value="Transparent" />
@@ -266,6 +288,20 @@
                 </DockPanel>
 
                 <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="Flag" FontSize="11"
+                             VerticalAlignment="Center" Width="52" />
+                  <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">
+                    <ToggleButton Content="✓ Keep" FontSize="11" Padding="9,3"
+                                  IsChecked="{Binding FilterAccepted}" />
+                    <ToggleButton Content="✕ Reject" FontSize="11" Padding="9,3"
+                                  IsChecked="{Binding FilterRejected}" />
+                    <ToggleButton Content="Unflagged" FontSize="11" Padding="9,3"
+                                  IsChecked="{Binding FilterUnflagged}"
+                                  ToolTip.Tip="Not yet judged — what is left to look at" />
+                  </StackPanel>
+                </DockPanel>
+
+                <DockPanel>
                   <TextBlock DockPanel.Dock="Left" Text="Label" FontSize="11"
                              VerticalAlignment="Center" Width="52" />
                   <!--
@@ -308,27 +344,88 @@
                   have it — a filter that will find nothing says so before it is applied.
                 -->
                 <StackPanel Spacing="5">
-                  <DockPanel>
-                    <TextBlock DockPanel.Dock="Left" Text="Keywords" FontSize="11"
-                               VerticalAlignment="Center" />
-                    <!--
-                      With two words ticked, "any" and "all" are both reasonable readings and return
-                      very different sets, so the panel asks rather than guesses.
-                    -->
-                    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
-                      <RadioButton GroupName="KeywordMatch" FontSize="11" Content="any"
-                                   IsChecked="{Binding !KeywordFilterMatchAll}"
-                                   ToolTip.Tip="Files with at least one of the ticked keywords" />
-                      <RadioButton GroupName="KeywordMatch" FontSize="11" Content="all"
-                                   IsChecked="{Binding KeywordFilterMatchAll}"
-                                   ToolTip.Tip="Files carrying every ticked keyword" />
-                    </StackPanel>
-                  </DockPanel>
+                  <Button Classes="disclosure" Command="{Binding ToggleKeywordListCommand}"
+                          ToolTip.Tip="Show the keywords found in this workspace">
+                    <DockPanel>
+                      <!-- Filled triangles rather than a glyph, so a handwriting font cannot lose them. -->
+                      <PathIcon DockPanel.Dock="Left" Width="9" Height="9" Margin="0,0,6,0"
+                                Data="M 3 2 L 8 6 L 3 10 Z"
+                                IsVisible="{Binding !KeywordListExpanded}" />
+                      <PathIcon DockPanel.Dock="Left" Width="9" Height="9" Margin="0,0,6,0"
+                                Data="M 2 3 L 10 3 L 6 8 Z"
+                                IsVisible="{Binding KeywordListExpanded}" />
+                      <TextBlock DockPanel.Dock="Left" Text="{Binding KeywordHeaderText}"
+                                 FontSize="11" VerticalAlignment="Center" />
+                      <!--
+                        With two words ticked, "any" and "all" are both reasonable readings and
+                        return very different sets, so the panel asks rather than guesses. Only
+                        while the list is open: shut, there is nothing on screen it applies to.
+                      -->
+                      <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,0,0,0"
+                                  HorizontalAlignment="Right"
+                                  IsVisible="{Binding KeywordListExpanded}">
+                        <RadioButton GroupName="KeywordMatch" FontSize="11" Content="any"
+                                     IsChecked="{Binding !KeywordFilterMatchAll}"
+                                     ToolTip.Tip="Files with at least one of the ticked keywords" />
+                        <RadioButton GroupName="KeywordMatch" FontSize="11" Content="all"
+                                     IsChecked="{Binding KeywordFilterMatchAll}"
+                                     ToolTip.Tip="Files carrying every ticked keyword" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Button>
 
                   <TextBox FontSize="11" Padding="6,3" Watermark="Find a keyword"
                            Text="{Binding KeywordFilterSearch}" />
 
+                  <!--
+                    Shut over a filter that is running, the section would misrepresent the query — so
+                    what is ticked stays on show, as the same pills the inspector gives a keyword.
+                  -->
+                  <Grid RowDefinitions="Auto,Auto" IsVisible="{Binding ShowKeywordSummary}">
+                    <!--
+                      A DockPanel, not a horizontal StackPanel: a StackPanel measures its children
+                      against infinite width, so the WrapPanel inside would never find an edge to
+                      wrap at and the pills ran off the side of the panel.
+                    -->
+                    <DockPanel Grid.Row="0">
+                      <TextBlock DockPanel.Dock="Left" FontSize="11" Opacity="0.55" Margin="0,4,6,0"
+                                 VerticalAlignment="Top"
+                                 IsVisible="{Binding ShowKeywordFilterMode}"
+                                 Text="{Binding KeywordFilterMode}" />
+
+                      <ItemsControl ItemsSource="{Binding SelectedKeywordPills}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:KeywordFilterPill">
+                          <Border Background="#28FFFFFF" CornerRadius="10" Padding="8,2"
+                                  Margin="0,0,4,4">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <TextBlock Text="{Binding Name}" FontSize="11"
+                                         VerticalAlignment="Center" />
+                              <Button Content="✕" FontSize="9" Padding="2,0" MinWidth="0"
+                                      Background="Transparent" BorderThickness="0"
+                                      VerticalAlignment="Center"
+                                      ToolTip.Tip="Drop this keyword from the filter"
+                                      Command="{Binding RemoveCommand}" />
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </DockPanel>
+
+                    <!-- Its own line, so it cannot be what pushes the pills off the edge. -->
+                    <TextBlock Grid.Row="1" FontSize="11" Opacity="0.55" Margin="0,0,0,4"
+                               IsVisible="{Binding HasKeywordPillOverflow}"
+                               Text="{Binding KeywordPillOverflow}" />
+                  </Grid>
+
                   <Border BorderThickness="1" CornerRadius="3" MaxHeight="150"
+                          IsVisible="{Binding KeywordListExpanded}"
                           BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
                     <Panel>
                       <TextBlock Margin="8,10" FontSize="11" Opacity="0.45"
@@ -360,42 +457,6 @@
                   </Border>
                 </StackPanel>
 
-                <DockPanel>
-                  <TextBlock DockPanel.Dock="Left" Text="Flag" FontSize="11"
-                             VerticalAlignment="Center" Width="52" />
-                  <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">
-                    <ToggleButton Content="✓ Keep" FontSize="11" Padding="9,3"
-                                  IsChecked="{Binding FilterAccepted}" />
-                    <ToggleButton Content="✕ Reject" FontSize="11" Padding="9,3"
-                                  IsChecked="{Binding FilterRejected}" />
-                    <ToggleButton Content="Unflagged" FontSize="11" Padding="9,3"
-                                  IsChecked="{Binding FilterUnflagged}"
-                                  ToolTip.Tip="Not yet judged — what is left to look at" />
-                  </StackPanel>
-                </DockPanel>
-
-                <Separator />
-                <TextBlock FontSize="11" Opacity="0.55" TextWrapping="Wrap"
-                           Text="Type a field and a colon; the short form does the same thing. Different fields narrow together, so rating, keywords and type can all apply at once." />
-
-                <ItemsControl ItemsSource="{Binding SearchHelp}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="search:SearchField">
-                      <Grid ColumnDefinitions="52,*" Margin="0,3">
-                        <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold"
-                                   Text="{Binding Short, StringFormat='{}{0}:'}" />
-                        <StackPanel Grid.Column="1" Spacing="1">
-                          <TextBlock FontSize="11" Text="{Binding Summary}" />
-                          <TextBlock FontSize="10" Opacity="0.45" Text="{Binding Example}" />
-                        </StackPanel>
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-
-                <TextBlock FontSize="10" Opacity="0.45" TextWrapping="Wrap"
-                           Text="Repeat a field to ask for all of them — k:sand k:dust. Use commas to ask for any of them — k:sand,dust. Typing a colon on its own brings this list up in the box." />
-
                 <Separator />
 
                 <TextBlock Text="Where to search" FontSize="12" FontWeight="SemiBold" />
@@ -408,6 +469,49 @@
                                IsChecked="{Binding SearchEverywhere}"
                                ToolTip.Tip="Every workspace that has been indexed, not only the open one" />
                 </StackPanel>
+
+                <Separator />
+
+                <!--
+                  The syntax reference is worth having and worth finding, but it was the tallest
+                  thing in the panel and it is a reference — read once, not every time the filters
+                  are opened.
+                -->
+                <Button Classes="disclosure" Command="{Binding ToggleSearchHelpCommand}">
+                  <DockPanel>
+                    <PathIcon DockPanel.Dock="Left" Width="9" Height="9" Margin="0,0,6,0"
+                              Data="M 3 2 L 8 6 L 3 10 Z"
+                              IsVisible="{Binding !SearchHelpExpanded}" />
+                    <PathIcon DockPanel.Dock="Left" Width="9" Height="9" Margin="0,0,6,0"
+                              Data="M 2 3 L 10 3 L 6 8 Z"
+                              IsVisible="{Binding SearchHelpExpanded}" />
+                    <TextBlock Text="How to search" FontSize="12" FontWeight="SemiBold" />
+                  </DockPanel>
+                </Button>
+
+                <StackPanel Spacing="10" IsVisible="{Binding SearchHelpExpanded}">
+                  <TextBlock FontSize="11" Opacity="0.55" TextWrapping="Wrap"
+                             Text="Type a field and a colon; the short form does the same thing. Different fields narrow together, so rating, keywords and type can all apply at once." />
+
+                  <ItemsControl ItemsSource="{Binding SearchHelp}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="search:SearchField">
+                        <Grid ColumnDefinitions="52,*" Margin="0,3">
+                          <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold"
+                                     Text="{Binding Short, StringFormat='{}{0}:'}" />
+                          <StackPanel Grid.Column="1" Spacing="1">
+                            <TextBlock FontSize="11" Text="{Binding Summary}" />
+                            <TextBlock FontSize="10" Opacity="0.45" Text="{Binding Example}" />
+                          </StackPanel>
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <TextBlock FontSize="10" Opacity="0.45" TextWrapping="Wrap"
+                             Text="Repeat a field to ask for all of them — k:sand k:dust. Use commas to ask for any of them — k:sand,dust. Typing a colon on its own brings this list up in the box." />
+                </StackPanel>
+
               </StackPanel>
             </Flyout>
           </Button.Flyout>

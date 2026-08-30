@@ -4641,3 +4641,133 @@ when the popup opens rather than one open behind.
 
 The Mac locked partway through, so this has been checked by test and by reading, not by looking at
 it. The layout of the list inside the popup is the part worth a second look.
+
+---
+
+## Making the filter panel shorter
+
+The panel had grown past the point where it could be read at a glance. Two sections were doing most
+of the damage, and both are the sort of thing you want available rather than present.
+
+### The keyword list folds away
+
+Shut by default, leaving the header and the search field. It opens on the header, and it opens by
+itself the moment anything is typed into the search field — searching a list that is not on screen
+would look like nothing happening.
+
+The **any / all** switch moved inside the fold. Shut, there is nothing on screen for it to apply to.
+
+What could not move inside is which keywords are ticked. A section closed over a running filter
+would make the panel misrepresent the query, which is the one thing this panel must not do, so a
+summary line takes its place: the names when there are up to three, and `Bush, Calm and 4 more`
+beyond that.
+
+### The syntax reference folds away too
+
+Same treatment, shut by default, under **How to search**. It was the tallest thing in the panel and
+it is a reference — worth having, worth finding, not worth reading every time the filters are
+opened. The scope radios stay where they were.
+
+A tooltip was the other candidate. It loses on the one thing this content is for: a table of nine
+fields with examples is something you read while typing, and a tooltip is gone the moment you move.
+A second popout nested inside the first is the kind of thing that fights the light-dismiss, so it
+was not worth the risk for a list of nine lines.
+
+Both use a plain `Button` rather than a `ToggleButton`. The triangle already says which way the
+section is; a ToggleButton would paint an accent block behind the header to say it again.
+
+- `dotnet test` — **691/691 passing**.
+
+### Two adjustments after seeing it
+
+The any / all switch was not reaching the right edge. The disclosure button was sizing to its
+content, so the group docked right inside it had nothing to be right of; the style now stretches the
+button, which also makes the whole row a hit area rather than just the words.
+
+The reference moved below **Where to search**, at the foot of the panel.
+
+### What the summary says
+
+Closed over two or more keywords it now reads `all of: Bush, Calm`. The switch is inside the fold,
+so leaving it out left the summary describing half the query — the ticked words but not what is
+being asked of them.
+
+### Verified in the app
+
+Header opens and shuts; the triangle flips; ticking writes `k:Bush,Calm` on "any" and
+`k:Bush k:Calm` on "all"; switching between them rewrites the query without touching the ticks;
+collapsing shows the summary; the reference opens at the foot and the panel scrolls to it.
+
+Worth recording for the next time: **synthetic clicks from `osascript` reach the main window but not
+the flyout**, and Avalonia does not expose the flyout's contents to accessibility either, so neither
+route can drive this panel. A small CGEvent poster does work, and is in the scratchpad. Two rounds
+were lost to reading "the click did nothing" as a bug in the panel.
+
+- `dotnet test` — **691/691 passing**.
+
+### Order, and one more bit of room
+
+**Flag moved up to sit under Show.** It is a first-pass tool — the keep/reject sweep happens before
+anything is labelled or tagged — and the two rows of small buttons read as a pair. The panel now
+goes Rating · Show · Flag · Label · Keywords, coarse to fine.
+
+The keyword header needed padding: the text sat on the edge of its own hover band. It is padded and
+then pulled back out by a negative margin of the same size, so the band grows rather than the text
+moving — the disclosure triangle still lines up with the labels above it, which it would not if the
+padding alone had pushed everything right.
+
+- `dotnet test` — **691/691 passing**.
+
+### The collapsed keywords are pills
+
+The summary line was plain text; it is now the same pill the inspector gives a keyword, because it
+is the same thing and there was no reason for the two to look different.
+
+Each pill carries a ✕. A pill with no way to act on it would have been worse than the text it
+replaced, and dropping one keyword from a filter is the obvious thing to want from a list of them.
+Removing goes through the full rebuild rather than only rewriting the query, since the tick in the
+list has to come off too and the list is not on screen to have been clicked.
+
+`any of` / `all of` sits before the pills, and only when more than one is ticked — with one they mean
+the same and the label would be noise. It is there because the switch that sets it is inside the
+fold: without it the collapsed section would show the words but not what is being asked of them.
+
+Six pills, then `+N more`. Past that the short version stops being short.
+
+Each pill holds its own command. `$parent[ItemsControl]` does not resolve inside a Flyout, so every
+item template in this popup has to be self-contained — the same constraint the label chips met.
+
+- `dotnet test` — **691/691 passing**.
+
+### A process check worth keeping
+
+Twice now I have drawn conclusions from a window belonging to a build that was not the one I had
+just made. The check that settles it takes one line — compare the running process's start time
+against the mtime of `BetterDAM.dll` — and it is worth doing before reading anything off the screen:
+
+```sh
+dll=$(stat -f %m UI/BetterDAM.UI/bin/Debug/net9.0/BetterDAM.dll)
+proc=$(ps -o lstart= -p $(pgrep -f net9.0/BetterDAM | head -1) | xargs -I{} date -j -f "%a %b %d %T %Y" "{}" +%s)
+[ "$proc" -gt "$dll" ] || echo "STALE"
+```
+
+### The pills ran off the edge
+
+They were in a `WrapPanel` and still did not wrap, because the `WrapPanel` was inside a horizontal
+`StackPanel` — which measures its children against infinite width. A `WrapPanel` given infinite width
+never finds an edge to wrap at, so it laid every pill out in one row and the row left the panel.
+
+A `DockPanel` fixes it: the "any of" label docks left, the pill list fills what is left, and that is
+a real width to wrap against. `+N more` moved to its own row underneath so it cannot be the thing
+that pushes the pills off the edge either.
+
+The cap went from six to twelve. It was doing the work of keeping the section short, which the
+wrapping now does properly; twelve is a safety net for someone who has ticked half the workspace.
+
+### The header counts while the list is open
+
+`Keywords (8)`. Open, the pills are put away and the list scrolls, so the ticks below the fold are as
+good as invisible and nothing on screen says how many there are. Shut, the header drops the number —
+the pills say it better.
+
+- `dotnet test` — **691/691 passing**.

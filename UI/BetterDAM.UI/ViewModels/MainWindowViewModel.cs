@@ -499,6 +499,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
     });
 
     /// <summary>
+    /// Whether the syntax reference is showing. Closed by default: it is worth having and worth
+    /// finding, but it is a reference, and a reference does not need to be read every time the panel
+    /// is opened.
+    /// </summary>
+    [ObservableProperty]
+    private bool _searchHelpExpanded;
+
+    [RelayCommand]
+    private void ToggleSearchHelp() => SearchHelpExpanded = !SearchHelpExpanded;
+
+    /// <summary>
     /// Keywords in the workspace, ticked to filter by them.
     ///
     /// Built from the catalog rather than the keyword library, which is the same choice the search
@@ -535,10 +546,124 @@ public sealed partial class MainWindowViewModel : ObservableObject
             ? "No keywords in this workspace yet."
             : "No keywords match.";
 
-    partial void OnKeywordFilterSearchChanged(string? value) => RebuildKeywordChips();
+    /// <summary>
+    /// Whether the keyword list is showing. Closed by default: it is the one filter that needs a
+    /// scrolling list rather than a row of toggles, and left open it makes the panel twice the
+    /// height of everything else in it for a filter most searches do not use.
+    /// </summary>
+    [ObservableProperty]
+    private bool _keywordListExpanded;
+
+    [RelayCommand]
+    private void ToggleKeywordList() => KeywordListExpanded = !KeywordListExpanded;
+
+    /// <summary>
+    /// What is ticked, for when the list is closed over it.
+    ///
+    /// A section closed over a running filter would make the panel misrepresent the query, so the
+    /// ticked words stay on show as pills — the same shape the inspector gives a keyword, because
+    /// they are the same thing.
+    /// </summary>
+    public ObservableCollection<KeywordFilterPill> SelectedKeywordPills { get; } = [];
+
+    /// <summary>
+    /// A safety net rather than the thing keeping the section short — the pills wrap, so the usual
+    /// case looks after itself. This is for someone who has ticked half the workspace.
+    /// </summary>
+    private const int MaxKeywordPills = 12;
+
+    public string KeywordPillOverflow { get; private set; } = string.Empty;
+
+    public bool HasKeywordPillOverflow => KeywordPillOverflow.Length > 0;
+
+    /// <summary>
+    /// "any of" or "all of", which is inside the fold with the switch that sets it.
+    ///
+    /// Worth saying only when there is more than one word, since with one the two mean the same and
+    /// the label would be noise.
+    /// </summary>
+    public string KeywordFilterMode => _selectedKeywords.Count > 1
+        ? KeywordFilterMatchAll ? "all of" : "any of"
+        : string.Empty;
+
+    public bool ShowKeywordFilterMode => KeywordFilterMode.Length > 0;
+
+    /// <summary>
+    /// "Keywords", or "Keywords (5)" while the list is open.
+    ///
+    /// Open, the pills are put away and the list scrolls, so there is no longer anything on screen
+    /// saying how many are ticked — the ticks below the fold are as good as invisible. Shut, the
+    /// pills say it better than a number would.
+    /// </summary>
+    public string KeywordHeaderText => KeywordListExpanded && _selectedKeywords.Count > 0
+        ? $"Keywords ({_selectedKeywords.Count})"
+        : "Keywords";
+
+    private void RebuildKeywordPills()
+    {
+        SelectedKeywordPills.Clear();
+
+        var names = _selectedKeywords.OrderBy(k => k, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+        foreach (var name in names.Take(MaxKeywordPills))
+        {
+            SelectedKeywordPills.Add(new KeywordFilterPill(name, RemoveKeywordFilter));
+        }
+
+        KeywordPillOverflow = names.Count > MaxKeywordPills
+            ? $"+{names.Count - MaxKeywordPills} more"
+            : string.Empty;
+
+        OnPropertyChanged(nameof(KeywordPillOverflow));
+        OnPropertyChanged(nameof(HasKeywordPillOverflow));
+        OnPropertyChanged(nameof(KeywordFilterMode));
+        OnPropertyChanged(nameof(ShowKeywordFilterMode));
+        OnPropertyChanged(nameof(HasSelectedKeywords));
+        OnPropertyChanged(nameof(ShowKeywordSummary));
+        OnPropertyChanged(nameof(KeywordHeaderText));
+    }
+
+    /// <summary>
+    /// Drops one keyword from the filter, from its pill.
+    ///
+    /// Rebuilding rather than only rewriting the query: the tick in the list has to come off too, and
+    /// the list is not on screen to have been clicked.
+    /// </summary>
+    private void RemoveKeywordFilter(string name)
+    {
+        _selectedKeywords.Remove(name);
+
+        RebuildKeywordChips();
+        WriteKeywords();
+    }
+
+    public bool HasSelectedKeywords => _selectedKeywords.Count > 0;
+
+    /// <summary>Only worth the room when the list is closed and there is something to report.</summary>
+    public bool ShowKeywordSummary => !KeywordListExpanded && HasSelectedKeywords;
+
+    partial void OnKeywordListExpandedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowKeywordSummary));
+        OnPropertyChanged(nameof(KeywordHeaderText));
+    }
+
+    partial void OnKeywordFilterSearchChanged(string? value)
+    {
+        // Searching a list that is not on screen would look like nothing happening.
+        if (!string.IsNullOrEmpty(value))
+        {
+            KeywordListExpanded = true;
+        }
+
+        RebuildKeywordChips();
+    }
 
     partial void OnKeywordFilterMatchAllChanged(bool value)
     {
+        OnPropertyChanged(nameof(KeywordFilterMode));
+        OnPropertyChanged(nameof(ShowKeywordFilterMode));
+
         // Only worth rewriting when it changes the result: one keyword means the same either way.
         if (!_syncingFilters && _selectedKeywords.Count > 1)
         {
@@ -581,6 +706,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         OnPropertyChanged(nameof(HasKeywordChips));
         OnPropertyChanged(nameof(KeywordFilterEmptyText));
+
+        RebuildKeywordPills();
     }
 
     private void ToggleKeywordFilter()
@@ -591,6 +718,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             _selectedKeywords.Add(chip.Name);
         }
+
+        RebuildKeywordPills();
 
         WriteKeywords();
     }

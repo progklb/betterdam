@@ -1522,6 +1522,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IsWritingAll = true;
         var written = 0;
         var failed = 0;
+        var saved = new List<MediaFile>();
 
         try
         {
@@ -1540,6 +1541,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     _pending.Discard(change.FilePath);
                     item.HasPendingChanges = false;
                     item.HasSidecar = true;
+                    saved.Add(item.File);
                     written++;
                 }
                 else
@@ -1561,6 +1563,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
             {
                 await Inspector.LoadAsync(selected);
             }
+        }
+
+        // The catalog is a cache of what is in the files, and the files have just changed. The
+        // sidecar timestamp would catch this on the next scan anyway; doing it now means a search
+        // run straight after saving agrees with what was just saved, rather than a folder later.
+        if (saved.Count > 0)
+        {
+            await RunIndexAsync(saved, CancellationToken.None);
         }
     }
 

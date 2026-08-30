@@ -3,6 +3,8 @@ using BetterDAM.Core.Models;
 using BetterDAM.Metadata.ExifTool;
 using Microsoft.Extensions.Logging;
 
+using BetterDAM.Core.Services;
+
 namespace BetterDAM.Metadata.Xmp;
 
 /// <summary>

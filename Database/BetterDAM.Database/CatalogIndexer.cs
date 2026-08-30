@@ -1,6 +1,7 @@
 using System.Globalization;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
+using BetterDAM.Core.Services;
 using Microsoft.Extensions.Logging;
 
 namespace BetterDAM.Database;
@@ -51,7 +52,16 @@ public sealed class CatalogIndexer : ICatalogIndexer
                 .GetIndexedStampsAsync(chunk.Select(f => f.FullPath).ToList(), cancellationToken)
                 .ConfigureAwait(false);
 
-            var stale = chunk.Where(file => NeedsIndexing(file, known)).ToArray();
+            // Read once and reused for both the staleness test and the row written afterwards.
+            // Taken before the metadata is read, deliberately: if the sidecar changes while it is
+            // being read, the stored stamp is the older one and the file is re-read next time
+            // rather than being recorded as current with stale contents.
+            var sidecars = chunk.ToDictionary(
+                file => file.FullPath,
+                file => XmpSidecar.LastWrittenUtc(file.FullPath),
+                StringComparer.Ordinal);
+
+            var stale = chunk.Where(file => NeedsIndexing(file, known, sidecars[file.FullPath])).ToArray();
 
             seen += chunk.Length;
             skipped += chunk.Length - stale.Length;
@@ -78,7 +88,8 @@ public sealed class CatalogIndexer : ICatalogIndexer
                     read.Camera,
                     read.HasSidecar,
                     ParseCaptureDate(read.Camera.CaptureDate),
-                    read.Dimensions));
+                    read.Dimensions,
+                    sidecars[file.FullPath]));
             }
 
             await _catalog.UpsertAsync(entries, cancellationToken).ConfigureAwait(false);
@@ -118,11 +129,25 @@ public sealed class CatalogIndexer : ICatalogIndexer
     /// </summary>
     public const int CurrentVersion = 2;
 
-    internal static bool NeedsIndexing(MediaFile file, IReadOnlyDictionary<string, IndexedStamp> known)
+    /// <summary>
+    /// Whether a file has to be read again.
+    ///
+    /// The sidecar's timestamp is part of this and has to be, because metadata can change without
+    /// the media file changing at all: a rating set in Lightroom, a label set in Bridge, or a save
+    /// from this application all go to the sidecar and leave the raw file untouched. Judging
+    /// staleness by the media file alone meant those edits were invisible to the catalog until
+    /// something else happened to the file — which is how a rejected photograph could sit in the
+    /// catalog unflagged and never turn up in a search for rejects.
+    /// </summary>
+    internal static bool NeedsIndexing(
+        MediaFile file,
+        IReadOnlyDictionary<string, IndexedStamp> known,
+        long sidecarModifiedUtc)
         => !known.TryGetValue(file.FullPath, out var stamp)
            || stamp.SizeBytes != file.SizeBytes
            || stamp.ModifiedUtc != file.ModifiedUtc.ToUnixTimeSeconds()
-           || stamp.IndexerVersion != CurrentVersion;
+           || stamp.IndexerVersion != CurrentVersion
+           || stamp.SidecarModifiedUtc != sidecarModifiedUtc;
 
     /// <summary>
     /// EXIF dates use colons between date parts — "2024:06:01 09:15:22" — which no standard parser

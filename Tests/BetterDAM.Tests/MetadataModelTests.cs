@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using BetterDAM.Core.Models;
 using BetterDAM.Core.Services;
-using BetterDAM.Metadata.Xmp;
+using BetterDAM.Core.Services;
 using Xunit;
 
 namespace BetterDAM.Tests;

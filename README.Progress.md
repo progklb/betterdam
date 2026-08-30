@@ -4934,3 +4934,53 @@ worse than not answering, and they stay findable by every other filter.
 
 Checked against the workspace: **744 portrait, 1,292 landscape, 2,036 total** — the app's counts
 equal the counts from SQL directly, and the two shapes partition the set with nothing left over.
+
+## The catalog could go stale without noticing
+
+`NeedsIndexing` compared the media file's size and modified time. Ratings, labels and flags are
+written to the **XMP sidecar**, which leaves the media file untouched — same bytes, same timestamp.
+So a photograph rated in Lightroom, labelled in Bridge, or saved from this application looked
+unchanged to the catalog and was never read again. This is what let a rejected photograph sit in the
+catalog unflagged and never turn up in a search for rejects; bumping the indexer version fixed that
+one file's worth of symptom without touching the cause.
+
+### The sidecar's timestamp is part of the test
+
+The stamp now carries `SidecarModifiedUtc` alongside size and modified time, and the check compares
+it. 0 means "no sidecar", so **gaining** one and **losing** one both read as a difference — deleting
+a sidecar changes the metadata as much as writing one does.
+
+The timestamp is read once per file per pass and reused for both the staleness test and the row
+written afterwards, and it is taken **before** the metadata is read. That ordering is deliberate: if
+the sidecar changes while it is being read, the stored stamp is the older one, so the file is read
+again next time rather than being recorded as current with stale contents. The failure is on the
+side of doing too much work.
+
+`XmpSidecar` moved from `BetterDAM.Metadata` to Core, since the indexer needs it and Database does
+not reference Metadata. It is pure path convention and file timestamps, with no ExifTool in it.
+
+### No reindex was needed to deploy it
+
+Schema v5 adds the column with a default of 0. Existing rows have 0, which differs from the real
+timestamp of any sidecar that exists — so exactly the files that have one were re-read, and the
+majority, which have none, stayed 0 and were left alone. The indexer version did not need bumping.
+
+### Saving now updates the catalog straight away
+
+When this application writes sidecars it knows precisely which files changed, so it re-indexes them
+rather than waiting to notice. The timestamp check would catch it on the next scan anyway; this
+means a search run immediately after saving agrees with what was just saved.
+
+- `dotnet test` — **762/762 passing** (12 new). Disabling the comparison fails 4 of the 7 staleness
+  tests; the 3 that still pass are the ones asserting a file is *not* stale, which is their job.
+
+### Checked against the real workspace
+
+- The migration applied to the existing 2,036-row catalog and re-read **644** files. That is exactly
+  the number with a sidecar: 495 sidecars covering 149 JPG + 476 RAF + 19 MOV, one `.xmp` often
+  serving both the raw and the JPEG of the same frame. The remaining six paired files are `.acr` and
+  a `.JPG_original`, which are not media.
+- Touching one sidecar — timestamp only, contents byte-identical — made the next pass read **2 files
+  and skip 2,034**: the JPEG and the raw that share it, and nothing else.
+- The pass after that read 0. The labels survived the round trip. The sidecar's original timestamp
+  was put back afterwards, and its checksum is unchanged.

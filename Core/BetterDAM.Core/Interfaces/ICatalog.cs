@@ -15,7 +15,8 @@ public sealed record CatalogEntry(
     CameraInfo Camera,
     bool HasSidecar,
     DateTimeOffset? CaptureDate,
-    ImageDimensions? Dimensions = null);
+    ImageDimensions? Dimensions = null,
+    long SidecarModifiedUtc = 0);
 
 /// <param name="SizeBytes">
 /// Size on disk including SQLite's write-ahead log and shared-memory files, which can dwarf the
@@ -35,7 +36,16 @@ public sealed record CatalogStatistics(int FileCount, int KeywordCount, long Siz
 /// has not changed can still need re-reading — when the indexer learns to extract something it did
 /// not extract before, every existing row is out of date even though every file is untouched.
 /// </param>
-public readonly record struct IndexedStamp(long SizeBytes, long ModifiedUtc, int IndexerVersion = 0);
+/// <param name="SidecarModifiedUtc">
+/// When this file's XMP sidecar was last written, or 0 for none. Part of the staleness test because
+/// metadata can change without the media file changing at all — a rating set in Lightroom goes to
+/// the sidecar, and the raw file it describes is untouched.
+/// </param>
+public readonly record struct IndexedStamp(
+    long SizeBytes,
+    long ModifiedUtc,
+    int IndexerVersion = 0,
+    long SidecarModifiedUtc = 0);
 
 /// <summary>
 /// The local search catalog.

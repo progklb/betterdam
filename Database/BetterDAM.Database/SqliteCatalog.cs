@@ -131,11 +131,11 @@ public sealed class SqliteCatalog : ICatalog
             INSERT INTO Media (Path, FileName, MediaType, SizeBytes, ModifiedUtc, CreatedUtc,
                                Title, Description, Headline, Label, Creator, Copyright, Rating, Flag,
                                Camera, Lens, CaptureDate, HasSidecar, IndexedUtc, IndexerVersion,
-                               Width, Height)
+                               Width, Height, SidecarModifiedUtc)
             VALUES (@Path, @FileName, @MediaType, @SizeBytes, @ModifiedUtc, @CreatedUtc,
                     @Title, @Description, @Headline, @Label, @Creator, @Copyright, @Rating, @Flag,
                     @Camera, @Lens, @CaptureDate, @HasSidecar, @IndexedUtc, @IndexerVersion,
-                    @Width, @Height)
+                    @Width, @Height, @SidecarModifiedUtc)
             ON CONFLICT(Path) DO UPDATE SET
                 FileName = excluded.FileName, MediaType = excluded.MediaType,
                 SizeBytes = excluded.SizeBytes, ModifiedUtc = excluded.ModifiedUtc,
@@ -148,7 +148,8 @@ public sealed class SqliteCatalog : ICatalog
                 CaptureDate = excluded.CaptureDate, HasSidecar = excluded.HasSidecar,
                 IndexedUtc = excluded.IndexedUtc,
                 IndexerVersion = excluded.IndexerVersion,
-                Width = excluded.Width, Height = excluded.Height
+                Width = excluded.Width, Height = excluded.Height,
+                SidecarModifiedUtc = excluded.SidecarModifiedUtc
             RETURNING Id;
             """,
             new
@@ -174,7 +175,8 @@ public sealed class SqliteCatalog : ICatalog
                 IndexedUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 IndexerVersion = CatalogIndexer.CurrentVersion,
                 Width = entry.Dimensions?.Width,
-                Height = entry.Dimensions?.Height
+                Height = entry.Dimensions?.Height,
+                entry.SidecarModifiedUtc
             },
             transaction).ConfigureAwait(false);
 
@@ -231,11 +233,14 @@ public sealed class SqliteCatalog : ICatalog
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var rows = await connection.QueryAsync<StampRow>(new CommandDefinition(
-            "SELECT Path, SizeBytes, ModifiedUtc, IndexerVersion FROM Media WHERE Path IN @paths",
+            "SELECT Path, SizeBytes, ModifiedUtc, IndexerVersion, SidecarModifiedUtc FROM Media WHERE Path IN @paths",
             new { paths },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        return rows.ToDictionary(r => r.Path, r => new IndexedStamp(r.SizeBytes, r.ModifiedUtc, (int)r.IndexerVersion), StringComparer.Ordinal);
+        return rows.ToDictionary(
+            r => r.Path,
+            r => new IndexedStamp(r.SizeBytes, r.ModifiedUtc, (int)r.IndexerVersion, r.SidecarModifiedUtc),
+            StringComparer.Ordinal);
     }
 
     public async Task<IReadOnlyList<SearchHit>> SearchAsync(
@@ -703,5 +708,5 @@ public sealed class SqliteCatalog : ICatalog
     /// materialise it into an int — it fails at run time rather than compile time, so the narrowing
     /// happens here where it is visible.
     /// </summary>
-    private sealed record StampRow(string Path, long SizeBytes, long ModifiedUtc, long IndexerVersion);
+    private sealed record StampRow(string Path, long SizeBytes, long ModifiedUtc, long IndexerVersion, long SidecarModifiedUtc);
 }

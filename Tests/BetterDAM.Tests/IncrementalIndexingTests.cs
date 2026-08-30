@@ -1,5 +1,6 @@
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
+using BetterDAM.Core.Services;
 using BetterDAM.Database;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -49,14 +50,14 @@ public class IncrementalIndexingTests
 
     [Fact]
     public void An_unknown_file_needs_indexing()
-        => Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg"), new Dictionary<string, IndexedStamp>()));
+        => Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg"), new Dictionary<string, IndexedStamp>(), 0));
 
     [Fact]
     public void An_unchanged_file_does_not()
     {
         var known = new Dictionary<string, IndexedStamp> { ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion) };
 
-        Assert.False(CatalogIndexer.NeedsIndexing(File("/a.jpg"), known));
+        Assert.False(CatalogIndexer.NeedsIndexing(File("/a.jpg"), known, 0));
     }
 
     [Fact]
@@ -64,7 +65,7 @@ public class IncrementalIndexingTests
     {
         var known = new Dictionary<string, IndexedStamp> { ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion) };
 
-        Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg", size: 101), known));
+        Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg", size: 101), known, 0));
     }
 
     [Fact]
@@ -73,7 +74,7 @@ public class IncrementalIndexingTests
         var known = new Dictionary<string, IndexedStamp> { ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion) };
 
         // Same size, edited in place — the timestamp is the only signal.
-        Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg", modified: 1_700_000_001), known));
+        Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg", modified: 1_700_000_001), known, 0));
     }
 
     [Fact]
@@ -305,7 +306,7 @@ public class IndexerVersionTests
             ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion - 1)
         };
 
-        Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg"), known));
+        Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg"), known, 0));
     }
 
     [Fact]
@@ -316,7 +317,7 @@ public class IndexerVersionTests
             ["/a.jpg"] = new(100, 1_700_000_000, CatalogIndexer.CurrentVersion)
         };
 
-        Assert.False(CatalogIndexer.NeedsIndexing(File("/a.jpg"), known));
+        Assert.False(CatalogIndexer.NeedsIndexing(File("/a.jpg"), known, 0));
     }
 
     /// <summary>
@@ -327,5 +328,194 @@ public class IndexerVersionTests
     public void The_default_version_is_never_current()
     {
         Assert.NotEqual(0, CatalogIndexer.CurrentVersion);
+    }
+}
+
+/// <summary>
+/// Noticing that a sidecar changed.
+///
+/// This is the gap that let a rejected photograph sit in the catalog unflagged: ratings, labels and
+/// flags are written to the XMP sidecar, which leaves the media file's size and modified time exactly
+/// as they were. Judged on the media file alone, nothing had changed and nothing was re-read.
+/// </summary>
+public class SidecarStalenessTests
+{
+    private static MediaFile File(string path)
+        => new()
+        {
+            FullPath = path,
+            FileName = Path.GetFileName(path),
+            MediaType = MediaType.Image,
+            SizeBytes = 100,
+            ModifiedUtc = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000),
+            CreatedUtc = DateTimeOffset.UnixEpoch
+        };
+
+    private static Dictionary<string, IndexedStamp> Known(string path, long sidecar)
+        => new()
+        {
+            [path] = new IndexedStamp(100, 1_700_000_000, CatalogIndexer.CurrentVersion, sidecar)
+        };
+
+    [Fact]
+    public void AnUnchangedSidecarIsNotStale()
+        => Assert.False(CatalogIndexer.NeedsIndexing(File("/a.jpg"), Known("/a.jpg", 1_700_000_500), 1_700_000_500));
+
+    [Fact]
+    public void ASidecarWrittenSinceIsStale()
+    {
+        // The media file is untouched — same size, same modified time. Only the sidecar moved.
+        Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg"), Known("/a.jpg", 1_700_000_500), 1_700_000_900));
+    }
+
+    [Fact]
+    public void GainingASidecarIsStale()
+        => Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg"), Known("/a.jpg", 0), 1_700_000_900));
+
+    /// <summary>Deleting one changes the metadata just as much as writing one.</summary>
+    [Fact]
+    public void LosingASidecarIsStale()
+        => Assert.True(CatalogIndexer.NeedsIndexing(File("/a.jpg"), Known("/a.jpg", 1_700_000_500), 0));
+
+    [Fact]
+    public void AFileThatNeverHadOneIsNotStale()
+        => Assert.False(CatalogIndexer.NeedsIndexing(File("/a.jpg"), Known("/a.jpg", 0), 0));
+}
+
+/// <summary>
+/// The whole loop: a sidecar edited outside this application, and the next index picking it up.
+/// </summary>
+public class SidecarReindexingTests
+{
+    private sealed class CountingProvider : IMetadataProvider
+    {
+        public int FilesRead { get; private set; }
+
+        public bool IsAvailable => true;
+
+        public Task<MediaMetadata?> ReadAsync(MediaFile file, CancellationToken cancellationToken = default)
+            => Task.FromResult<MediaMetadata?>(MediaMetadata.Empty);
+
+        public Task<IReadOnlyDictionary<string, MediaMetadata>> ReadManyAsync(
+            IReadOnlyList<MediaFile> files,
+            IProgress<int>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            FilesRead += files.Count;
+            return Task.FromResult<IReadOnlyDictionary<string, MediaMetadata>>(
+                files.ToDictionary(f => f.FullPath, _ => MediaMetadata.Empty));
+        }
+    }
+
+    [Fact]
+    public async Task EditingASidecarMakesTheFileBeReadAgain()
+    {
+        using var temp = new TempFolder();
+
+        var media = Path.Combine(temp.Path, "a.raf");
+        var sidecar = Path.Combine(temp.Path, "a.xmp");
+        System.IO.File.WriteAllText(media, "raw");
+        System.IO.File.WriteAllText(sidecar, "<xmp>3 stars</xmp>");
+
+        var catalog = new SqliteCatalog(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+        var provider = new CountingProvider();
+        var indexer = new CatalogIndexer(provider, catalog, NullLogger<CatalogIndexer>.Instance);
+
+        var files = (MediaFile[])[MediaFile.FromFileInfo(new FileInfo(media))];
+
+        await indexer.IndexAsync(files);
+        Assert.Equal(1, provider.FilesRead);
+
+        // Nothing has changed, so nothing is read.
+        await indexer.IndexAsync(files);
+        Assert.Equal(1, provider.FilesRead);
+
+        // Somebody rates it in Lightroom. The raw file is untouched — same bytes, same timestamp —
+        // and before this was fixed that made the change invisible to the catalog.
+        System.IO.File.WriteAllText(sidecar, "<xmp>5 stars</xmp>");
+        System.IO.File.SetLastWriteTimeUtc(sidecar, DateTime.UtcNow.AddMinutes(5));
+
+        await indexer.IndexAsync(files);
+        Assert.Equal(2, provider.FilesRead);
+    }
+
+    [Fact]
+    public async Task AFileWithNoSidecarIsStillOnlyReadOnce()
+    {
+        // The cost of the fix has to fall on files that have a sidecar, not on every file.
+        using var temp = new TempFolder();
+
+        var media = Path.Combine(temp.Path, "a.raf");
+        System.IO.File.WriteAllText(media, "raw");
+
+        var catalog = new SqliteCatalog(new TestPaths(temp.Path), NullLogger<SqliteCatalog>.Instance);
+        var provider = new CountingProvider();
+        var indexer = new CatalogIndexer(provider, catalog, NullLogger<CatalogIndexer>.Instance);
+
+        var files = (MediaFile[])[MediaFile.FromFileInfo(new FileInfo(media))];
+
+        await indexer.IndexAsync(files);
+        await indexer.IndexAsync(files);
+        await indexer.IndexAsync(files);
+
+        Assert.Equal(1, provider.FilesRead);
+    }
+}
+
+/// <summary>
+/// Finding the sidecar, and reading when it was written, on real files.
+/// </summary>
+public class SidecarTimestampTests
+{
+    [Fact]
+    public void NoSidecarReadsAsZero()
+    {
+        using var temp = new TempFolder();
+        var media = Path.Combine(temp.Path, "a.raf");
+        System.IO.File.WriteAllText(media, "raw");
+
+        Assert.Equal(0, XmpSidecar.LastWrittenUtc(media));
+    }
+
+    [Theory]
+    [InlineData("a.xmp")]      // Adobe's convention: the extension is replaced.
+    [InlineData("a.raf.xmp")]  // The other one in the wild: appended to the whole name.
+    public void EitherConventionIsFound(string sidecarName)
+    {
+        using var temp = new TempFolder();
+        var media = Path.Combine(temp.Path, "a.raf");
+        System.IO.File.WriteAllText(media, "raw");
+        System.IO.File.WriteAllText(Path.Combine(temp.Path, sidecarName), "<xmp/>");
+
+        Assert.NotEqual(0, XmpSidecar.LastWrittenUtc(media));
+    }
+
+    [Fact]
+    public void RewritingTheSidecarMovesTheStamp()
+    {
+        using var temp = new TempFolder();
+        var media = Path.Combine(temp.Path, "a.raf");
+        var sidecar = Path.Combine(temp.Path, "a.xmp");
+        System.IO.File.WriteAllText(media, "raw");
+        System.IO.File.WriteAllText(sidecar, "<xmp/>");
+
+        var before = XmpSidecar.LastWrittenUtc(media);
+
+        // Set explicitly rather than by writing again: the stamp has one-second resolution, and a
+        // test that waited a second to prove it would be a test that takes a second.
+        System.IO.File.SetLastWriteTimeUtc(sidecar, DateTime.UtcNow.AddMinutes(5));
+
+        Assert.NotEqual(before, XmpSidecar.LastWrittenUtc(media));
+    }
+
+    /// <summary>An .xmp file is not its own sidecar, which would make every one of them stale forever.</summary>
+    [Fact]
+    public void AnXmpFileDoesNotFindItself()
+    {
+        using var temp = new TempFolder();
+        var sidecar = Path.Combine(temp.Path, "a.xmp");
+        System.IO.File.WriteAllText(sidecar, "<xmp/>");
+
+        Assert.Equal(0, XmpSidecar.LastWrittenUtc(sidecar));
     }
 }

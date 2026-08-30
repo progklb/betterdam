@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
-using BetterDAM.Metadata.Xmp;
+using BetterDAM.Core.Services;
 using Microsoft.Extensions.Logging;
 
 namespace BetterDAM.Metadata.ExifTool;

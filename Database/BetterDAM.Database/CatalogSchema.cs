@@ -10,7 +10,7 @@ namespace BetterDAM.Database;
 /// </summary>
 internal static class CatalogSchema
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     public static void Apply(SqliteConnection connection)
     {
@@ -44,6 +44,11 @@ internal static class CatalogSchema
         if (version < 4)
         {
             ApplyVersion4(connection);
+        }
+
+        if (version < 5)
+        {
+            ApplyVersion5(connection);
         }
 
         SetVersion(connection, CurrentVersion);
@@ -127,6 +132,21 @@ internal static class CatalogSchema
         if (!HasColumn(connection, "Media", "Height"))
         {
             Execute(connection, "ALTER TABLE Media ADD COLUMN Height INTEGER;");
+        }
+    }
+
+    /// <summary>
+    /// Records when each file's XMP sidecar was last written, so a change to it can be noticed.
+    ///
+    /// Nothing needs re-reading to fill this in. Existing rows have 0, which differs from the real
+    /// timestamp of any sidecar that exists, so exactly the files that have one are re-read — and
+    /// files with no sidecar, which is most of them, stay 0 and are left alone.
+    /// </summary>
+    private static void ApplyVersion5(SqliteConnection connection)
+    {
+        if (!HasColumn(connection, "Media", "SidecarModifiedUtc"))
+        {
+            Execute(connection, "ALTER TABLE Media ADD COLUMN SidecarModifiedUtc INTEGER NOT NULL DEFAULT 0;");
         }
     }
 

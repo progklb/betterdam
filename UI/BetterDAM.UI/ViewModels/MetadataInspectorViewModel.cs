@@ -7,6 +7,7 @@ using BetterDAM.UI.Services;
 using BetterDAM.Core.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace BetterDAM.UI.ViewModels;
@@ -434,39 +435,85 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
 
     private void RebuildLabelChoices()
     {
-        LabelChoices.Clear();
-        LabelChoices.Add(LabelChoice.None);
+        var wanted = new List<LabelChoice> { LabelChoice.None };
 
-        foreach (var label in _settings.Current.Labels.Labels)
-        {
-            LabelChoices.Add(new LabelChoice(label.Name, label.Colour));
-        }
+        wanted.AddRange(_settings.Current.Labels.Labels
+            .Select(label => new LabelChoice(label.Name, label.Colour)));
 
         if (!string.IsNullOrWhiteSpace(Label) &&
-            !LabelChoices.Any(c => string.Equals(c.Name, Label, StringComparison.OrdinalIgnoreCase)))
+            !wanted.Any(c => string.Equals(c.Name, Label, StringComparison.OrdinalIgnoreCase)))
         {
-            LabelChoices.Add(LabelChoice.Unknown(Label));
+            wanted.Add(LabelChoice.Unknown(Label));
         }
 
-        OnPropertyChanged(nameof(SelectedLabelChoice));
+        // Nothing to do unless the list has actually changed. This is not an optimisation: emptying
+        // and refilling the collection leaves the ComboBox bound to it holding a selection that no
+        // longer exists, and it recovers by showing the wrong entry. Startup rebuilt the same six
+        // items three times, which was enough to leave every file displaying the last label in the
+        // list whatever it was really labelled.
+        if (wanted.SequenceEqual(LabelChoices))
+        {
+            return;
+        }
+
+        LabelChoices.Clear();
+
+        foreach (var choice in wanted)
+        {
+            LabelChoices.Add(choice);
+        }
+
+        // After the control has caught up with the collection, not before: setting the selection
+        // while it is still reconciling is what gets discarded.
+        SyncSelectedLabelChoice();
+        Dispatcher.UIThread.Post(SyncSelectedLabelChoice, DispatcherPriority.Background);
     }
 
     /// <summary>
     /// The dropdown's selection, mapped to and from <see cref="Label"/> so the rest of the panel
     /// carries on dealing in the string that is actually written to the file.
+    ///
+    /// Stored rather than computed. A computed getter looked equivalent and was not: the ComboBox
+    /// never took the value from it, and every file showed the last label in the list whatever the
+    /// file actually carried. Holding the selection means the control and the panel cannot disagree
+    /// about what is selected, because there is only one answer and it is written down.
     /// </summary>
-    public LabelChoice? SelectedLabelChoice
-    {
-        get => LabelChoices.FirstOrDefault(c =>
-                   string.Equals(c.Name, Label, StringComparison.OrdinalIgnoreCase))
-               ?? LabelChoices.FirstOrDefault();
+    [ObservableProperty]
+    private LabelChoice? _selectedLabelChoice;
 
-        set
+    /// <summary>
+    /// True while the selection is being brought in line with the file rather than chosen by hand.
+    ///
+    /// Without it, loading a file would look exactly like the user picking a label from the list,
+    /// and every file opened would be recorded as an edit.
+    /// </summary>
+    private bool _syncingLabel;
+
+    partial void OnSelectedLabelChoiceChanged(LabelChoice? value)
+    {
+        // Null arrives when the list is rebuilt underneath the control, which says nothing about
+        // what the file is labelled.
+        if (_syncingLabel || value is null)
         {
-            if (value is not null)
-            {
-                Label = value.IsNone ? null : value.Name;
-            }
+            return;
+        }
+
+        Label = value.IsNone ? null : value.Name;
+    }
+
+    private void SyncSelectedLabelChoice()
+    {
+        _syncingLabel = true;
+
+        try
+        {
+            SelectedLabelChoice = LabelChoices.FirstOrDefault(c =>
+                string.Equals(c.Name, Label, StringComparison.OrdinalIgnoreCase))
+                ?? LabelChoices.FirstOrDefault();
+        }
+        finally
+        {
+            _syncingLabel = false;
         }
     }
 
@@ -508,7 +555,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
             LabelChoices.Add(LabelChoice.Unknown(value));
         }
 
-        OnPropertyChanged(nameof(SelectedLabelChoice));
+        SyncSelectedLabelChoice();
         RecordEdit();
     }
 
@@ -860,6 +907,10 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
             }
 
             SyncKeywordState();
+
+            // Explicitly, not only via OnLabelChanged: two files in a row with no label is not a
+            // change, and the dropdown would be left showing whatever it showed before.
+            SyncSelectedLabelChoice();
         }
         finally
         {

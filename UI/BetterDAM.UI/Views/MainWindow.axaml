@@ -791,6 +791,63 @@
                             IsVisible="{Binding HasSidecar}">
                       <TextBlock Text="XMP" FontSize="9" />
                     </Border>
+
+                    <!--
+                      The judgements: kept or rejected, and how good. Bottom-left, on one dark
+                      backing so a pale photograph cannot swallow them, and only present when there
+                      is something to say — an unrated, unflagged file gets no furniture at all.
+                    -->
+                    <!--
+                      The label. Colour and nothing else, because that is all a label is worth
+                      showing at tile size and there is only ever one of them.
+
+                      Along the bottom edge of the tile itself, inside it, rather than as a row of
+                      its own between the picture and the name. As a row it added height, which
+                      pushed the filename into the selection ring drawn around the tile. Here it
+                      costs no layout at all, and the tile is square while photographs are not, so
+                      it lands in the empty band below the picture rather than over it.
+                    -->
+                    <Border Height="4" CornerRadius="0,0,3,3"
+                            VerticalAlignment="Bottom"
+                            Background="{Binding LabelColour}"
+                            IsVisible="{Binding HasLabel}"
+                            ToolTip.Tip="{Binding LabelName}" />
+
+                    <Border Background="#99000000" CornerRadius="2"
+                            Padding="5,2" Margin="4"
+                            HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                            IsVisible="{Binding HasMarks}">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="✓" FontSize="10" Foreground="White"
+                                   VerticalAlignment="Center"
+                                   ToolTip.Tip="Keep"
+                                   IsVisible="{Binding IsAccepted}" />
+                        <TextBlock Text="✕" FontSize="10" Foreground="White"
+                                   VerticalAlignment="Center"
+                                   ToolTip.Tip="Rejected"
+                                   IsVisible="{Binding IsRejected}" />
+                        <!--
+                          Only the stars earned. Drawn rather than typed: the ★ character comes from
+                          a fallback font that measures narrower than it paints, and a run of five
+                          had the last one clipped away.
+                        -->
+                        <ItemsControl ItemsSource="{Binding RatingStars}"
+                                      VerticalAlignment="Center"
+                                      IsVisible="{Binding HasRating}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                              <StackPanel Orientation="Horizontal" Spacing="1" />
+                            </ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <PathIcon Width="8" Height="8" Foreground="White"
+                                        Data="M12 2 L15 9 L22 9.5 L17 14.5 L18.5 22 L12 18 L5.5 22 L7 14.5 L2 9.5 L9 9 Z" />
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </Border>
                   </Panel>
                 </Border>
                 <TextBlock Text="{Binding FileName}" FontSize="11"

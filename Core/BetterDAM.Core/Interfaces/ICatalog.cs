@@ -58,6 +58,17 @@ public interface ICatalog
     /// says what is there — including labels set by another application, which the library has never
     /// heard of and which are the ones most worth being able to find.
     /// </summary>
+    /// <summary>
+    /// The rating, flag and label of every indexed file under <paramref name="rootPath"/>, keyed by
+    /// full path.
+    ///
+    /// One query for a whole folder, because the grid draws these on every tile at once and asking
+    /// per file would be thousands of round trips to say "nothing" about most of them.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, MediaMarks>> GetMarksAsync(
+        string? rootPath = null,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<LabelUsage>> GetLabelsAsync(
         string? rootPath = null,
         CancellationToken cancellationToken = default);

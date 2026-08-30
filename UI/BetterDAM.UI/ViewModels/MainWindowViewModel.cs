@@ -88,7 +88,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
             _ = Inspector.LoadAsync(SelectedItem);
         };
 
-        _pending.Changed += (_, _) => PendingChangeCount = _pending.Count;
+        _pending.Changed += (_, e) =>
+        {
+            PendingChangeCount = _pending.Count;
+
+            // Before the save, not after it: an unsaved rating is still a rating, and the tile
+            // showing the old one would contradict the inspector sitting next to it.
+            RedrawMarksFor(e.FilePath);
+        };
 
         // Driven off the collection itself rather than the four places that mutate it, so the
         // prompt cannot drift out of step with what is actually on screen.
@@ -107,7 +114,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _rawQuality = develop.Quality;
 
         RebuildLabelChips();
-        _settings.Changed += (_, _) => Dispatcher.UIThread.Post(RebuildLabelChips);
+        _settings.Changed += (_, _) => Dispatcher.UIThread.Post(() =>
+        {
+            RebuildLabelChips();
+
+            // Recolouring a label in Settings has to reach the grid, which is drawing that colour.
+            RedrawMarks();
+        });
 
         // Otherwise the kind toggles start unticked on an empty query, which reads as "showing
         // nothing" when it means "showing everything".
@@ -1546,6 +1559,91 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Fills in the ratings, flags and labels the grid draws, for whatever is listed now.
+    ///
+    /// One query for the folder rather than one per tile, and safe to call again — it is how the
+    /// grid catches up after indexing finishes, after a save, and after the label library changes
+    /// colour underneath it.
+    /// </summary>
+    private async Task LoadMarksAsync()
+    {
+        if (MediaItems.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            // The listed files may span the whole catalog when showing search results, so the scope
+            // is the workspace rather than the folder being browsed.
+            _catalogMarks = await _catalog.GetMarksAsync(SearchEverywhere ? null : WorkspacePath)
+                .ConfigureAwait(true);
+
+            RedrawMarks();
+        }
+        catch (Exception ex)
+        {
+            // Tiles without their marks are a smaller loss than a folder that will not open.
+            _logger.LogDebug(ex, "Could not read marks for the grid");
+        }
+    }
+
+    /// <summary>
+    /// What the catalog last said. Kept so an edit can be undone back to it: a discarded change has
+    /// to reveal the saved value again, and re-querying for one tile would be absurd.
+    /// </summary>
+    private IReadOnlyDictionary<string, MediaMarks> _catalogMarks = new Dictionary<string, MediaMarks>();
+
+    /// <summary>
+    /// What a tile should show: the unsaved edit if there is one, otherwise what is on disk.
+    ///
+    /// Pending wins because the grid and the inspector are looking at the same file, and a tile
+    /// still showing three stars while the inspector shows four is the kind of disagreement that
+    /// makes people distrust both.
+    /// </summary>
+    private MediaMarks MarksFor(string path)
+        => _pending.GetEdited(path) is { } edited
+            ? new MediaMarks(edited.Rating, edited.Flag ?? MediaFlag.None, edited.Label)
+            : _catalogMarks.TryGetValue(path, out var found) ? found : MediaMarks.None;
+
+    private void SetMarks(MediaItemViewModel item)
+    {
+        var marks = MarksFor(item.File.FullPath);
+
+        item.Marks = marks;
+        item.LabelColour = LabelColours.Resolve(_settings.Current.Labels, marks.Label);
+    }
+
+    /// <summary>Re-resolves every tile. Cheap — no query, just the label colours and a few flags.</summary>
+    private void RedrawMarks()
+    {
+        foreach (var item in MediaItems)
+        {
+            SetMarks(item);
+        }
+    }
+
+    /// <summary>One tile, for when a single file is edited.</summary>
+    private void RedrawMarksFor(string? path)
+    {
+        if (path is null)
+        {
+            // A batch edit or a discard-all: which files changed is not said, so redraw the lot.
+            RedrawMarks();
+            return;
+        }
+
+        foreach (var item in MediaItems)
+        {
+            if (string.Equals(item.File.FullPath, path, StringComparison.OrdinalIgnoreCase))
+            {
+                SetMarks(item);
+                return;
+            }
+        }
+    }
+
     /// <summary>Called after the sync dialog closes: it clears whatever it committed.</summary>
     public void RefreshAfterSync()
     {
@@ -1555,6 +1653,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             item.HasPendingChanges = _pending.HasChanges(item.File.FullPath);
         }
+
+        _ = LoadMarksAsync();
 
         if (SelectedItem is { } selected)
         {
@@ -1689,6 +1789,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     HasPendingChanges = _pending.HasChanges(hit.FullPath)
                 });
             }
+
+            await LoadMarksAsync();
 
             CurrentFolderPath = $"Search: {SearchText}";
 
@@ -1953,6 +2055,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             IsIndexing = false;
         }
+
+        // Indexing is what puts the marks in the catalog in the first place, so the grid can only
+        // draw them once it has finished.
+        await LoadMarksAsync();
     }
 
     /// <summary>True once more than one file is selected, which swaps the inspector for batch mode.</summary>
@@ -2121,6 +2227,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
             Flush(batch);
             StatusText = $"{count} media files in {path} ({stopwatch.Elapsed.TotalSeconds:0.0}s)";
+
+            // Marks first, since most folders are already indexed and this is what puts the ratings
+            // and labels on the tiles. Indexing calls it again afterwards if it changed anything.
+            await LoadMarksAsync();
 
             // Indexing happens after the grid is populated so browsing is never blocked by it.
             _ = IndexScannedAsync(MediaItems.ToList());

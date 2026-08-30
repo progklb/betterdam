@@ -263,6 +263,52 @@ public sealed class SqliteCatalog : ICatalog
     /// Scoped the same way search is — substr rather than LIKE, because a path may contain % or _
     /// and LIKE would read those as wildcards.
     /// </summary>
+    public async Task<IReadOnlyDictionary<string, MediaMarks>> GetMarksAsync(
+        string? rootPath = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var root = NormaliseRoot(rootPath);
+        var scope = root is null ? string.Empty : "\n  WHERE substr(Path, 1, @rootLength) = @root";
+
+        // Only rows with something to say. Most files in most folders are unrated, unflagged and
+        // unlabelled, and carrying them back to conclude nothing is the bulk of the work avoided.
+        var predicate = root is null ? "WHERE" : "  AND";
+
+        var sql = $"""
+            SELECT Path, Rating, Flag, Label
+            FROM Media{scope}
+            {predicate} (Rating IS NOT NULL OR Flag IS NOT NULL OR (Label IS NOT NULL AND Label <> ''));
+            """;
+
+        var rows = await connection
+            .QueryAsync<MarksRow>(new CommandDefinition(
+                sql,
+                new { root, rootLength = root?.Length ?? 0 },
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        var marks = new Dictionary<string, MediaMarks>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in rows)
+        {
+            marks[row.Path] = new MediaMarks(
+                row.Rating is { } rating ? (int)rating : null,
+                row.Flag is { } flag ? (MediaFlag)flag : MediaFlag.None,
+                row.Label);
+        }
+
+        return marks;
+    }
+
+    /// <summary>
+    /// Nullable throughout, since these columns are empty for most files — and <c>long</c> for both
+    /// numbers: SQLite hands every integer back as Int64, and an <c>int</c> member here fails at
+    /// materialisation rather than at compile time. The same trap as KeywordRow and StampRow.
+    /// </summary>
+    private sealed record MarksRow(string Path, long? Rating, long? Flag, string? Label);
+
     public async Task<IReadOnlyList<LabelUsage>> GetLabelsAsync(
         string? rootPath = null,
         CancellationToken cancellationToken = default)

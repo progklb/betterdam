@@ -53,6 +53,62 @@ public sealed partial class MediaItemViewModel : ObservableObject
     private bool _hasSidecar;
 
     /// <summary>
+    /// The rating, flag and label drawn on the tile.
+    ///
+    /// Held as one value rather than three properties because they always arrive together — from
+    /// the catalog for a whole folder at once, or from an edit that may have touched any of them —
+    /// and a single assignment cannot leave the tile showing two of the three.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RatingStars))]
+    [NotifyPropertyChangedFor(nameof(HasRating))]
+    [NotifyPropertyChangedFor(nameof(IsAccepted))]
+    [NotifyPropertyChangedFor(nameof(IsRejected))]
+    [NotifyPropertyChangedFor(nameof(HasFlag))]
+    [NotifyPropertyChangedFor(nameof(HasMarks))]
+    private MediaMarks _marks = MediaMarks.None;
+
+    /// <summary>
+    /// One entry per star earned, not five with some hollow.
+    ///
+    /// At tile size the empty ones are most of the ink and say nothing: three stars reads as three
+    /// whether or not two ghosts follow it, and a grid of tiles is scanned, not studied.
+    ///
+    /// A list rather than a string of ★ characters, and drawn as a shape rather than set as text.
+    /// The star has no glyph in the interface font, so it came from a fallback whose advance width
+    /// measures short — the run sized itself to less than it drew and clipped the last star off,
+    /// at five stars the one that matters most. Nothing outside the text could fix that, because
+    /// the clipping happened inside the TextBlock's own bounds.
+    /// </summary>
+    public IReadOnlyList<int> RatingStars =>
+        Marks.Rating is > 0 and var stars ? Enumerable.Range(1, stars).ToList() : [];
+
+    public bool HasRating => Marks.Rating is > 0;
+
+    public bool IsAccepted => Marks.Flag == MediaFlag.Accepted;
+
+    public bool IsRejected => Marks.Flag == MediaFlag.Rejected;
+
+    public bool HasFlag => IsAccepted || IsRejected;
+
+    /// <summary>Whether the badge strip is worth any room at all.</summary>
+    public bool HasMarks => HasRating || HasFlag;
+
+    /// <summary>
+    /// The label's colour, or null when there is no label. Set alongside <see cref="Marks"/> rather
+    /// than worked out here, because resolving it needs the user's label library and a tile has no
+    /// business knowing about settings.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLabel))]
+    private string? _labelColour;
+
+    public bool HasLabel => LabelColour is not null;
+
+    /// <summary>The label's name, for the tooltip — the colour alone cannot say "Yellow".</summary>
+    public string? LabelName => Marks.Label;
+
+    /// <summary>
     /// Requests the thumbnail once. Called when the item's container is realized, so opening a
     /// folder of 50,000 files only decodes the handful of tiles actually on screen.
     /// </summary>

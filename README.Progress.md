@@ -4803,3 +4803,88 @@ picker.
 
 Checked in the app both ways round: `:` then three stars gives `r:>=3`, and `bush` then three stars
 gives `bush r:>=3`.
+
+## Marks on the thumbnails
+
+Three judgements now show on each tile: kept or rejected, how many stars, and which colour label.
+
+### Where they come from
+
+Not from the files. `MediaFile` is a directory entry and nothing more, and reading metadata per tile
+would be one ExifTool call per thumbnail. They come from the catalog, in one query per folder —
+`GetMarksAsync` — which returns only the rows that have something to say. Most files in most folders
+are unrated, unflagged and unlabelled, and not carrying those back is most of the work avoided.
+
+An unsaved edit outranks the catalog. The grid and the inspector are looking at the same file, and a
+tile still showing three stars while the inspector shows four is the kind of disagreement that makes
+people distrust both. The last catalog answer is kept alongside, because discarding an edit has to
+reveal the saved value again and re-querying for one tile would be absurd.
+
+### Colour labels from other applications
+
+`xmp:Label` is a string, so a file labelled in Lightroom arrives saying "Yellow" and nothing else —
+no colour, and nothing in a Bridge-named library to match it against. There are three answers, in
+order of how much they are worth trusting:
+
+1. **the user's library**, the only place a colour was deliberately chosen;
+2. **the word itself**, when it names a colour — "Yellow" is not a guess, it is what the label says;
+3. **grey**, for a word that means something to whoever wrote it and nothing here.
+
+Grey rather than nothing: the file *is* labelled, and a tile with no mark would say the opposite.
+Lightroom's whole default set is covered, so a workspace labelled there colours itself correctly
+with no library changes at all. The library still wins — someone who named a label "Yellow" and
+coloured it blue made a choice, and reading the word would overrule them.
+
+### How they are drawn
+
+The flag and stars share one dark badge at the bottom-left, present only when there is something to
+say. The label is a bar under the picture rather than a mark over it: one label, colour only, and a
+bar can run the full width without hiding any of the photograph.
+
+- `dotnet test` — **715/715 passing** (17 new).
+
+### Three bugs found by looking at it
+
+**The fifth star was missing.** ★ has no glyph in the interface font, so it came from a fallback
+whose advance width measures narrower than it paints; the run sized itself to less than it drew and
+clipped the last star — at five stars, the one that matters most. Padding on the border did nothing,
+because the clipping was inside the TextBlock's own bounds, and a trailing space only moved the
+edge. The stars are drawn as shapes now, and the question does not arise.
+
+**The label dropdown showed the wrong label**, and had done since it was added earlier today: every
+file displayed "To Do", the last entry, whatever it was really labelled. The view model was right
+throughout — logging it said `label=<null>, chose=<none>` — so this was the control, not the data.
+`RebuildLabelChoices` emptied and refilled the bound collection, and startup did that three times
+over the same six items. A ComboBox does not survive having its items replaced underneath a
+selection; it recovers by showing the wrong one. It now rebuilds only when the list has actually
+changed.
+
+Worth saying plainly: I had reported that dropdown as working. It was not, and what I had checked
+was that the *correct file's label* appeared for one file that happened to be labelled.
+
+**An unlabelled file's swatch was empty** in that dropdown while its tile was coloured. Both go
+through the same resolver now.
+
+### On the catalog being a cache
+
+Chasing the label bug turned up something worth recording: the catalog can be stale in a way nothing
+detects. `NeedsIndexing` compares the media file's size and modified time, but a label or rating
+written to an XMP sidecar does not touch the media file. The sidecar's own timestamp is not part of
+the test. This did not cause the bug above, and it is not fixed here, but it is the same shape as
+the `flag:rejected` problem from earlier and it will bite again.
+
+### Toning the tile marks down
+
+**The stars and the flag are white.** They were gold and red/green, which made a tile carrying a
+rating, a flag and a label into three colour codes at once — none of them meaning the same thing as
+the others. The glyphs already say which is which; the colour was carrying no information the shape
+was not. It leaves the label as the only colour on a tile, which is the one place colour is the
+whole point.
+
+**The label bar moved inside the tile.** As a row between the picture and the filename it added
+height, which pushed the name down into the selection ring drawn around the tile — the label and the
+selection fighting over the same few pixels. It is now along the bottom edge of the tile itself,
+where it costs no layout at all. Tiles are square and photographs are not, so it lands in the empty
+band below the picture rather than over it.
+
+- `dotnet test` — **715/715 passing**.

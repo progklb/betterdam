@@ -328,6 +328,9 @@ public class KeywordMoveTests
         public Task<CatalogStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(CatalogStatistics.Empty);
 
+        public Task<IReadOnlyDictionary<string, MediaMarks>> GetMarksAsync(string? rootPath = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<string, MediaMarks>>(new Dictionary<string, MediaMarks>());
+
         public Task<IReadOnlyList<LabelUsage>> GetLabelsAsync(string? rootPath = null, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<LabelUsage>>([]);
 
@@ -472,6 +475,9 @@ public class KeywordSortingTests
     {
         public Task<CatalogStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(CatalogStatistics.Empty);
+
+        public Task<IReadOnlyDictionary<string, MediaMarks>> GetMarksAsync(string? rootPath = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<string, MediaMarks>>(new Dictionary<string, MediaMarks>());
 
         public Task<IReadOnlyList<LabelUsage>> GetLabelsAsync(string? rootPath = null, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<LabelUsage>>([]);

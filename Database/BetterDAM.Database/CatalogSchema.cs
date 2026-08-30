@@ -10,7 +10,7 @@ namespace BetterDAM.Database;
 /// </summary>
 internal static class CatalogSchema
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     public static void Apply(SqliteConnection connection)
     {
@@ -39,6 +39,11 @@ internal static class CatalogSchema
         if (version < 3)
         {
             ApplyVersion3(connection);
+        }
+
+        if (version < 4)
+        {
+            ApplyVersion4(connection);
         }
 
         SetVersion(connection, CurrentVersion);
@@ -103,6 +108,26 @@ internal static class CatalogSchema
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Adds the picture's dimensions, so orientation can be searched.
+    ///
+    /// Stored the right way up — a camera held on its side records landscape numbers and a tag
+    /// saying to turn the result — so the correction happens once, on the way in, and every query
+    /// after it is a plain comparison of two numbers.
+    /// </summary>
+    private static void ApplyVersion4(SqliteConnection connection)
+    {
+        if (!HasColumn(connection, "Media", "Width"))
+        {
+            Execute(connection, "ALTER TABLE Media ADD COLUMN Width INTEGER;");
+        }
+
+        if (!HasColumn(connection, "Media", "Height"))
+        {
+            Execute(connection, "ALTER TABLE Media ADD COLUMN Height INTEGER;");
+        }
     }
 
     private static void ApplyVersion1(SqliteConnection connection)

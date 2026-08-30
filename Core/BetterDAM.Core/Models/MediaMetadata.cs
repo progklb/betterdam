@@ -29,6 +29,14 @@ public sealed record MediaMetadata
 
     public VideoInfo Video { get; init; } = VideoInfo.Empty;
 
+    /// <summary>
+    /// The picture's size the right way up, or null when the file does not say.
+    ///
+    /// Separate from <see cref="Camera"/>, whose values are ExifTool's formatted strings meant for
+    /// display. These are numbers because something has to compare them.
+    /// </summary>
+    public ImageDimensions? Dimensions { get; init; }
+
     /// <summary>Every tag the engine reported, for the advanced raw view.</summary>
     public ImmutableArray<RawMetadataTag> RawTags { get; init; } = [];
 

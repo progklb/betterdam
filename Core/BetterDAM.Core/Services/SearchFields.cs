@@ -54,6 +54,7 @@ public static class SearchFields
         new("keyword", "k", "Files tagged with a word", "k:sand,dust", ["kw"]),
         new("rating", "r", "Stars, with > < >= <=", "r:>=4"),
         new("type", "t", "raw, jpg or video", "t:raw,video"),
+        new("orientation", "o", "portrait, landscape or square", "o:portrait"),
         new("label", "lb", "Colour label, or none", "lb:select,none"),
         new("flag", "f", "accepted, rejected or none", "f:accepted"),
         new("filename", "fn", "Part of the file name", "fn:DSCF7676"),

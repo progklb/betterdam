@@ -409,6 +409,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     .Where(Matches)
                     .Select(v => SearchSuggestionItem.ForValue(v, null));
 
+            case "orientation":
+                return new[] { "portrait", "landscape", "square" }
+                    .Where(Matches)
+                    .Select(v => SearchSuggestionItem.ForValue(v, null));
+
             case "flag":
                 return new[] { "accepted", "rejected", "none" }
                     .Where(Matches)

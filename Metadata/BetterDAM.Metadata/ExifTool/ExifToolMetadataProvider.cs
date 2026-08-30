@@ -155,6 +155,7 @@ public sealed class ExifToolMetadataProvider : IMetadataProvider
             Sidecar = sidecar is null ? null : ReadEditable(sidecar),
             Camera = ReadCamera(media),
             Video = file.MediaType == MediaType.Video ? ReadVideo(media) : VideoInfo.Empty,
+            Dimensions = ReadDimensions(media),
             RawTags = ReadRawTags(media, sidecar),
             SidecarPath = sidecar is null ? null : sidecarPath
         };
@@ -295,6 +296,40 @@ public sealed class ExifToolMetadataProvider : IMetadataProvider
             Orientation = First(document, "EXIF:Orientation")
         };
     }
+
+    /// <summary>
+    /// The picture's size, turned the right way up.
+    ///
+    /// Composite:ImageSize first because it is the image itself: a raw file's File:ImageWidth can
+    /// be the embedded preview rather than the frame. The fallbacks matter for formats that have no
+    /// composite, and videos, which carry their dimensions under their container's group.
+    /// </summary>
+    private static ImageDimensions? ReadDimensions(Dictionary<string, JsonElement> document)
+    {
+        if (First(document, "Composite:ImageSize") is { } size)
+        {
+            var parts = size.Split('x', 'X', '×');
+
+            if (parts.Length == 2 &&
+                int.TryParse(parts[0].Trim(), out var w) &&
+                int.TryParse(parts[1].Trim(), out var h))
+            {
+                return ImageDimensions.From(w, h, First(document, "EXIF:Orientation"));
+            }
+        }
+
+        var width = FirstNumber(document,
+            "EXIF:ExifImageWidth", "File:ImageWidth", "QuickTime:ImageWidth", "RIFF:ImageWidth");
+        var height = FirstNumber(document,
+            "EXIF:ExifImageHeight", "File:ImageHeight", "QuickTime:ImageHeight", "RIFF:ImageHeight");
+
+        return ImageDimensions.From(width, height, First(document, "EXIF:Orientation"));
+    }
+
+    private static int? FirstNumber(Dictionary<string, JsonElement> document, params string[] keys)
+        => First(document, keys) is { } value && int.TryParse(value.Trim(), out var number)
+            ? number
+            : null;
 
     private static VideoInfo ReadVideo(Dictionary<string, JsonElement> document)
     {

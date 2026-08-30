@@ -34,6 +34,7 @@ public static class SearchQueryParser
         var unrecognised = ImmutableArray.CreateBuilder<string>();
 
         var kinds = ImmutableArray.CreateBuilder<MediaKind>();
+        var orientations = ImmutableArray.CreateBuilder<MediaOrientation>();
         RatingFilter? rating = null;
         DateFilter? captureDate = null;
 
@@ -146,6 +147,26 @@ public static class SearchQueryParser
 
                     break;
 
+                case "orientation":
+                    // Any of these, as with type: a picture is one shape, so o:portrait,square can
+                    // only sensibly mean either.
+                    if (TryParseOrientations(value, out var parsedOrientations))
+                    {
+                        foreach (var orientation in parsedOrientations)
+                        {
+                            if (!orientations.Contains(orientation))
+                            {
+                                orientations.Add(orientation);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        unrecognised.Add(token);
+                    }
+
+                    break;
+
                 case "rating":
                     if (TryParseRating(value, out var parsedRating))
                     {
@@ -189,6 +210,7 @@ public static class SearchQueryParser
             Cameras = cameras.ToImmutable(),
             Lenses = lenses.ToImmutable(),
             Kinds = kinds.ToImmutable(),
+            Orientations = orientations.ToImmutable(),
             Rating = rating,
             CaptureDate = captureDate,
             UnrecognisedTerms = unrecognised.ToImmutable()
@@ -242,6 +264,39 @@ public static class SearchQueryParser
     /// Reads one or more kinds from a comma-separated value. All of them must be understood — half
     /// a filter silently applied is worse than being told the whole term was not understood.
     /// </summary>
+    /// <summary>
+    /// Reads portrait, landscape or square, with the spellings a photographer would reach for.
+    /// </summary>
+    private static bool TryParseOrientations(string value, out IReadOnlyList<MediaOrientation> orientations)
+    {
+        var parsed = new List<MediaOrientation>();
+
+        foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            switch (part.ToLowerInvariant())
+            {
+                case "portrait" or "vertical" or "tall":
+                    parsed.Add(MediaOrientation.Portrait);
+                    break;
+
+                case "landscape" or "horizontal" or "wide":
+                    parsed.Add(MediaOrientation.Landscape);
+                    break;
+
+                case "square":
+                    parsed.Add(MediaOrientation.Square);
+                    break;
+
+                default:
+                    orientations = [];
+                    return false;
+            }
+        }
+
+        orientations = parsed;
+        return parsed.Count > 0;
+    }
+
     private static bool TryParseKinds(string value, out IReadOnlyList<MediaKind> kinds)
     {
         var parsed = new List<MediaKind>();

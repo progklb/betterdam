@@ -130,10 +130,12 @@ public sealed class SqliteCatalog : ICatalog
             """
             INSERT INTO Media (Path, FileName, MediaType, SizeBytes, ModifiedUtc, CreatedUtc,
                                Title, Description, Headline, Label, Creator, Copyright, Rating, Flag,
-                               Camera, Lens, CaptureDate, HasSidecar, IndexedUtc, IndexerVersion)
+                               Camera, Lens, CaptureDate, HasSidecar, IndexedUtc, IndexerVersion,
+                               Width, Height)
             VALUES (@Path, @FileName, @MediaType, @SizeBytes, @ModifiedUtc, @CreatedUtc,
                     @Title, @Description, @Headline, @Label, @Creator, @Copyright, @Rating, @Flag,
-                    @Camera, @Lens, @CaptureDate, @HasSidecar, @IndexedUtc, @IndexerVersion)
+                    @Camera, @Lens, @CaptureDate, @HasSidecar, @IndexedUtc, @IndexerVersion,
+                    @Width, @Height)
             ON CONFLICT(Path) DO UPDATE SET
                 FileName = excluded.FileName, MediaType = excluded.MediaType,
                 SizeBytes = excluded.SizeBytes, ModifiedUtc = excluded.ModifiedUtc,
@@ -145,7 +147,8 @@ public sealed class SqliteCatalog : ICatalog
                 Camera = excluded.Camera, Lens = excluded.Lens,
                 CaptureDate = excluded.CaptureDate, HasSidecar = excluded.HasSidecar,
                 IndexedUtc = excluded.IndexedUtc,
-                IndexerVersion = excluded.IndexerVersion
+                IndexerVersion = excluded.IndexerVersion,
+                Width = excluded.Width, Height = excluded.Height
             RETURNING Id;
             """,
             new
@@ -169,7 +172,9 @@ public sealed class SqliteCatalog : ICatalog
                 CaptureDate = entry.CaptureDate?.ToUnixTimeSeconds(),
                 HasSidecar = entry.HasSidecar ? 1 : 0,
                 IndexedUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                IndexerVersion = CatalogIndexer.CurrentVersion
+                IndexerVersion = CatalogIndexer.CurrentVersion,
+                Width = entry.Dimensions?.Width,
+                Height = entry.Dimensions?.Height
             },
             transaction).ConfigureAwait(false);
 
@@ -460,6 +465,23 @@ public sealed class SqliteCatalog : ICatalog
             });
 
             sql.Append($"\n  AND ({string.Join(" OR ", clauses)})");
+        }
+
+        if (!query.Orientations.IsDefaultOrEmpty)
+        {
+            // Compared here rather than stored as a third column: the dimensions go in already
+            // turned the right way up, so which shape a picture is follows from two numbers and
+            // needs nothing kept in step with them. Files indexed before dimensions were recorded
+            // have none, and are excluded rather than guessed at.
+            var shapes = query.Orientations.Select(orientation => orientation switch
+            {
+                MediaOrientation.Portrait => "m.Height > m.Width",
+                MediaOrientation.Square => "m.Height = m.Width",
+                _ => "m.Width > m.Height"
+            });
+
+            sql.Append($"\n  AND m.Width IS NOT NULL AND m.Height IS NOT NULL");
+            sql.Append($"\n  AND ({string.Join(" OR ", shapes)})");
         }
 
         if (query.Rating is { } rating)

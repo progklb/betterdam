@@ -74,6 +74,9 @@ public sealed record SearchQuery
     /// </summary>
     public ImmutableArray<MediaKind> Kinds { get; init; } = [];
 
+    /// <summary>Any of these, as with kinds — o:portrait,square is a reasonable thing to ask.</summary>
+    public ImmutableArray<MediaOrientation> Orientations { get; init; } = [];
+
     public RatingFilter? Rating { get; init; }
 
     public DateFilter? CaptureDate { get; init; }
@@ -82,6 +85,7 @@ public sealed record SearchQuery
     public ImmutableArray<string> UnrecognisedTerms { get; init; } = [];
 
     public bool IsEmpty =>
+        Orientations.IsDefaultOrEmpty &&
         FreeText.IsDefaultOrEmpty && Keywords.IsDefaultOrEmpty && Cameras.IsDefaultOrEmpty &&
         Labels.IsDefaultOrEmpty && !IncludeUnlabelled && Flags.IsDefaultOrEmpty && FileNames.IsDefaultOrEmpty &&
         Lenses.IsDefaultOrEmpty && Kinds.IsDefaultOrEmpty && Rating is null && CaptureDate is null;

@@ -14,7 +14,8 @@ public sealed record CatalogEntry(
     EditableMetadata Metadata,
     CameraInfo Camera,
     bool HasSidecar,
-    DateTimeOffset? CaptureDate);
+    DateTimeOffset? CaptureDate,
+    ImageDimensions? Dimensions = null);
 
 /// <param name="SizeBytes">
 /// Size on disk including SQLite's write-ahead log and shared-memory files, which can dwarf the

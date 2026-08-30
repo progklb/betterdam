@@ -4888,3 +4888,49 @@ where it costs no layout at all. Tiles are square and photographs are not, so it
 band below the picture rather than over it.
 
 - `dotnet test` — **715/715 passing**.
+
+## Searching by orientation
+
+`o:portrait`, `o:landscape`, `o:square` — text search only, as asked, so it appears in the syntax
+reference and in the list that `o:` brings up, and nowhere in the filter panel.
+
+`vertical` and `tall` read as portrait, `horizontal` and `wide` as landscape. Commas mean either, as
+they do for type: a picture is one shape, so `o:portrait,square` can only sensibly be read that way.
+
+### Width and height are not the answer
+
+A camera held on its side records the sensor's own dimensions — landscape numbers — and an EXIF tag
+saying to turn the result a quarter turn. Every viewer honours that tag, so the file is a portrait
+to everyone looking at it while its numbers say otherwise. A real example from this workspace:
+
+```
+DSCF9203.JPG   ImageSize 6240x4160      Orientation "Rotate 270 CW"
+```
+
+Reading the numbers alone calls that landscape, and it is a portrait.
+
+The four EXIF orientations that exchange the axes are 5 to 8, and all four are spelled with 90 or
+270 in them — including the mirrored ones, which a "starts with Rotate" test would miss. The four
+that do not contain no angle but 180. So the digits are enough, and that is the whole rule.
+
+It is applied **once, on the way in**: the catalog stores the dimensions already the right way up,
+so every query after it is a plain comparison of two numbers with nothing to keep in step. Which
+shape a picture is follows from the two numbers rather than being stored as a third column that
+could contradict them.
+
+### A reindex was needed
+
+Dimensions were never recorded, so every existing row was missing them. Schema v4 adds the columns
+and `CatalogIndexer.CurrentVersion` goes to 2, which is what makes existing rows be read again — the
+same mechanism that fixed `flag:rejected`. This workspace re-read all 2,036 files in about 28
+seconds.
+
+Files indexed before the columns existed have no dimensions and are excluded from orientation
+searches rather than guessed at. Calling them landscape because two nulls compare equal would be
+worse than not answering, and they stay findable by every other filter.
+
+- `dotnet test` — **750/750 passing** (35 new), including the rotated case end to end through a real
+  catalog.
+
+Checked against the workspace: **744 portrait, 1,292 landscape, 2,036 total** — the app's counts
+equal the counts from SQL directly, and the two shapes partition the set with nothing left over.

@@ -77,7 +77,8 @@ public sealed class CatalogIndexer : ICatalogIndexer
                     read.Effective,
                     read.Camera,
                     read.HasSidecar,
-                    ParseCaptureDate(read.Camera.CaptureDate)));
+                    ParseCaptureDate(read.Camera.CaptureDate),
+                    read.Dimensions));
             }
 
             await _catalog.UpsertAsync(entries, cancellationToken).ConfigureAwait(false);
@@ -111,7 +112,11 @@ public sealed class CatalogIndexer : ICatalogIndexer
     /// and put the filename in the search index — none of which any file's own timestamp reflects,
     /// so without this a catalog would have kept answering with what an older indexer understood.
     /// </summary>
-    public const int CurrentVersion = 1;
+    /// <summary>
+    /// Version 2 records each picture's dimensions, so orientation can be searched. Every existing
+    /// row was written without them and has to be read again, which is what this number is for.
+    /// </summary>
+    public const int CurrentVersion = 2;
 
     internal static bool NeedsIndexing(MediaFile file, IReadOnlyDictionary<string, IndexedStamp> known)
         => !known.TryGetValue(file.FullPath, out var stamp)

@@ -26,21 +26,7 @@ public static class SearchQueryText
             ?? throw new ArgumentException($"'{field}' is not a search field.", nameof(field));
 
         var shortForm = SearchFields.All.First(f => f.Name == canonical).Short;
-        var rebuilt = new StringBuilder();
-
-        foreach (var token in SearchQueryParser.Tokenize(text ?? string.Empty))
-        {
-            var separator = token.IndexOf(':');
-
-            // Any spelling of the same field goes, so setting a value never leaves an older term
-            // for it further along the query still filtering.
-            if (separator > 0 && SearchFields.Resolve(token[..separator]) == canonical)
-            {
-                continue;
-            }
-
-            Append(rebuilt, token);
-        }
+        var rebuilt = Without(text, canonical);
 
         if (!string.IsNullOrWhiteSpace(value))
         {
@@ -63,19 +49,7 @@ public static class SearchQueryText
             ?? throw new ArgumentException($"'{field}' is not a search field.", nameof(field));
 
         var shortForm = SearchFields.All.First(f => f.Name == canonical).Short;
-        var rebuilt = new StringBuilder();
-
-        foreach (var token in SearchQueryParser.Tokenize(text ?? string.Empty))
-        {
-            var separator = token.IndexOf(':');
-
-            if (separator > 0 && SearchFields.Resolve(token[..separator]) == canonical)
-            {
-                continue;
-            }
-
-            Append(rebuilt, token);
-        }
+        var rebuilt = Without(text, canonical);
 
         foreach (var value in values.Where(v => !string.IsNullOrWhiteSpace(v)))
         {
@@ -83,6 +57,53 @@ public static class SearchQueryText
         }
 
         return rebuilt.ToString();
+    }
+
+    /// <summary>
+    /// The query with <paramref name="canonical"/> removed, and half-typed terms tidied away.
+    /// </summary>
+    private static StringBuilder Without(string? text, string canonical)
+    {
+        var rebuilt = new StringBuilder();
+
+        foreach (var token in SearchQueryParser.Tokenize(text ?? string.Empty))
+        {
+            var separator = token.IndexOf(':');
+
+            // Any spelling of the same field goes, so setting a value never leaves an older term
+            // for it further along the query still filtering.
+            if (separator > 0 && SearchFields.Resolve(token[..separator]) == canonical)
+            {
+                continue;
+            }
+
+            if (IsHalfTyped(token))
+            {
+                continue;
+            }
+
+            Append(rebuilt, token);
+        }
+
+        return rebuilt;
+    }
+
+    /// <summary>
+    /// A term with a colon and nothing after it: <c>:</c> on its own, or <c>k:</c> with no value yet.
+    ///
+    /// These are what someone leaves behind when they start typing a filter, think better of it, and
+    /// go to the filter panel instead. They cannot filter anything — a bare <c>:</c> is worse than
+    /// nothing, since it becomes a free-text term that matches no file and empties the results — so
+    /// a control writing on the user's behalf clears them rather than building on top of them.
+    ///
+    /// Only these. Ordinary free text stays: <c>bush k:Bush</c> is a real query, and deciding that
+    /// clicking a filter should throw away what someone typed would be a much larger assumption.
+    /// </summary>
+    private static bool IsHalfTyped(string token)
+    {
+        var colon = token.IndexOf(':');
+
+        return colon >= 0 && token[(colon + 1)..].Trim('"').Trim().Length == 0;
     }
 
     private static void Append(StringBuilder builder, string token)

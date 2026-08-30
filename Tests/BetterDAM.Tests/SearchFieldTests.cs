@@ -440,3 +440,90 @@ public class KeywordFilterWritingTests
         Assert.Contains("golden hour", query.Keywords.SelectMany(g => g.AnyOf));
     }
 }
+
+/// <summary>
+/// What the filter controls do with whatever was already in the search box.
+///
+/// They edit one field and leave the rest, which is what lets free text and filters combine. The
+/// exception is a term someone abandoned half-typed: a bare colon is not neutral, it becomes a
+/// free-text term that matches nothing and empties the results.
+/// </summary>
+public class FilterWritingOverExistingTextTests
+{
+    [Fact]
+    public void ALoneColonIsCleared()
+    {
+        // Typing ":" opens the field list. Going to the filter panel instead used to leave it there,
+        // and ": r:>=3" then found nothing at all.
+        var text = SearchQueryText.WithField(":", "rating", ">=3");
+
+        Assert.Equal("r:>=3", text);
+        Assert.Empty(SearchQueryParser.Parse(text).FreeText);
+    }
+
+    [Fact]
+    public void AFieldWithNoValueYetIsCleared()
+    {
+        var text = SearchQueryText.WithField("k:", "rating", ">=3");
+
+        Assert.Equal("r:>=3", text);
+        Assert.Empty(SearchQueryParser.Parse(text).UnrecognisedTerms);
+    }
+
+    [Fact]
+    public void FreeTextIsKept()
+    {
+        // The whole point of writing into the box rather than holding a filter apart from it: a word
+        // and a filter are a legitimate query together, and clicking a star must not discard typing.
+        var text = SearchQueryText.WithField("bush", "rating", ">=3");
+
+        var query = SearchQueryParser.Parse(text);
+
+        Assert.Equal(new[] { "bush" }, query.FreeText.ToArray());
+        Assert.NotNull(query.Rating);
+    }
+
+    [Fact]
+    public void OtherFieldsAreKept()
+    {
+        var text = SearchQueryText.WithField("k:sand : f:accepted", "rating", ">=3");
+
+        var query = SearchQueryParser.Parse(text);
+
+        Assert.Single(query.Keywords);
+        Assert.Single(query.Flags);
+        Assert.NotNull(query.Rating);
+        Assert.Empty(query.FreeText);
+    }
+
+    [Fact]
+    public void AColonWithSomethingAfterItIsFreeTextAndStays()
+    {
+        // ":foo" reaches the index as a search for foo, because the tokenizer drops the punctuation.
+        // It works, so it is not ours to throw away.
+        var text = SearchQueryText.WithField(":foo", "rating", ">=3");
+
+        Assert.Equal(new[] { ":foo" }, SearchQueryParser.Parse(text).FreeText.ToArray());
+    }
+
+    [Fact]
+    public void TheKeywordPickerClearsThemToo()
+    {
+        // Both writers, since every filter control goes through one or the other.
+        var text = SearchQueryText.WithFieldTerms("k: :", "keyword", ["sand", "dust"]);
+
+        var query = SearchQueryParser.Parse(text);
+
+        Assert.Equal(2, query.Keywords.Length);
+        Assert.Empty(query.FreeText);
+        Assert.Empty(query.UnrecognisedTerms);
+    }
+
+    [Fact]
+    public void ClearingTheLastFilterLeavesAnEmptyBox()
+    {
+        // Not " " or ":", which would still be a query — unticking everything has to leave nothing.
+        Assert.Equal(string.Empty, SearchQueryText.WithField(":", "rating", null));
+        Assert.Equal(string.Empty, SearchQueryText.WithFieldTerms("k:sand :", "keyword", []));
+    }
+}

@@ -4771,3 +4771,35 @@ good as invisible and nothing on screen says how many there are. Shut, the heade
 the pills say it better.
 
 - `dotnet test` — **691/691 passing**.
+
+## Half-typed terms and the filter panel
+
+Typing `:` opens the field list. Going to the filter panel instead of finishing the thought left the
+colon in the box, and clicking a star produced `: r:>=3`.
+
+The colon is not harmless. It has no field name in front of it, so the parser reads it as free text,
+and free text goes to the index as `":"*` — a term no file has. The query then finds nothing, while
+the panel shows a rating filter that looks perfectly reasonable.
+
+### What gets cleared, and what does not
+
+A control writing on the user's behalf now drops any term with a colon and nothing after it: `:` on
+its own, and `k:` where a field was named but no value given. Both are what someone leaves behind
+when they start typing a filter and think better of it.
+
+Only those. **Ordinary free text stays**, because `bush k:Bush` is a real query — a word and a filter
+together — and that combination is the whole reason these controls write into the box instead of
+holding a filter apart from it. Deciding that clicking a star should throw away what someone typed
+would be a far larger assumption than the bug warranted.
+
+`:foo` stays too. The index tokenizer drops the punctuation, so it reaches the search as a perfectly
+good query for *foo*. It works, so it is not ours to discard.
+
+Both writers share one rebuild now, so the tidy-up cannot apply to the stars and not to the keyword
+picker.
+
+- `dotnet test` — **698/698 passing** (7 new). Disabling the check fails 5 of the 7; the 2 that still
+  pass are the ones guarding what must *not* be cleared, which is what they are for.
+
+Checked in the app both ways round: `:` then three stars gives `r:>=3`, and `bush` then three stars
+gives `bush r:>=3`.

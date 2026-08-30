@@ -195,7 +195,7 @@
                      IsVisible="{Binding SearchEverywhere}" />
           </Panel>
           <Button.Flyout>
-            <Flyout Placement="BottomEdgeAlignedRight">
+            <Flyout Placement="BottomEdgeAlignedRight" Opened="OnFilterFlyoutOpened">
               <StackPanel Width="330" Spacing="10" Margin="4">
 
                 <TextBlock Text="Filters" FontSize="13" FontWeight="SemiBold" />
@@ -301,6 +301,64 @@
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
                 </DockPanel>
+
+                <!--
+                  Keywords. The only filter that needs a list rather than a row of toggles: there
+                  may be hundreds, so it is searchable, and each one carries the number of files that
+                  have it — a filter that will find nothing says so before it is applied.
+                -->
+                <StackPanel Spacing="5">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="Keywords" FontSize="11"
+                               VerticalAlignment="Center" />
+                    <!--
+                      With two words ticked, "any" and "all" are both reasonable readings and return
+                      very different sets, so the panel asks rather than guesses.
+                    -->
+                    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                      <RadioButton GroupName="KeywordMatch" FontSize="11" Content="any"
+                                   IsChecked="{Binding !KeywordFilterMatchAll}"
+                                   ToolTip.Tip="Files with at least one of the ticked keywords" />
+                      <RadioButton GroupName="KeywordMatch" FontSize="11" Content="all"
+                                   IsChecked="{Binding KeywordFilterMatchAll}"
+                                   ToolTip.Tip="Files carrying every ticked keyword" />
+                    </StackPanel>
+                  </DockPanel>
+
+                  <TextBox FontSize="11" Padding="6,3" Watermark="Find a keyword"
+                           Text="{Binding KeywordFilterSearch}" />
+
+                  <Border BorderThickness="1" CornerRadius="3" MaxHeight="150"
+                          BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+                    <Panel>
+                      <TextBlock Margin="8,10" FontSize="11" Opacity="0.45"
+                                 Text="{Binding KeywordFilterEmptyText}"
+                                 IsVisible="{Binding !HasKeywordChips}" />
+                      <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                    IsVisible="{Binding HasKeywordChips}">
+                        <ItemsControl ItemsSource="{Binding KeywordChips}" Margin="4">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:KeywordFilterChip">
+                              <CheckBox Padding="6,0,0,0" MinHeight="0" Margin="2,1"
+                                        HorizontalAlignment="Stretch"
+                                        IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                        Command="{Binding ToggleCommand}">
+                                <DockPanel>
+                                  <TextBlock DockPanel.Dock="Right" FontSize="10" Opacity="0.45"
+                                             Margin="8,0,0,0" VerticalAlignment="Center"
+                                             Text="{Binding CountDisplay}" />
+                                  <TextBlock FontSize="11" VerticalAlignment="Center"
+                                             TextTrimming="CharacterEllipsis"
+                                             Text="{Binding Name}" />
+                                </DockPanel>
+                              </CheckBox>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </ScrollViewer>
+                    </Panel>
+                  </Border>
+                </StackPanel>
 
                 <DockPanel>
                   <TextBlock DockPanel.Dock="Left" Text="Flag" FontSize="11"

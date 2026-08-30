@@ -686,4 +686,11 @@ public partial class MainWindow : Window
         // caret or the user is left typing into nothing.
         SearchBox.Focus();
     }
+
+    /// <summary>
+    /// Reads the workspace's keywords as the filter popup opens, so the list is there the first
+    /// time it is looked at rather than one open behind.
+    /// </summary>
+    private void OnFilterFlyoutOpened(object? sender, EventArgs e)
+        => (DataContext as MainWindowViewModel)?.PrepareFilters();
 }

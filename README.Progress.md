@@ -4588,3 +4588,56 @@ rewritten and re-verified, but nothing was committed, so nothing would have brou
 
 The lesson is the one from the flag toggles that never reached the markup: a scripted edit that
 matches on surrounding text needs its result checked, not just its exit code.
+
+---
+
+## Keywords in the filter panel
+
+`lb:` autocompletes labels, the inspector picks labels from the library, and the filter popup now
+has the keyword list that the other two were leading up to.
+
+### What it looks like
+
+A search box over a scrollable list of the workspace's keywords, each with a count and a checkbox,
+and above it an **any / all** switch.
+
+The switch is explicit rather than inferred. With two words ticked, "any of these" and "all of these"
+are both reasonable readings and they return very different sets, so the panel asks. It is not
+inventing a distinction either — the query syntax already draws it, and the two spellings are what
+get written:
+
+```text
+any    k:sand,dust      one term offering alternatives
+all    k:sand k:dust    two terms, both of which have to match
+```
+
+### It edits the query, like every other control here
+
+No filter state of its own: ticking a box rewrites the `keyword` terms in the search box and the
+panel reads itself back out of the query. That is the same arrangement the stars and the type
+toggles use, and it is why typing `k:sand,dust` by hand lights the boxes for Sand and Dust with the
+switch on "any". Writing several terms for one field needed a new `SearchQueryText.WithFieldTerms`
+alongside `WithField`, which only ever wrote one.
+
+Reading back, the number of groups is the only thing that separates the two spellings — they name
+the same words — so that is what sets the switch. A query mixing both forms cannot be shown honestly
+by a single switch; it reads as "all", and the ticks still say which words are involved.
+
+### Two details that decide whether it feels right
+
+**Ticked keywords are listed first and are never hidden by the search box.** Narrowing the list
+would otherwise hide what is currently being filtered by, which is the one thing that would make the
+panel misrepresent the query.
+
+**Ticking does not reorder the list.** The write is guarded, so the read-back is skipped and nothing
+is rebuilt under the cursor; the ticked word moves to the top the next time the list is built, not
+while it is being clicked. The list is capped at 200 with ticked words always included, and loads
+when the popup opens rather than one open behind.
+
+- `dotnet test` — **691/691 passing** (6 new, on the round trip through the parser rather than on
+  the strings produced, since it is the round trip the panel depends on).
+
+### Not verified on screen
+
+The Mac locked partway through, so this has been checked by test and by reading, not by looking at
+it. The layout of the list inside the popup is the part worth a second look.

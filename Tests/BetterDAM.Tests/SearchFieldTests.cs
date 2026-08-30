@@ -351,3 +351,92 @@ public class SearchCombinationTests
         Assert.Empty(query.FreeText);
     }
 }
+
+/// <summary>
+/// The writing half of the filter panel's keyword picker.
+///
+/// The picker never holds a filter of its own — it edits the query text and reads it back — so
+/// "any" and "all" are only correct if the two spellings survive a round trip through the parser.
+/// That round trip is what these check, rather than the string that comes out.
+/// </summary>
+public class KeywordFilterWritingTests
+{
+    [Fact]
+    public void AnyIsOneTermWithCommas()
+    {
+        var text = SearchQueryText.WithFieldTerms(string.Empty, "keyword", ["sand,dust"]);
+
+        var query = SearchQueryParser.Parse(text);
+
+        // One group offering alternatives: a file needs either word, not both.
+        Assert.Single(query.Keywords);
+        Assert.Equal(new[] { "sand", "dust" }, query.Keywords[0].AnyOf.ToArray());
+    }
+
+    [Fact]
+    public void AllIsOneTermEach()
+    {
+        var text = SearchQueryText.WithFieldTerms(string.Empty, "keyword", ["sand", "dust"]);
+
+        var query = SearchQueryParser.Parse(text);
+
+        // Two groups, each with one word: every group has to match, so a file needs both.
+        Assert.Equal(2, query.Keywords.Length);
+        Assert.All(query.Keywords, group => Assert.Single(group.AnyOf));
+    }
+
+    [Fact]
+    public void GroupCountDistinguishesAnyFromAll()
+    {
+        // This is exactly what the panel reads to set the any/all switch, so it is worth pinning:
+        // the two spellings have to differ in group count or the switch cannot be restored.
+        var any = SearchQueryParser.Parse(SearchQueryText.WithFieldTerms(null, "keyword", ["sand,dust"]));
+        var all = SearchQueryParser.Parse(SearchQueryText.WithFieldTerms(null, "keyword", ["sand", "dust"]));
+
+        Assert.Single(any.Keywords);
+        Assert.Equal(2, all.Keywords.Length);
+
+        // Both name the same words, which is why the count is the only thing that tells them apart.
+        Assert.Equal(
+            any.Keywords.SelectMany(g => g.AnyOf).OrderBy(w => w).ToArray(),
+            all.Keywords.SelectMany(g => g.AnyOf).OrderBy(w => w).ToArray());
+    }
+
+    [Fact]
+    public void ReplacesEverySpellingOfTheField()
+    {
+        // Ticking a box has to clear what was typed, including the long form and any earlier terms,
+        // or the panel would show one filter while the query ran another.
+        var text = SearchQueryText.WithFieldTerms(
+            "keyword:old r:>=3 k:older", "keyword", ["sand", "dust"]);
+
+        var query = SearchQueryParser.Parse(text);
+
+        Assert.Equal(new[] { "sand", "dust" }, query.Keywords.SelectMany(g => g.AnyOf).ToArray());
+
+        // Other fields are left alone: the picker edits one field, not the query.
+        Assert.NotNull(query.Rating);
+    }
+
+    [Fact]
+    public void UntickingEverythingRemovesTheTerm()
+    {
+        var text = SearchQueryText.WithFieldTerms("k:sand k:dust r:>=3", "keyword", []);
+
+        Assert.Empty(SearchQueryParser.Parse(text).Keywords);
+        Assert.Equal("r:>=3", text);
+    }
+
+    [Fact]
+    public void KeywordsWithSpacesComeBackWhole()
+    {
+        // Ticked from a list, so a two-word keyword is entirely ordinary here — unquoted it would
+        // tokenize as two terms and filter for something nothing has.
+        var text = SearchQueryText.WithFieldTerms(null, "keyword", ["golden hour", "sand"]);
+
+        var query = SearchQueryParser.Parse(text);
+
+        Assert.Equal(2, query.Keywords.Length);
+        Assert.Contains("golden hour", query.Keywords.SelectMany(g => g.AnyOf));
+    }
+}

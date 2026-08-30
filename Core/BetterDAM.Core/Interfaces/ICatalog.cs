@@ -5,6 +5,9 @@ namespace BetterDAM.Core.Interfaces;
 /// <summary>A keyword in the catalog, and how many files carry it.</summary>
 public sealed record KeywordUsage(string Value, int Count);
 
+/// <summary>A colour label actually in use, and how many files carry it.</summary>
+public sealed record LabelUsage(string Value, int Count);
+
 /// <summary>One file's searchable facts, ready to be written to the catalog.</summary>
 public sealed record CatalogEntry(
     MediaFile File,
@@ -50,6 +53,15 @@ public interface ICatalog
     /// out again. Counts are included because they are what makes the list usable: a vocabulary of
     /// four hundred keywords is mostly one-offs and typos, and the frequent ones are the real ones.
     /// </summary>
+    /// <summary>
+    /// Labels actually written on files, most used first. The library says what may be applied; this
+    /// says what is there — including labels set by another application, which the library has never
+    /// heard of and which are the ones most worth being able to find.
+    /// </summary>
+    Task<IReadOnlyList<LabelUsage>> GetLabelsAsync(
+        string? rootPath = null,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<KeywordUsage>> GetKeywordsAsync(
         string? rootPath = null,
         CancellationToken cancellationToken = default);

@@ -265,7 +265,19 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// </summary>
     private IReadOnlyList<KeywordUsage> _keywordsInScope = [];
 
+    /// <summary>Labels in use, for the same reason and from the same place as the keywords.</summary>
+    private IReadOnlyList<LabelUsage> _labelsInScope = [];
+
     private string? _keywordsLoadedFor;
+
+    /// <summary>
+    /// The last thing asked for, so the offer can be recomputed once the catalog answers.
+    ///
+    /// Without this the first keystroke after opening a workspace shows an empty list and nothing
+    /// ever corrects it — the list is built before the query returns, and only another keystroke
+    /// would rebuild it.
+    /// </summary>
+    private (string? Text, int Caret)? _lastSuggestionAt;
 
     /// <summary>
     /// Reloads the keyword list when the scope changes. Cheap to call: it does nothing unless the
@@ -283,19 +295,32 @@ public sealed partial class MainWindowViewModel : ObservableObject
         try
         {
             _keywordsInScope = await _catalog.GetKeywordsAsync(scope).ConfigureAwait(true);
+            _labelsInScope = await _catalog.GetLabelsAsync(scope).ConfigureAwait(true);
             _keywordsLoadedFor = scope ?? string.Empty;
+
+            // Recompute what is on screen now there is something to offer. Safe from recursion: the
+            // cache key now matches, so the call below returns without loading again.
+            if (_lastSuggestionAt is { } at && HasFieldSuggestions)
+            {
+                UpdateFieldSuggestions(at.Text, at.Caret);
+            }
+
+            RebuildKeywordChips();
         }
         catch (Exception ex)
         {
             // A missing suggestion list is a small loss; failing the keystroke is not.
             _logger.LogDebug(ex, "Could not read keywords for suggestions");
             _keywordsInScope = [];
+            _labelsInScope = [];
         }
     }
 
     /// <summary>Recomputes what to offer for a caret position. True when the popup should be open.</summary>
     public bool UpdateFieldSuggestions(string? text, int caret)
     {
+        _lastSuggestionAt = (text, caret);
+
         var request = SearchSuggestion.At(text, caret);
 
         FieldSuggestions.Clear();
@@ -324,7 +349,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         // Loaded after answering, so the first keystroke is never blocked on a query; the next one
         // has the list.
-        if (request.Kind == SuggestionKind.Value && request.Field == "keyword")
+        if (request.Kind == SuggestionKind.Value && request.Field is "keyword" or "label")
         {
             _ = EnsureKeywordsLoadedAsync();
         }
@@ -349,11 +374,22 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     .Select(k => SearchSuggestionItem.ForValue(k.Value, k.Count));
 
             case "label":
-                return _settings.Current.Labels.Labels
+                // What is actually on the files, then anything the library defines that nothing
+                // carries yet — the first are what a filter will find, the second are what the
+                // vocabulary says ought to exist.
+                var inUse = _labelsInScope
+                    .Where(l => Matches(l.Value))
+                    .Select(l => SearchSuggestionItem.ForValue(l.Value, l.Count));
+
+                var unused = _settings.Current.Labels.Labels
                     .Select(l => l.Name)
-                    .Append("none")
-                    .Where(Matches)
-                    .Select(name => SearchSuggestionItem.ForValue(name, null));
+                    .Where(name => Matches(name) &&
+                        !_labelsInScope.Any(l => string.Equals(l.Value, name, StringComparison.OrdinalIgnoreCase)))
+                    .Select(name => SearchSuggestionItem.ForValue(name, 0));
+
+                return inUse
+                    .Concat(unused)
+                    .Append(SearchSuggestionItem.ForValue("none", null));
 
             case "type":
                 return new[] { "raw", "jpg", "video", "image" }
@@ -462,6 +498,114 @@ public sealed partial class MainWindowViewModel : ObservableObject
             SearchText, "label", chosen.Count == 0 ? null : string.Join(',', chosen));
     });
 
+    /// <summary>
+    /// Keywords in the workspace, ticked to filter by them.
+    ///
+    /// Built from the catalog rather than the keyword library, which is the same choice the search
+    /// suggestions make and for the same reason: a vocabulary word nothing carries filters to an
+    /// empty view, and a word that arrived from another application is invisible in the library but
+    /// is exactly what someone wants to find.
+    /// </summary>
+    public ObservableCollection<KeywordFilterChip> KeywordChips { get; } = [];
+
+    /// <summary>
+    /// Which keywords are ticked, held apart from the chips because the list is rebuilt whenever the
+    /// search narrows. Keeping it in the chips would lose every tick the moment the user typed.
+    /// </summary>
+    private readonly HashSet<string> _selectedKeywords = new(StringComparer.OrdinalIgnoreCase);
+
+    [ObservableProperty]
+    private string? _keywordFilterSearch;
+
+    /// <summary>
+    /// False asks for any of the ticked keywords, true for all of them.
+    ///
+    /// Explicit rather than inferred: with two keywords ticked, "any" and "all" are both reasonable
+    /// readings and they return very different sets. The query says which — commas for any, repeated
+    /// terms for all — so the switch is only making a distinction the syntax already draws.
+    /// </summary>
+    [ObservableProperty]
+    private bool _keywordFilterMatchAll;
+
+    public bool HasKeywordChips => KeywordChips.Count > 0;
+
+    /// <summary>Says why the list is empty, which "no keywords" alone would not.</summary>
+    public string KeywordFilterEmptyText
+        => _keywordsInScope.Count == 0
+            ? "No keywords in this workspace yet."
+            : "No keywords match.";
+
+    partial void OnKeywordFilterSearchChanged(string? value) => RebuildKeywordChips();
+
+    partial void OnKeywordFilterMatchAllChanged(bool value)
+    {
+        // Only worth rewriting when it changes the result: one keyword means the same either way.
+        if (!_syncingFilters && _selectedKeywords.Count > 1)
+        {
+            WriteKeywords();
+        }
+    }
+
+    /// <summary>
+    /// Loads the keyword list if it has not been read yet. Called when the filter popup opens, so
+    /// the list is there the first time it is looked at rather than one open behind.
+    /// </summary>
+    public void PrepareFilters() => _ = EnsureKeywordsLoadedAsync();
+
+    private const int MaxKeywordChips = 200;
+
+    private void RebuildKeywordChips()
+    {
+        var search = KeywordFilterSearch ?? string.Empty;
+
+        bool Matches(string value) =>
+            search.Length == 0 || value.Contains(search, StringComparison.OrdinalIgnoreCase);
+
+        KeywordChips.Clear();
+
+        // Ticked ones first and regardless of the search, so narrowing the list never hides what is
+        // currently being filtered by — the one thing that would make the panel lie about the query.
+        foreach (var name in _selectedKeywords.OrderBy(k => k, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var count = _keywordsInScope
+                .FirstOrDefault(k => string.Equals(k.Value, name, StringComparison.OrdinalIgnoreCase))?.Count ?? 0;
+
+            KeywordChips.Add(new KeywordFilterChip(name, count, true, ToggleKeywordFilter));
+        }
+
+        foreach (var keyword in _keywordsInScope.Where(k => Matches(k.Value) && !_selectedKeywords.Contains(k.Value))
+                                                .Take(MaxKeywordChips))
+        {
+            KeywordChips.Add(new KeywordFilterChip(keyword.Value, keyword.Count, false, ToggleKeywordFilter));
+        }
+
+        OnPropertyChanged(nameof(HasKeywordChips));
+        OnPropertyChanged(nameof(KeywordFilterEmptyText));
+    }
+
+    private void ToggleKeywordFilter()
+    {
+        _selectedKeywords.Clear();
+
+        foreach (var chip in KeywordChips.Where(c => c.IsSelected))
+        {
+            _selectedKeywords.Add(chip.Name);
+        }
+
+        WriteKeywords();
+    }
+
+    private void WriteKeywords() => WriteFilter(() =>
+    {
+        var chosen = _selectedKeywords.OrderBy(k => k, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+        SearchText = KeywordFilterMatchAll
+            // One term each: repeating the field is how the parser is told to require all of them.
+            ? SearchQueryText.WithFieldTerms(SearchText, "keyword", chosen)
+            : SearchQueryText.WithFieldTerms(
+                SearchText, "keyword", chosen.Count == 0 ? [] : [string.Join(',', chosen)]);
+    });
+
     private void WriteKinds() => WriteFilter(() =>
     {
         var kinds = new List<string>();
@@ -541,6 +685,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
             FilterJpeg = all || kinds.Contains(MediaKind.Jpeg);
             FilterVideo = all || kinds.Contains(MediaKind.Video);
 
+            ReadKeywordsFromQuery(query);
+
             foreach (var chip in LabelChips)
             {
                 chip.SetSelected(query.Labels.Any(l => string.Equals(l, chip.Term, StringComparison.OrdinalIgnoreCase))
@@ -558,6 +704,27 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             _syncingFilters = false;
         }
+    }
+
+    /// <summary>
+    /// Ticks the keywords the query asks for, and sets any/all from how they are written.
+    ///
+    /// <c>k:sand,dust</c> is one term offering alternatives — any. <c>k:sand k:dust</c> is two terms
+    /// that both have to match — all. A query mixing the two cannot be shown honestly by a single
+    /// switch, so it is read as "all" and the ticks still say which words are involved.
+    /// </summary>
+    private void ReadKeywordsFromQuery(SearchQuery query)
+    {
+        _selectedKeywords.Clear();
+
+        foreach (var word in query.Keywords.SelectMany(group => group.AnyOf))
+        {
+            _selectedKeywords.Add(word);
+        }
+
+        KeywordFilterMatchAll = query.Keywords.Length > 1;
+
+        RebuildKeywordChips();
     }
 
     /// <summary>
@@ -1101,6 +1268,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             _ = SearchAsync();
         }
+
+        // The scope radio buttons sit in the same popup as the keyword list, so the list has to
+        // follow them — otherwise widening the scope leaves it offering the narrower set.
+        _ = EnsureKeywordsLoadedAsync();
     }
 
     /// <summary>

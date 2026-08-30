@@ -80,7 +80,10 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(IsRestrictedToLibrary));
             RefreshFieldVisibility();
+            RebuildLabelChoices();
         };
+
+        RebuildLabelChoices();
         _clipboard.Changed += (_, _) => OnPropertyChanged(nameof(CopiedKeywordsSummary));
     }
 
@@ -419,6 +422,54 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
     [ObservableProperty]
     private string? _label;
 
+    /// <summary>
+    /// The labels offered: the library's, plus "No label", plus whatever this file already carries
+    /// if that is not one of them.
+    ///
+    /// That last part matters. A file may be labelled "Yellow" by Lightroom while the library says
+    /// "Second" — dropping the unknown value would silently rewrite somebody's metadata the moment
+    /// they looked at the file.
+    /// </summary>
+    public ObservableCollection<LabelChoice> LabelChoices { get; } = [];
+
+    private void RebuildLabelChoices()
+    {
+        LabelChoices.Clear();
+        LabelChoices.Add(LabelChoice.None);
+
+        foreach (var label in _settings.Current.Labels.Labels)
+        {
+            LabelChoices.Add(new LabelChoice(label.Name, label.Colour));
+        }
+
+        if (!string.IsNullOrWhiteSpace(Label) &&
+            !LabelChoices.Any(c => string.Equals(c.Name, Label, StringComparison.OrdinalIgnoreCase)))
+        {
+            LabelChoices.Add(LabelChoice.Unknown(Label));
+        }
+
+        OnPropertyChanged(nameof(SelectedLabelChoice));
+    }
+
+    /// <summary>
+    /// The dropdown's selection, mapped to and from <see cref="Label"/> so the rest of the panel
+    /// carries on dealing in the string that is actually written to the file.
+    /// </summary>
+    public LabelChoice? SelectedLabelChoice
+    {
+        get => LabelChoices.FirstOrDefault(c =>
+                   string.Equals(c.Name, Label, StringComparison.OrdinalIgnoreCase))
+               ?? LabelChoices.FirstOrDefault();
+
+        set
+        {
+            if (value is not null)
+            {
+                Label = value.IsNone ? null : value.Name;
+            }
+        }
+    }
+
     [ObservableProperty]
     private string? _creator;
 
@@ -447,7 +498,19 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         RecordEdit();
     }
 
-    partial void OnLabelChanged(string? value) => RecordEdit();
+    partial void OnLabelChanged(string? value)
+    {
+        // A label from elsewhere has to appear in the list, or the dropdown would show blank and the
+        // next selection would quietly replace it.
+        if (!string.IsNullOrWhiteSpace(value) &&
+            !LabelChoices.Any(c => string.Equals(c.Name, value, StringComparison.OrdinalIgnoreCase)))
+        {
+            LabelChoices.Add(LabelChoice.Unknown(value));
+        }
+
+        OnPropertyChanged(nameof(SelectedLabelChoice));
+        RecordEdit();
+    }
 
     partial void OnCreatorChanged(string? value) => RecordEdit();
 

@@ -376,7 +376,27 @@
 
               <StackPanel IsVisible="{Binding ShowLabel}">
                 <TextBlock Text="Label" Classes="label" />
-                <TextBox Text="{Binding Label}" />
+                <!--
+                  From the library, like keywords. A label the file already carries that the library
+                  does not define is added to the list rather than dropped, so opening the file
+                  cannot quietly rewrite it.
+                -->
+                <ComboBox ItemsSource="{Binding LabelChoices}"
+                          SelectedItem="{Binding SelectedLabelChoice}"
+                          HorizontalAlignment="Stretch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LabelChoice">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Border Width="11" Height="11" CornerRadius="2" VerticalAlignment="Center"
+                                Background="{Binding Colour}" IsVisible="{Binding HasColour}" />
+                        <Border Width="11" Height="11" CornerRadius="2" VerticalAlignment="Center"
+                                BorderBrush="#55FFFFFF" BorderThickness="1"
+                                IsVisible="{Binding !HasColour}" />
+                        <TextBlock Text="{Binding Display}" VerticalAlignment="Center" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
               </StackPanel>
 
               <StackPanel IsVisible="{Binding ShowCreator}">

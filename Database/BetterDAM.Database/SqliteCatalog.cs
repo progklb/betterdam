@@ -263,6 +263,44 @@ public sealed class SqliteCatalog : ICatalog
     /// Scoped the same way search is — substr rather than LIKE, because a path may contain % or _
     /// and LIKE would read those as wildcards.
     /// </summary>
+    public async Task<IReadOnlyList<LabelUsage>> GetLabelsAsync(
+        string? rootPath = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var root = NormaliseRoot(rootPath);
+
+        // Grouped case-insensitively, because "Yellow" and "yellow" are one label written twice —
+        // and the same reasoning the search uses when it matches them.
+        var scope = root is null ? string.Empty : "\n  AND substr(Path, 1, @rootLength) = @root";
+
+        var sql = $"""
+            SELECT Label AS Value, COUNT(*) AS Count
+            FROM Media
+            WHERE Label IS NOT NULL AND Label <> ''{scope}
+            GROUP BY LOWER(Label)
+            ORDER BY Count DESC, Label COLLATE NOCASE;
+            """;
+
+        var rows = await connection
+            .QueryAsync<LabelRow>(new CommandDefinition(
+                sql,
+                new { root, rootLength = root?.Length ?? 0 },
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        return rows.Select(r => new LabelUsage(r.Value, (int)r.Count)).ToList();
+    }
+
+    /// <summary>As with KeywordRow: SQLite hands COUNT(*) back as Int64.</summary>
+    private sealed class LabelRow
+    {
+        public string Value { get; init; } = string.Empty;
+
+        public long Count { get; init; }
+    }
+
     public async Task<IReadOnlyList<KeywordUsage>> GetKeywordsAsync(
         string? rootPath = null,
         CancellationToken cancellationToken = default)

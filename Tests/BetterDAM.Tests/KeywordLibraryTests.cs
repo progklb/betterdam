@@ -328,7 +328,10 @@ public class KeywordMoveTests
         public Task<CatalogStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(CatalogStatistics.Empty);
 
-        public Task<IReadOnlyList<KeywordUsage>> GetKeywordsAsync(string? rootPath = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<LabelUsage>> GetLabelsAsync(string? rootPath = null, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<LabelUsage>>([]);
+
+    public Task<IReadOnlyList<KeywordUsage>> GetKeywordsAsync(string? rootPath = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<KeywordUsage>>([]);
 
         public Task UpsertAsync(IReadOnlyList<CatalogEntry> entries, CancellationToken cancellationToken = default)
@@ -470,7 +473,10 @@ public class KeywordSortingTests
         public Task<CatalogStatistics> GetStatisticsAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(CatalogStatistics.Empty);
 
-        public Task<IReadOnlyList<KeywordUsage>> GetKeywordsAsync(string? rootPath = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<LabelUsage>> GetLabelsAsync(string? rootPath = null, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<LabelUsage>>([]);
+
+    public Task<IReadOnlyList<KeywordUsage>> GetKeywordsAsync(string? rootPath = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<KeywordUsage>>([]);
 
         public Task UpsertAsync(IReadOnlyList<CatalogEntry> entries, CancellationToken cancellationToken = default)

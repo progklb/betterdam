@@ -50,6 +50,41 @@ public static class SearchQueryText
         return rebuilt.ToString();
     }
 
+    /// <summary>
+    /// Sets a field to several separate terms, replacing whatever it had.
+    ///
+    /// Separate terms are how "all of these" is written — <c>k:sand k:dust</c> — where one term with
+    /// commas means "any of these". Both are needed, so this exists alongside
+    /// <see cref="WithField"/> rather than instead of it.
+    /// </summary>
+    public static string WithFieldTerms(string? text, string field, IEnumerable<string> values)
+    {
+        var canonical = SearchFields.Resolve(field)
+            ?? throw new ArgumentException($"'{field}' is not a search field.", nameof(field));
+
+        var shortForm = SearchFields.All.First(f => f.Name == canonical).Short;
+        var rebuilt = new StringBuilder();
+
+        foreach (var token in SearchQueryParser.Tokenize(text ?? string.Empty))
+        {
+            var separator = token.IndexOf(':');
+
+            if (separator > 0 && SearchFields.Resolve(token[..separator]) == canonical)
+            {
+                continue;
+            }
+
+            Append(rebuilt, token);
+        }
+
+        foreach (var value in values.Where(v => !string.IsNullOrWhiteSpace(v)))
+        {
+            Append(rebuilt, $"{shortForm}:{Quote(value)}");
+        }
+
+        return rebuilt.ToString();
+    }
+
     private static void Append(StringBuilder builder, string token)
     {
         if (builder.Length > 0)

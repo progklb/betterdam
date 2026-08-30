@@ -37,6 +37,11 @@ public partial class MainWindow : Window
         // has focus, which is exactly where it is during playback.
         AddHandler(KeyDownEvent, OnGlobalKeyDown, RoutingStrategies.Tunnel);
 
+        // Coming back to the window is when a stale view starts to matter, and it is the moment
+        // Unity's editor uses to re-import assets changed underneath it. The check is cheap enough
+        // to hang off an event that fires whenever the window is clicked on.
+        Activated += OnWindowActivated;
+
         // Tunnelled too: while the field list is open, Down, Enter and Escape belong to it rather
         // than to the text box or to the search command.
         SearchBox.AddHandler(KeyDownEvent, OnSearchKeyDown, RoutingStrategies.Tunnel);
@@ -685,6 +690,19 @@ public partial class MainWindow : Window
         // The click that chose a field landed on the list, so the box has to be given back the
         // caret or the user is left typing into nothing.
         SearchBox.Focus();
+    }
+
+    /// <summary>
+    /// Brings the view up to date with anything edited elsewhere while the window was in the
+    /// background. Fire and forget: nothing waits on it, and the view model declines to do the work
+    /// if it has only just done it.
+    /// </summary>
+    private void OnWindowActivated(object? sender, EventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            _ = viewModel.RefreshExternalChangesAsync();
+        }
     }
 
     /// <summary>

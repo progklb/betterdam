@@ -4984,3 +4984,56 @@ means a search run immediately after saving agrees with what was just saved.
   and skip 2,034**: the JPEG and the raw that share it, and nothing else.
 - The pass after that read 0. The labels survived the round trip. The sidecar's original timestamp
   was put back afterwards, and its checksum is unchanged.
+
+## Picking up edits made elsewhere
+
+Edit a file in another application, switch back to BetterDAM, and the change is there.
+
+### How Unity does it, and why the same answer fits here
+
+Unity's editor hooks **application focus**. When the window comes forward it runs an asset refresh,
+which walks the tree comparing each file's timestamp and size against its own database and reimports
+only what differs — along with the `.meta` sidecar beside each asset, which is the same arrangement
+as our `.xmp`. Later versions added an optional directory-monitoring fast path on platforms that
+support it, falling back to the walk where they do not.
+
+The comparison engine is the one we already had. What was missing was the trigger: the moment a
+window regains focus is both cheap to detect and exactly when a stale view starts to matter.
+
+So `Activated` on the main window calls a refresh which re-reads the listed files from disk — size
+and modified time, which are precisely what an external edit makes wrong in the copy the grid is
+holding — and hands them to the indexer. Unchanged files cost one stat and nothing more.
+
+### What it deliberately does not do
+
+**It does not rebuild the file list.** Rebuilding would throw away the selection and the scroll
+position every time the window was clicked on, which would be a worse bargain than the staleness it
+cured. A file added or deleted in the folder while the app was in the background is therefore not
+noticed until the folder is reopened.
+
+**It refuses to run more than once every two seconds.** Alt-tabbing raises the event repeatedly and
+a folder of fifty thousand files does not want re-stating each time.
+
+It also stands down entirely while a scan, an index or a save is already in flight.
+
+### Checked with a real external edit
+
+With BetterDAM in the background, `exiftool` wrote `Rating=4` and `Label=Approved` into
+`DSCF7757.xmp` — the media files untouched. Switching back to the window updated **both**
+DSCF7757.JPG and DSCF7757.RAF, which share that sidecar: four stars appeared where there had been no
+rating, and the label bar went from yellow to the green of "Approved".
+
+Restoring the sidecar and switching back put both tiles back as they were. The file is byte-identical
+to the backup taken beforehand, its original timestamp is restored, and a later full pass reported
+`Indexed 0, skipped 2036`.
+
+- `dotnet test` — **762/762 passing**.
+
+### If the two-second wait is ever too long
+
+A `FileSystemWatcher` over the open folder would make changes appear without switching windows at
+all — Unity's directory-monitoring path. It is a bigger piece of work than it looks: recursive
+watchers, buffer overflows under bulk changes, and editors that save by writing a temporary file and
+renaming it, which arrives as a delete and a create rather than a change. The focus trigger covers
+the case that prompted this and has none of that to go wrong, so the watcher is worth doing only if
+watching a folder while working in another window turns out to be something you actually do.

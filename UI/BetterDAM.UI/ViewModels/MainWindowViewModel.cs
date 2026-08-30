@@ -1659,6 +1659,87 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// How long to leave between refreshes prompted by the window coming forward.
+    ///
+    /// Alt-tabbing back and forth raises the event repeatedly, and a folder of fifty thousand files
+    /// does not want re-stating each time. Long enough to absorb that, short enough that the answer
+    /// to "I edited it a moment ago" is still yes.
+    /// </summary>
+    private static readonly TimeSpan ExternalRefreshInterval = TimeSpan.FromSeconds(2);
+
+    private DateTimeOffset _lastExternalRefresh = DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// Picks up edits made in another application, when this window comes back to the front.
+    ///
+    /// This is how Unity's editor behaves and for the same reason: watching a whole tree is
+    /// expensive and unreliable across platforms, while the moment a window regains focus is both
+    /// cheap to detect and exactly when a stale view starts to matter. The comparison itself is the
+    /// one the indexer already does — size, modified time and the sidecar's timestamp — so a folder
+    /// where nothing has changed costs a stat per file and nothing else.
+    /// </summary>
+    public async Task RefreshExternalChangesAsync()
+    {
+        if (MediaItems.Count == 0 || IsScanning || IsIndexing || IsWritingAll
+            || _indexingWorkspace || _workspaceIndexPending)
+        {
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow - _lastExternalRefresh < ExternalRefreshInterval)
+        {
+            return;
+        }
+
+        _lastExternalRefresh = DateTimeOffset.UtcNow;
+
+        var listed = MediaItems.Select(item => item.File.FullPath).ToList();
+
+        // Re-read from disk rather than trusting what the grid holds: those values were taken when
+        // the folder was scanned, and are precisely what an external edit makes wrong.
+        var fresh = await Task.Run(() =>
+        {
+            var files = new List<MediaFile>(listed.Count);
+
+            foreach (var path in listed)
+            {
+                try
+                {
+                    var info = new FileInfo(path);
+
+                    if (info.Exists)
+                    {
+                        files.Add(MediaFile.FromFileInfo(info));
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // One unreadable file should not stop the rest from being brought up to date.
+                    _logger.LogDebug(ex, "Could not stat {Path} while refreshing", path);
+                }
+            }
+
+            return files;
+        }).ConfigureAwait(true);
+
+        if (fresh.Count == 0)
+        {
+            return;
+        }
+
+        // Only what actually changed is read; RunIndexAsync refreshes the grid's marks when it is
+        // done. The file list itself is left alone — rebuilding it would throw away the selection
+        // and the scroll position every time the window was clicked on.
+        await RunIndexAsync(fresh, CancellationToken.None);
+
+        // The panel is showing one file in detail, and it holds its own copy of the metadata.
+        if (SelectedItem is { } selected)
+        {
+            await Inspector.LoadAsync(selected);
+        }
+    }
+
     /// <summary>Called after the sync dialog closes: it clears whatever it committed.</summary>
     public void RefreshAfterSync()
     {

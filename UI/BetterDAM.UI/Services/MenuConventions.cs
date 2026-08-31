@@ -33,6 +33,12 @@ public static class MenuConventions
     /// </summary>
     public static bool ShowSettingsInFileMenu { get; } = !IsMac;
 
+    /// <summary>
+    /// The platform's accelerator modifier, for shortcuts handled in code rather than declared as a
+    /// KeyGesture. Command on macOS, Control everywhere else.
+    /// </summary>
+    public static KeyModifiers Accelerator { get; } = IsMac ? KeyModifiers.Meta : KeyModifiers.Control;
+
     public static KeyGesture OpenFolder { get; } = KeyGesture.Parse(IsMac ? "Cmd+O" : "Ctrl+O");
 
     /// <summary>Command-comma is the standard macOS shortcut for preferences.</summary>

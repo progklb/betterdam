@@ -5133,3 +5133,41 @@ always knows what it is, so the guard moved to `ContextRequested` on the border.
 
 Found by watching it rather than by reasoning: the first build produced no menu at all, and a
 temporary log line showed `dc=<null>` on the ContextMenu, which is what pointed at the DataContext.
+
+### The XMP tab: collapsible groups and a filter
+
+The raw tag list was a flat dump. A RAF arrives with **188 tags across eight ExifTool groups**, and
+68 of those are MakerNotes nobody went looking for, so the handful that matter were buried.
+
+**Grouped and shut by default.** One collapsible section per ExifTool group, each headed with its
+name and a count — `MakerNotes 68`. The whole tab now fits on one screen, and the counts say where
+to look before anything is opened. `RawTags` stays as it was underneath; the grouping is a view over
+it, so the loupe sizing that reads it is untouched.
+
+**Sections remember whether they are open.** Kept by group name on the inspector, not on the tag
+list, so opening EXIF and clicking through a folder leaves EXIF open. The interest is in the
+section, not in one file's copy of it.
+
+**A filter box, not a Find shortcut.** Filtering matches each whitespace-separated term against
+either the qualified name or the value, and every term must match: `exif iso` finds the one tag
+rather than sixty, and `iso 200` works because the name carries one term and the value the other.
+A filter opens whatever it matched — a hit inside a shut section looks like no hit at all — and
+those sections shut again when it is cleared, since it was the filter that opened them and not the
+user. Headers switch to `1 of 62` while filtering, because a section reading `1` looks like a small
+section rather than a filtered one.
+
+**Where Cmd+F went.** It was unbound, so there was no convention to break, and it now focuses the
+**library search** from anywhere in the window — including the XMP tab. One meaning everywhere: a
+Find key that lands somewhere different depending on which inspector tab happens to be open is
+worse than one that always lands in the same place. The tag filter is a visible box instead, which
+needs no discovering.
+
+- `dotnet test` — **787/787 passing** (18 new).
+
+Checked in the app on a real RAF: eight sections with counts, `iso` narrowing to `1 of 188 tags`
+with EXIF opened to the single hit, and Cmd+F from inside the tag filter moving focus to the search
+bar with typing landing there.
+
+A note on the harness rather than the app: a synthetic Cmd+F left the Command modifier stuck down,
+after which no typing registered anywhere — briefly indistinguishable from a focus bug. A helper
+that releases every modifier explicitly now runs after any synthetic chord.

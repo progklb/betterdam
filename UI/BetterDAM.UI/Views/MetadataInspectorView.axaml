@@ -547,16 +547,63 @@
             <TextBlock DockPanel.Dock="Top" FontSize="11" Opacity="0.5" TextWrapping="Wrap"
                        Margin="0,0,0,6"
                        Text="Every tag reported by ExifTool. Advanced view — read-only in this phase." />
-            <ListBox ItemsSource="{Binding RawTags}">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="core:RawMetadataTag">
-                  <StackPanel Margin="0,2">
-                    <TextBlock Text="{Binding QualifiedName}" FontSize="11" Opacity="0.6" />
-                    <TextBlock Text="{Binding Value}" FontSize="12" TextWrapping="Wrap" />
-                  </StackPanel>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+
+            <!--
+              Filter box rather than a Cmd+F overlay: it is visible, so it needs no discovering,
+              and it leaves Cmd+F meaning the one thing it means everywhere else in the window.
+            -->
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+              <TextBox x:Name="RawTagFilterBox" FontSize="12" Padding="6,3"
+                       Text="{Binding RawTagFilter}"
+                       Watermark="Filter tags — name or value" />
+              <Button Grid.Column="1" Content="✕" FontSize="11" Margin="4,0,0,0"
+                      Background="Transparent" BorderThickness="0" Padding="6,3"
+                      IsVisible="{Binding IsFilteringRawTags}"
+                      Command="{Binding ClearRawTagFilterCommand}"
+                      ToolTip.Tip="Clear the filter" />
+            </Grid>
+
+            <TextBlock DockPanel.Dock="Top" FontSize="11" Opacity="0.5" Margin="0,0,0,6"
+                       Text="{Binding RawTagFilterSummary}"
+                       IsVisible="{Binding IsFilteringRawTags}" />
+
+            <TextBlock DockPanel.Dock="Top" FontSize="12" Opacity="0.5" Margin="0,6,0,0"
+                       Text="No tag matches that."
+                       IsVisible="{Binding HasNoRawTagMatches}" />
+
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding RawTagGroups}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RawMetadataGroupViewModel">
+                    <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch"
+                              Margin="0,0,0,3">
+                      <Expander.Header>
+                        <!-- The count sits hard right, so the eye runs down one column of sizes. -->
+                        <DockPanel>
+                          <TextBlock Text="{Binding Summary}" DockPanel.Dock="Right"
+                                     FontSize="11" Opacity="0.45" VerticalAlignment="Center"
+                                     Margin="8,0,0,0" />
+                          <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
+                        </DockPanel>
+                      </Expander.Header>
+                      <ItemsControl ItemsSource="{Binding Tags}" Margin="0,2,0,0">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="core:RawMetadataTag">
+                            <!-- Name alone, not Group:Name: the section header already said the group. -->
+                            <StackPanel Margin="0,2">
+                              <TextBlock Text="{Binding Name}" FontSize="11" Opacity="0.6" />
+                              <TextBlock Text="{Binding Value}" FontSize="12" TextWrapping="Wrap" />
+                            </StackPanel>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </Expander>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
           </DockPanel>
         </TabItem>
 

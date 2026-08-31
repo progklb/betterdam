@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
 using BetterDAM.Core.Services;
@@ -1043,5 +1044,307 @@ public class KeywordSearchTests
             Changed?.Invoke(this, settings);
             return Task.CompletedTask;
         }
+    }
+}
+
+/// <summary>
+/// The raw tag list, grouped and filtered.
+///
+/// A RAF arrives with around 200 tags across eight ExifTool groups, two thirds of them MakerNotes
+/// nobody went looking for. Collapsing by group and filtering is what makes the tab usable.
+/// </summary>
+public class RawMetadataFilterTests
+{
+    private static RawMetadataTag Tag(string group, string name, string value = "x")
+        => new(group, name, value);
+
+    [Fact]
+    public void An_empty_filter_keeps_everything()
+    {
+        Assert.True(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), null));
+        Assert.True(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), ""));
+        Assert.True(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), "   "));
+    }
+
+    [Fact]
+    public void The_name_and_the_value_are_both_searched()
+    {
+        Assert.True(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), "iso"));
+        Assert.True(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), "200"));
+        Assert.False(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), "shutter"));
+    }
+
+    [Fact]
+    public void The_group_is_searched_too_so_a_group_name_narrows_to_it()
+    {
+        Assert.True(RawMetadataFilter.Matches(Tag("MakerNotes", "Sharpness"), "makernotes"));
+        Assert.False(RawMetadataFilter.Matches(Tag("EXIF", "Sharpness"), "makernotes"));
+    }
+
+    [Fact]
+    public void Matching_ignores_case()
+        => Assert.True(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), "Iso"));
+
+    /// <summary>Terms narrow rather than widen — otherwise a second word is worse than useless.</summary>
+    [Fact]
+    public void Every_term_must_match()
+    {
+        Assert.True(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), "exif iso"));
+        Assert.False(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), "exif shutter"));
+    }
+
+    /// <summary>
+    /// Each term may match either field, which is what makes "iso 200" work: the name carries one
+    /// and the value the other, and neither field holds both.
+    /// </summary>
+    [Fact]
+    public void A_term_may_match_the_name_while_another_matches_the_value()
+        => Assert.True(RawMetadataFilter.Matches(Tag("EXIF", "ISO", "200"), "iso 200"));
+}
+
+public class RawMetadataGroupingTests
+{
+    private sealed class Provider(MediaMetadata result) : IMetadataProvider
+    {
+        public bool IsAvailable => true;
+
+        public Task<MediaMetadata?> ReadAsync(MediaFile file, CancellationToken cancellationToken = default)
+            => Task.FromResult<MediaMetadata?>(result);
+
+        public Task<IReadOnlyDictionary<string, MediaMetadata>> ReadManyAsync(
+            IReadOnlyList<MediaFile> files,
+            IProgress<int>? progress = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<string, MediaMetadata>>(
+                files.ToDictionary(f => f.FullPath, _ => result));
+    }
+
+    private sealed class Thumbnails : IThumbnailService
+    {
+        public Task<byte[]?> GetThumbnailAsync(
+            MediaFile file,
+            int maxEdgePixels,
+            ThumbnailPriority priority = ThumbnailPriority.Background,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<byte[]?>(null);
+    }
+
+    private static readonly ImmutableArray<RawMetadataTag> Tags =
+    [
+        new("EXIF", "ISO", "200"),
+        new("EXIF", "Make", "FUJIFILM"),
+        new("File", "FileSize", "31 MB"),
+        new("MakerNotes", "Sharpness", "Normal"),
+        new("MakerNotes", "ShutterType", "Mechanical")
+    ];
+
+    private static MediaItemViewModel Item() => new(
+        new MediaFile
+        {
+            FullPath = "/library/DSCF9148.RAF",
+            FileName = "DSCF9148.RAF",
+            MediaType = MediaType.Image,
+            SizeBytes = 1,
+            ModifiedUtc = DateTimeOffset.UnixEpoch,
+            CreatedUtc = DateTimeOffset.UnixEpoch
+        },
+        new Thumbnails());
+
+    private static async Task<MetadataInspectorViewModel> LoadedAsync()
+    {
+        var inspector = new MetadataInspectorViewModel(
+            new Provider(new MediaMetadata { RawTags = Tags }),
+            new StubWriter(),
+            new PendingChangeStore(),
+            new StubLibrary(),
+            new StubSettings(),
+            new KeywordClipboard(),
+            NullLogger<MetadataInspectorViewModel>.Instance);
+
+        await inspector.LoadAsync(Item());
+        return inspector;
+    }
+
+    private sealed class StubWriter : IMetadataWriter
+    {
+        public bool IsAvailable => true;
+
+        public Task<SidecarWriteResult> WriteSidecarAsync(
+            MediaFile file, EditableMetadata metadata, SidecarWriteOptions options,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new SidecarWriteResult(file.FullPath, true, file.FullPath + ".xmp"));
+
+        public Task<EmbedWriteResult> WriteEmbeddedAsync(
+            MediaFile file, EditableMetadata metadata, EmbedWriteOptions options,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new EmbedWriteResult(file.FullPath, true));
+    }
+
+    private sealed class StubLibrary : IKeywordLibraryService
+    {
+        public KeywordLibrary Current { get; private set; } = KeywordLibrary.Empty;
+
+        public event EventHandler<KeywordLibrary>? Changed;
+
+        public Task SaveAsync(KeywordLibrary library, CancellationToken cancellationToken = default)
+        {
+            Current = library;
+            Changed?.Invoke(this, library);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubSettings : ISettingsService
+    {
+        public AppSettings Current { get; private set; } = AppSettings.Default;
+
+        public event EventHandler<AppSettings>? Changed;
+
+        public Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Current);
+
+        public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
+        {
+            Current = settings;
+            Changed?.Invoke(this, settings);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task Tags_are_gathered_into_one_section_per_group()
+    {
+        var inspector = await LoadedAsync();
+
+        Assert.Equal(["EXIF", "File", "MakerNotes"], inspector.RawTagGroups.Select(g => g.Name));
+        Assert.Equal(["ISO", "Make"], inspector.RawTagGroups[0].Tags.Select(t => t.Name));
+    }
+
+    /// <summary>Shut by default — collapsing the noise is the whole point of grouping it.</summary>
+    [Fact]
+    public async Task Sections_start_collapsed()
+    {
+        var inspector = await LoadedAsync();
+
+        Assert.All(inspector.RawTagGroups, group => Assert.False(group.IsExpanded));
+    }
+
+    [Fact]
+    public async Task The_header_counts_the_tags_in_the_section()
+    {
+        var inspector = await LoadedAsync();
+
+        Assert.Equal("2", inspector.RawTagGroups[0].Summary);
+        Assert.Equal("1", inspector.RawTagGroups[1].Summary);
+    }
+
+    [Fact]
+    public async Task Filtering_drops_sections_with_no_match()
+    {
+        var inspector = await LoadedAsync();
+
+        inspector.RawTagFilter = "shutter";
+
+        Assert.Equal(["MakerNotes"], inspector.RawTagGroups.Select(g => g.Name));
+        Assert.Equal(["ShutterType"], inspector.RawTagGroups[0].Tags.Select(t => t.Name));
+    }
+
+    /// <summary>A hit inside a shut section looks like no hit at all.</summary>
+    [Fact]
+    public async Task Filtering_opens_the_sections_that_matched()
+    {
+        var inspector = await LoadedAsync();
+
+        inspector.RawTagFilter = "shutter";
+
+        Assert.All(inspector.RawTagGroups, group => Assert.True(group.IsExpanded));
+    }
+
+    [Fact]
+    public async Task A_partly_filtered_section_says_so_in_its_header()
+    {
+        var inspector = await LoadedAsync();
+
+        inspector.RawTagFilter = "shutter";
+
+        Assert.Equal("1 of 2", inspector.RawTagGroups[0].Summary);
+    }
+
+    [Fact]
+    public async Task The_summary_counts_the_matches_against_the_whole()
+    {
+        var inspector = await LoadedAsync();
+
+        Assert.Null(inspector.RawTagFilterSummary);
+
+        inspector.RawTagFilter = "shutter";
+
+        Assert.True(inspector.IsFilteringRawTags);
+        Assert.Equal("1 of 5 tags", inspector.RawTagFilterSummary);
+    }
+
+    [Fact]
+    public async Task A_filter_that_matches_nothing_says_so()
+    {
+        var inspector = await LoadedAsync();
+
+        inspector.RawTagFilter = "nothinglikethis";
+
+        Assert.Empty(inspector.RawTagGroups);
+        Assert.True(inspector.HasNoRawTagMatches);
+    }
+
+    [Fact]
+    public async Task Clearing_the_filter_restores_every_section()
+    {
+        var inspector = await LoadedAsync();
+
+        inspector.RawTagFilter = "shutter";
+        inspector.ClearRawTagFilterCommand.Execute(null);
+
+        Assert.Equal("", inspector.RawTagFilter);
+        Assert.Equal(3, inspector.RawTagGroups.Count);
+        Assert.False(inspector.HasNoRawTagMatches);
+    }
+
+    /// <summary>
+    /// Opening EXIF and clicking through a folder should leave EXIF open. The interest is in the
+    /// section, not in one file's copy of it.
+    /// </summary>
+    [Fact]
+    public async Task An_opened_section_stays_open_when_another_file_is_selected()
+    {
+        var inspector = await LoadedAsync();
+
+        inspector.RawTagGroups.Single(g => g.Name == "EXIF").IsExpanded = true;
+        await inspector.LoadAsync(Item());
+
+        Assert.True(inspector.RawTagGroups.Single(g => g.Name == "EXIF").IsExpanded);
+        Assert.False(inspector.RawTagGroups.Single(g => g.Name == "File").IsExpanded);
+    }
+
+    /// <summary>
+    /// The filter opened these, not the user, so clearing it must not leave everything open — that
+    /// would quietly undo the collapsing the tab exists to provide.
+    /// </summary>
+    [Fact]
+    public async Task Sections_the_filter_opened_shut_again_when_it_is_cleared()
+    {
+        var inspector = await LoadedAsync();
+
+        inspector.RawTagFilter = "shutter";
+        inspector.RawTagFilter = "";
+
+        Assert.All(inspector.RawTagGroups, group => Assert.False(group.IsExpanded));
+    }
+
+    [Fact]
+    public async Task Clearing_the_selection_empties_the_sections()
+    {
+        var inspector = await LoadedAsync();
+
+        await inspector.LoadAsync(null);
+
+        Assert.Empty(inspector.RawTagGroups);
     }
 }

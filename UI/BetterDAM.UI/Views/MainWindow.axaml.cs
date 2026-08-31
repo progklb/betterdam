@@ -232,6 +232,18 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Cmd/Ctrl+F means the library search, from anywhere in the window and whatever the
+        // inspector is showing. The XMP tab's tag filter is a visible box rather than a second
+        // owner of this shortcut: a Find key that lands somewhere different depending on which tab
+        // happens to be open is worse than one that always lands in the same place.
+        if (e.Key == Key.F && e.KeyModifiers == MenuConventions.Accelerator)
+        {
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            e.Handled = true;
+            return;
+        }
+
         // Ignored while typing: "f" belongs to the search box when it has focus.
         if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.None && FocusManager?.GetFocusedElement() is not TextBox)
         {

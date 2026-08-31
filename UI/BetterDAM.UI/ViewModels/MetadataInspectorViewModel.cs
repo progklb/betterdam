@@ -342,6 +342,135 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
 
     public ObservableCollection<RawMetadataTag> RawTags { get; } = [];
 
+    // ---- Raw tag list: grouped, filterable ----------------------------------------------------
+
+    /// <summary>
+    /// <see cref="RawTags"/> arranged into collapsible sections. A RAF arrives with around 200 tags
+    /// across eight groups, most of them MakerNotes nobody came looking for, so the flat list buried
+    /// the few that matter.
+    /// </summary>
+    public ObservableCollection<RawMetadataGroupViewModel> RawTagGroups { get; } = [];
+
+    /// <summary>
+    /// Which sections the user opened, by name, remembered across files. Clicking through a folder
+    /// with EXIF open should leave EXIF open rather than re-collapsing at every selection — the
+    /// interest is in the section, not in that one file's copy of it.
+    /// </summary>
+    private readonly HashSet<string> _expandedGroups = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Set while sections are being rebuilt, so a rebuild is not mistaken for a click.</summary>
+    private bool _syncingGroups;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFilteringRawTags))]
+    private string _rawTagFilter = string.Empty;
+
+    partial void OnRawTagFilterChanged(string value) => RebuildRawTagGroups();
+
+    public bool IsFilteringRawTags => !string.IsNullOrWhiteSpace(RawTagFilter);
+
+    /// <summary>The tally under the filter box, e.g. "7 of 196 tags". Null when nothing is filtered.</summary>
+    [ObservableProperty]
+    private string? _rawTagFilterSummary;
+
+    /// <summary>Drives the "nothing matched" line, so an empty list is never left unexplained.</summary>
+    [ObservableProperty]
+    private bool _hasNoRawTagMatches;
+
+    [RelayCommand]
+    private void ClearRawTagFilter() => RawTagFilter = string.Empty;
+
+    /// <summary>
+    /// Rebuilds the sections from <see cref="RawTags"/> and the current filter.
+    ///
+    /// Section view models are reused by name rather than recreated, which is what carries the open
+    /// or shut state across a keystroke or a change of file.
+    /// </summary>
+    private void RebuildRawTagGroups()
+    {
+        var filtering = IsFilteringRawTags;
+        var matched = 0;
+
+        // RawTags arrives sorted by group then name, so grouping preserves that order.
+        var wanted = new List<(string Name, List<RawMetadataTag> Tags, int Total)>();
+        foreach (var group in RawTags.GroupBy(tag => tag.Group, StringComparer.OrdinalIgnoreCase))
+        {
+            var tags = group.Where(tag => RawMetadataFilter.Matches(tag, RawTagFilter)).ToList();
+            if (tags.Count == 0)
+            {
+                continue;
+            }
+
+            matched += tags.Count;
+            wanted.Add((group.Key, tags, group.Count()));
+        }
+
+        var existing = RawTagGroups.ToDictionary(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+        _syncingGroups = true;
+        try
+        {
+            RawTagGroups.Clear();
+            foreach (var (name, tags, total) in wanted)
+            {
+                if (!existing.TryGetValue(name, out var group))
+                {
+                    group = new RawMetadataGroupViewModel(name);
+                    group.PropertyChanged += OnRawTagGroupChanged;
+                }
+
+                group.Tags.Clear();
+                foreach (var tag in tags)
+                {
+                    group.Tags.Add(tag);
+                }
+
+                group.Summary = tags.Count == total
+                    ? total.ToString(CultureInfo.InvariantCulture)
+                    : $"{tags.Count} of {total}";
+
+                // A filter opens whatever it matched: hits hidden inside shut sections would make
+                // the search look as though it had found nothing.
+                group.IsExpanded = filtering || _expandedGroups.Contains(name);
+
+                RawTagGroups.Add(group);
+            }
+        }
+        finally
+        {
+            _syncingGroups = false;
+        }
+
+        HasNoRawTagMatches = filtering && matched == 0;
+        RawTagFilterSummary = filtering
+            ? $"{matched} of {RawTags.Count} tags"
+            : null;
+    }
+
+    /// <summary>
+    /// Remembers a section the user opened or shut. Ignored while filtering, where the open state
+    /// was chosen by the filter rather than by the user and should not outlive it.
+    /// </summary>
+    private void OnRawTagGroupChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_syncingGroups
+            || IsFilteringRawTags
+            || e.PropertyName != nameof(RawMetadataGroupViewModel.IsExpanded)
+            || sender is not RawMetadataGroupViewModel group)
+        {
+            return;
+        }
+
+        if (group.IsExpanded)
+        {
+            _expandedGroups.Add(group.Name);
+        }
+        else
+        {
+            _expandedGroups.Remove(group.Name);
+        }
+    }
+
     public ObservableCollection<MetadataConflict> Conflicts { get; } = [];
 
     public bool IsMetadataEngineAvailable => _metadata.IsAvailable;
@@ -621,6 +750,8 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
             {
                 RawTags.Add(tag);
             }
+
+            RebuildRawTagGroups();
 
             Conflicts.Clear();
             foreach (var conflict in MetadataConflictDetector.Detect(metadata))
@@ -932,6 +1063,7 @@ public sealed partial class MetadataInspectorViewModel : ObservableObject
         WriteStatus = null;
         WriteFailed = false;
         RawTags.Clear();
+        RebuildRawTagGroups();
         Conflicts.Clear();
     }
 

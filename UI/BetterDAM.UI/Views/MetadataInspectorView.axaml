@@ -10,6 +10,36 @@
              x:DataType="vm:MetadataInspectorViewModel">
 
   <UserControl.Styles>
+    <!--
+      Group headers in the XMP tab. The theme sizes an Expander header to be clicked once in a
+      settings page; here there are eight of them stacked, and at that height the list of sections
+      takes more room than the tags it is meant to be condensing.
+
+      Targeted by type rather than by template part name: the header is the only ToggleButton in
+      the template, and a name would be one more thing to get wrong across a theme upgrade. Scoped
+      to .group so the keyword library Expander in this same view is left alone.
+    -->
+    <!--
+      Padding zero because the theme reserves the content area's padding even while the section is
+      shut, which put a band of empty space under every collapsed header — most of the height of the
+      list was gaps between sections rather than sections. The tags supply their own inset instead,
+      so the expanded state is unchanged.
+    -->
+    <Style Selector="Expander.group">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <!--
+      Height, not MinHeight: the theme fixes the header's height somewhere a setter on the button
+      does not reach, and MinHeight on it, on its inner Border and on its ContentPresenter all left
+      it at 33pt. An explicit height overrides it outright, and is honest here — every header is one
+      line of one size, so there is nothing for it to need to grow for.
+    -->
+    <Style Selector="Expander.group /template/ ToggleButton">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Height" Value="26" />
+      <Setter Property="Padding" Value="10,0" />
+    </Style>
     <Style Selector="TextBlock.label">
       <Setter Property="FontSize" Value="11" />
       <Setter Property="Opacity" Value="0.55" />
@@ -573,10 +603,11 @@
               <ItemsControl ItemsSource="{Binding RawTagGroups}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:RawMetadataGroupViewModel">
-                    <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                    <Expander Classes="group"
+                              IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
                               HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Stretch"
-                              Margin="0,0,0,3">
+                              Margin="0,0,0,2">
                       <Expander.Header>
                         <!-- The count sits hard right, so the eye runs down one column of sizes. -->
                         <DockPanel>
@@ -586,7 +617,8 @@
                           <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
                         </DockPanel>
                       </Expander.Header>
-                      <ItemsControl ItemsSource="{Binding Tags}" Margin="0,2,0,0">
+                      <!-- The inset the Expander's own Padding used to give, now that it is zero. -->
+                      <ItemsControl ItemsSource="{Binding Tags}" Margin="10,4,10,8">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="core:RawMetadataTag">
                             <!-- Name alone, not Group:Name: the section header already said the group. -->

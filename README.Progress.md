@@ -5217,3 +5217,32 @@ lists tags is evident from the tags, and "in this phase" is a note about the pro
 about the file. The group headers now start straight under the filter box.
 
 - `dotnet test` — **787/787 passing**.
+
+### XMP group headers: finding where the height actually was
+
+The sections were chunky, and the obvious setters did nothing. Worth recording what the height was
+made of, because none of it was where it looked.
+
+Measured off the screen: header **33pt**, gap between sections **17pt**, pitch 50pt. So a third of
+the list was the space *between* sections rather than the sections.
+
+**The gap was the Expander's content padding, reserved while collapsed.** Not a margin, and not
+spacing in the ItemsControl. Found by painting the parts different colours and seeing which one the
+gap belonged to: the Expander's own `Background` never covered it, but a border wrapped around the
+item did. `Padding="0"` on the Expander removed it outright. The tags now carry that inset
+themselves, so the expanded state is unchanged.
+
+**The header height needed `Height`, not `MinHeight`.** `MinHeight="0"` on the toggle button, on its
+inner Border and on its ContentPresenter — via nested `/template/` selectors — all left it at 33pt;
+the theme fixes it somewhere a setter does not reach. An explicit `Height="26"` overrides it, and is
+honest here: every header is one line at one size, so there is nothing for it to grow for. A red
+background on the toggle button proved the selector matched all along, which is what ruled out the
+selector and pointed at the property.
+
+Eight sections now sit in the space that held four.
+
+- `dotnet test` — **787/787 passing**.
+
+A note on method: `pkill -f BetterDAM.dll` between probe builds would have taken any instance of the
+user's with it. Killing only the process holding this run's own log file is the safer form, and is
+what found a stale probe build still running at the end.

@@ -511,6 +511,40 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>The folder a tree context-menu click came from, or null for a placeholder row.</summary>
+    private static FolderNodeViewModel? FolderFor(object? sender)
+        => (sender as Control)?.DataContext as FolderNodeViewModel is { IsPlaceholder: false } folder
+            ? folder
+            : null;
+
+    /// <summary>
+    /// Suppresses the menu on the placeholder child that gives an unexpanded folder its arrow. It
+    /// stands for contents nobody has read yet and has no path, so there is nothing to open.
+    ///
+    /// Handled on the row rather than in the menu's own Opening event, which is where this started:
+    /// a ContextMenu declared inside a template has no DataContext yet when Opening fires, so the
+    /// guard saw null for every folder and cancelled the lot. The row always knows what it is.
+    /// </summary>
+    private void OnFolderContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (FolderFor(sender) is null)
+        {
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Opens the right-clicked folder, which need not be the selected one — the menu carries the
+    /// row's DataContext, so it works on a folder that was never clicked into.
+    /// </summary>
+    private void OnOpenFolderInFileManager(object? sender, RoutedEventArgs e)
+    {
+        if (FolderFor(sender) is { } folder)
+        {
+            RevealInFileManager.OpenFolder(folder.FullPath);
+        }
+    }
+
     private void OnFullscreen(object? sender, RoutedEventArgs e) => OpenFullscreen();
 
     private void OnTransportFullscreen(object? sender, EventArgs e) => OpenFullscreen();

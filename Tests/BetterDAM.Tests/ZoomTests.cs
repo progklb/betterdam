@@ -320,3 +320,55 @@ public class RevealInFileManagerTests
     public void The_menu_names_the_platform_s_own_file_manager()
         => Assert.Contains(RevealInFileManager.MenuHeader, (string[])["Reveal in Finder", "Show in Explorer", "Show in File Manager"]);
 }
+
+public class OpenFolderInFileManagerTests
+{
+    private const string Folder = "/library/namibia/etosha";
+
+    /// <summary>
+    /// The folder itself, with no selection flag. Opening it shows what is inside, where the reveal
+    /// commands would show it picked out among its neighbours one level up.
+    ///
+    /// Not a [Theory]: PlatformKind is internal, so it cannot appear in a public test signature.
+    /// </summary>
+    private static void AssertOpens(RevealInFileManager.PlatformKind platform, string expected)
+    {
+        var (command, arguments) = RevealInFileManager.BuildOpenCommand(Folder, platform);
+
+        Assert.Equal(expected, command);
+        Assert.Equal([Folder], arguments);
+    }
+
+    [Fact]
+    public void macOS_opens_the_folder_itself()
+        => AssertOpens(RevealInFileManager.PlatformKind.MacOS, "open");
+
+    [Fact]
+    public void Windows_opens_the_folder_itself()
+        => AssertOpens(RevealInFileManager.PlatformKind.Windows, "explorer.exe");
+
+    [Fact]
+    public void Elsewhere_the_folder_itself_is_opened()
+        => AssertOpens(RevealInFileManager.PlatformKind.Other, "xdg-open");
+
+    [Fact]
+    public void Opening_a_folder_is_not_the_same_command_as_revealing_it()
+    {
+        foreach (var platform in Enum.GetValues<RevealInFileManager.PlatformKind>())
+        {
+            Assert.NotEqual(
+                RevealInFileManager.BuildCommand(Folder, platform),
+                RevealInFileManager.BuildOpenCommand(Folder, platform));
+        }
+    }
+
+    [Fact]
+    public void The_menu_says_open_rather_than_reveal()
+    {
+        Assert.Contains(
+            RevealInFileManager.OpenFolderMenuHeader,
+            (string[])["Open in Finder", "Open in Explorer", "Open in File Manager"]);
+
+        Assert.NotEqual(RevealInFileManager.MenuHeader, RevealInFileManager.OpenFolderMenuHeader);
+    }
+}

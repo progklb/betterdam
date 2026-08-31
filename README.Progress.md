@@ -5105,3 +5105,31 @@ patch of empty screen would be worse than one that goes.
 
 Checked in the app: parked on the strip it was still at full strength after **12 seconds**, against
 a four-second timer; moved away, it faded within seven.
+
+### Right-clicking a folder opens it in the file manager
+
+The folder tree gets a context menu whose one entry hands the folder to Finder, Explorer or
+whatever the platform runs, reusing the service the grid tiles already use to reveal a file.
+
+**Open, not reveal.** The existing `Reveal` selects a file *among its siblings* — right for a tile,
+where you want to find that one file on disk. A folder wants the opposite: to be shown from the
+inside. So `OpenFolder` passes the path with the selection flags dropped (`open`, `explorer.exe`,
+`xdg-open`), and the menu says "Open in Finder" rather than "Reveal in Finder" because that is what
+it does. The two headers differ deliberately; a test asserts they stay different.
+
+**The whole row is the target, not the name.** The tree's item template is left-aligned on purpose —
+the hand-drawn ring hugs the text, and a panel that filled the row drew one wide thin oval across
+it whatever the folder was called. A transparent border around that panel takes the full width, so
+right-clicking the empty space beside a short folder name still reaches the folder.
+
+**Where the placeholder guard had to go.** Each unexpanded folder carries a placeholder child that
+gives it its arrow; it has no path, so its menu would do nothing and should not appear. The obvious
+place to suppress it is the menu's own `Opening` event — and that quietly broke every folder. A
+`ContextMenu` declared inside a template **has no DataContext when `Opening` fires**: the guard saw
+null for the real folders too and cancelled the lot, so no menu appeared anywhere. The row itself
+always knows what it is, so the guard moved to `ContextRequested` on the border.
+
+- `dotnet test` — **769/769 passing** (5 new).
+
+Found by watching it rather than by reasoning: the first build produced no menu at all, and a
+temporary log line showed `dc=<null>` on the ContextMenu, which is what pointed at the DataContext.

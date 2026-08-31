@@ -653,11 +653,24 @@
                 the panel, so a panel that filled it drew one wide thin oval across the whole row
                 whatever the folder was called. Hugging the name is what makes the ring fit it.
               -->
-              <Panel HorizontalAlignment="Left">
-                <controls:RoughMark IsSelected="{Binding $parent[TreeViewItem].IsSelected}"
-                                    IsHovered="{Binding $parent[TreeViewItem].IsPointerOver}" />
-                <TextBlock Text="{Binding Name}" Margin="10,3" />
-              </Panel>
+              <!--
+                A transparent border across the full row so right-clicking anywhere on it reaches
+                the folder, not only the few characters of its name. The name panel inside keeps
+                hugging the text, which is what the ring needs.
+              -->
+              <Border Background="Transparent" ContextRequested="OnFolderContextRequested">
+                <Border.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="{x:Static svc:RevealInFileManager.OpenFolderMenuHeader}"
+                              Click="OnOpenFolderInFileManager" />
+                  </ContextMenu>
+                </Border.ContextMenu>
+                <Panel HorizontalAlignment="Left">
+                  <controls:RoughMark IsSelected="{Binding $parent[TreeViewItem].IsSelected}"
+                                      IsHovered="{Binding $parent[TreeViewItem].IsPointerOver}" />
+                  <TextBlock Text="{Binding Name}" Margin="10,3" />
+                </Panel>
+              </Border>
             </TreeDataTemplate>
           </TreeView.ItemTemplate>
         </TreeView>

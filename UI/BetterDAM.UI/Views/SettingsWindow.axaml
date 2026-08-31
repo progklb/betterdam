@@ -425,7 +425,7 @@
                            Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Center"
                            IsVisible="{Binding IsEmpty}" />
 
-                <TreeView ItemsSource="{Binding Roots}"
+                <TreeView x:Name="KeywordTree" ItemsSource="{Binding Roots}"
                           SelectedItem="{Binding Selected}"
                           IsVisible="{Binding !IsEmpty}"
                           Background="Transparent" BorderThickness="0">
@@ -460,7 +460,8 @@
                                      in a popup root, which such a binding cannot walk out of. -->
                                 <ListBox MaxHeight="260" FontSize="12"
                                          ItemsSource="{Binding MoveTargets}"
-                                         SelectionChanged="OnMoveTargetChosen">
+                                         SelectionChanged="OnMoveTargetChosen"
+                                         PointerReleased="OnMoveTargetReleased">
                                   <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="vm:KeywordMoveTarget">
                                       <TextBlock Text="{Binding Label}" FontFamily="monospace" FontSize="12" />
@@ -483,7 +484,7 @@
                         <!-- Edited in place: renaming is the commonest change by far. Re-sorted when
                              the edit finishes, not while typing, or the row would jump under the
                              cursor after every keystroke. -->
-                        <TextBox Text="{Binding Name}" FontSize="12" Padding="6,2"
+                        <TextBox Text="{Binding Name}" Classes="compact" FontSize="12"
                                  Background="Transparent" BorderThickness="0"
                                  LostFocus="OnKeywordNameCommitted" />
                       </DockPanel>
@@ -513,7 +514,7 @@
                         <Border DockPanel.Dock="Left" Width="16" Height="16" CornerRadius="3"
                                 Margin="0,0,8,0" VerticalAlignment="Center"
                                 Background="{Binding Colour}" />
-                        <ComboBox DockPanel.Dock="Right" Width="86" FontSize="11"
+                        <ComboBox DockPanel.Dock="Right" Classes="compact" Width="86" FontSize="11"
                                   ItemsSource="{x:Static vm:LabelRowViewModel.Swatches}"
                                   SelectedItem="{Binding Colour}"
                                   ToolTip.Tip="How this label is drawn in BetterDAM. Not stored in the file.">
@@ -523,7 +524,7 @@
                             </DataTemplate>
                           </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <TextBox Text="{Binding Name}" FontSize="12" Margin="0,0,8,0" />
+                        <TextBox Text="{Binding Name}" Classes="compact" FontSize="12" Margin="0,0,8,0" />
                       </DockPanel>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>

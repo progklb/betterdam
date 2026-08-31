@@ -5246,3 +5246,58 @@ Eight sections now sit in the space that held four.
 A note on method: `pkill -f BetterDAM.dll` between probe builds would have taken any instance of the
 user's with it. Killing only the process holding this run's own log file is the safer form, and is
 what found a stale probe build still running at the end.
+
+### One row height everywhere
+
+The Settings keyword and label editors had the same fault as the filter boxes: Fluent sizes a
+`TextBox` for a form, so a row in a list stood taller than it needed to with the text high in the
+space left over.
+
+Rather than a third copy of the numbers, the shared style was **generalised**: `TextBox.filter`
+became `TextBox.compact`, since the name should describe what it does to the control and not where
+the first two callers happened to sit. It now covers four places — the keyword picker's and XMP
+tab's filter boxes, and the keyword and label name editors in Settings.
+
+A matching `ComboBox.compact` came with it. The label rows pair a name box with a colour dropdown,
+and shrinking only the box would have left the dropdown setting the row height on its own — the row
+would not have moved, and the two controls would have disagreed.
+
+`Height` as well as `MinHeight` in both, for the reason the XMP headers turned up: MinHeight alone
+does not always win against the theme.
+
+- `dotnet test` — **787/787 passing**.
+
+Checked in Settings on both tabs: label names and their colour dropdowns on one line at one height,
+and keyword rows level with their +, move and remove buttons — eight rows visible where four were,
+including the focused row, which was the one the report showed.
+
+### Scrolling after moving a keyword
+
+Filing a keyword under a new parent left the Settings window unable to scroll until it was clicked
+again. Three wrong diagnoses before the right one, all of them ruled out by measurement rather than
+by argument, so they are worth recording.
+
+**It was not focus, and not activation.** A timer logging `IsActive` and the focused element after a
+move showed `IsActive=True` throughout, with focus null. Calling `Activate()` and focusing the tree
+changed nothing.
+
+**The old close was dead code.** `FindAncestorOfType<Popup>()` walks the *visual* tree, and the chain
+from inside a popup ends at its `PopupRoot` without ever passing the `Popup`, so it always returned
+null and the close it guarded had never once run. The **logical** chain does carry it —
+`ListBox → FlyoutPresenter → Popup → Button` — which is also the way to the flyout itself, since it
+is declared as `Button.Flyout` and `FlyoutBase.GetAttachedFlyout` therefore finds nothing.
+
+**It was the click, not the closing.** A wheel handler on the window settled it: after a move, the
+wheel stopped arriving at the window **at all** — not mis-routed inside it, not swallowed by the
+ScrollViewer, simply absent, and absent everywhere in the window rather than only under where the
+flyout had been. A ListBox selects on pointer *press*, so acting from `SelectionChanged` tore the
+popup down half way through a click, and the release then landed on a window that had gone. The
+abandoned gesture is what a further click was clearing.
+
+So the move now waits for `PointerReleased`: `SelectionChanged` only records what was picked. The
+flyout closes and the keyword moves once the click that chose it has finished.
+
+- `dotnet test` — **787/787 passing**.
+
+Verified by measurement on both sides: before, the wheel logged nothing after a move and the list
+was pixel-identical after scrolling; after, the wheel arrives and the list scrolls with no click.

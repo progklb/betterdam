@@ -58,16 +58,28 @@
     </Style>
 
     <!--
-      A filter box that sits inside a panel rather than being the panel's main subject: the keyword
-      picker's, the XMP tab's. Here rather than in each view because it is one thing appearing in
-      two windows, and they should not drift apart.
+      One row height for every field that sits inside a list or a panel rather than being the thing
+      the panel is about: the keyword and XMP filter boxes, the keyword and label editors in
+      Settings. Here rather than in each view because it is one thing appearing in three windows,
+      and repeating the numbers is how they drift apart.
 
-      Fluent sizes a TextBox for a form field, which is taller than a filter box needs and leaves a
-      band of empty space above and below a small typeface. The height comes down and the vertical
-      padding goes to zero, with VerticalContentAlignment centring the text instead — the theme's
-      default padding is asymmetric top to bottom, so text left to it sits high.
+      Fluent sizes these for a form, which is taller than a row in a list needs and leaves a band of
+      empty space above and below a small typeface. The height comes down and the vertical padding
+      goes to zero, with VerticalContentAlignment centring the text instead — the theme's default
+      padding is asymmetric top to bottom, so text left to it sits high.
+
+      Height as well as MinHeight, because MinHeight alone does not always win: the theme pins some
+      of these heights somewhere a MinHeight setter does not reach.
     -->
-    <Style Selector="TextBox.filter">
+    <Style Selector="TextBox.compact">
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Height" Value="26" />
+      <Setter Property="Padding" Value="7,0" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- The same row height, so a ComboBox beside a TextBox does not set the row taller than both. -->
+    <Style Selector="ComboBox.compact">
       <Setter Property="MinHeight" Value="26" />
       <Setter Property="Height" Value="26" />
       <Setter Property="Padding" Value="7,0" />

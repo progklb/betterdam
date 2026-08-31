@@ -1,6 +1,9 @@
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Threading;
 using Avalonia.Controls.Primitives;
 using Avalonia.VisualTree;
+using Avalonia.LogicalTree;
 using Avalonia.Interactivity;
 using BetterDAM.UI.ViewModels;
 
@@ -35,28 +38,56 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Moves the selected keyword under the destination just picked, then closes the flyout and
-    /// clears the list's selection so the same destination can be chosen again next time.
+    /// The move a click in the "move under" list has chosen, waiting for that click to finish.
+    /// </summary>
+    private (KeywordNodeViewModel Node, KeywordMoveTarget Target, FlyoutBase? Flyout)? _pendingMove;
+
+    /// <summary>
+    /// Records the destination picked in the flyout. The move itself waits for the button to come
+    /// back up — see <see cref="OnMoveTargetReleased"/>.
     /// </summary>
     private void OnMoveTargetChosen(object? sender, SelectionChangedEventArgs e)
     {
         if (sender is not ListBox list ||
             list.SelectedItem is not KeywordMoveTarget target ||
-            list.DataContext is not KeywordNodeViewModel node ||
-            DataContext is not SettingsViewModel viewModel)
+            list.DataContext is not KeywordNodeViewModel node)
         {
             return;
         }
 
-        viewModel.Keywords.Move(node, target);
+        // The flyout is declared as Button.Flyout, so FlyoutBase.GetAttachedFlyout does not find it.
+        // Reached through the LOGICAL tree instead, which runs ListBox → FlyoutPresenter → Popup →
+        // Button; the visual chain from inside a popup stops at its PopupRoot and never passes the
+        // Popup at all, which is why the FindAncestorOfType<Popup> this used to rely on was always
+        // null and the close it guarded never once ran.
+        _pendingMove = (node, target, list.FindLogicalAncestorOfType<Button>()?.Flyout);
 
+        // Re-enters this handler with a null selection, which falls out at the check above.
         list.SelectedItem = null;
-        FlyoutBase.GetAttachedFlyout(list)?.Hide();
+    }
 
-        if (list.FindAncestorOfType<Popup>() is { } popup)
+    /// <summary>
+    /// Carries out the move once the click that chose it has finished.
+    ///
+    /// A ListBox selects on pointer <i>press</i>, so doing this from SelectionChanged closed the
+    /// flyout half way through a click and the release then landed on a window that had gone. The
+    /// symptom was that the wheel stopped reaching this window entirely — measured with a handler
+    /// on the window, which logged nothing at all afterwards — so the keyword list would not scroll
+    /// until the user clicked it again to end the abandoned gesture. Moving a keyword and then
+    /// scrolling to see where it landed is one gesture and should not need a click in the middle.
+    /// </summary>
+    private void OnMoveTargetReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_pendingMove is not { } move || DataContext is not SettingsViewModel viewModel)
         {
-            popup.IsOpen = false;
+            return;
         }
+
+        _pendingMove = null;
+
+        move.Flyout?.Hide();
+        viewModel.Keywords.Move(move.Node, move.Target);
+        KeywordTree.Focus();
     }
 
     /// <summary>

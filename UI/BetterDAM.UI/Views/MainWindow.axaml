@@ -548,17 +548,34 @@
           </Border>
         </Popup>
 
+        <!--
+          Vertical padding zeroed and the content centred instead. The theme's default padding is
+          asymmetric top to bottom, which left the text and caret sitting slightly high in a box
+          this tall; centring puts them on the same line as the icon beside them.
+        -->
         <TextBox x:Name="SearchBox"
                  Text="{Binding SearchText}"
                  Watermark="{Binding SearchWatermark}"
                  HorizontalAlignment="Stretch"
+                 VerticalContentAlignment="Center"
+                 Padding="2,0"
                  ToolTip.Tip="Words search titles, descriptions, keywords and creators. Type a colon to see the filters.">
           <TextBox.InnerLeftContent>
-            <TextBlock Text="🔍" Margin="8,0,4,0" FontSize="12" Opacity="0.6"
-                       VerticalAlignment="Center" />
+            <!--
+              Magnifier: the ring, the same ring again smaller to punch the lens out of it, then
+              the handle. A PathIcon rather than the 🔍 emoji, which came from the system emoji
+              font and so carried its own weight and colour — the one icon in the window that did
+              not match the rest.
+            -->
+            <PathIcon Width="13" Height="13" Margin="8,0,4,0" Opacity="0.6"
+                      VerticalAlignment="Center"
+                      Data="M10 3 A7 7 0 1 0 10 17 A7 7 0 1 0 10 3 Z
+                            M10 5 A5 5 0 1 1 10 15 A5 5 0 1 1 10 5 Z
+                            M15 16.4 L16.4 15 L21.3 19.9 L19.9 21.3 Z" />
           </TextBox.InnerLeftContent>
           <TextBox.InnerRightContent>
             <Button Content="✕" Padding="8,2" Margin="0,0,4,0" Background="Transparent"
+                    VerticalAlignment="Center"
                     ToolTip.Tip="Clear the search and go back to the folder"
                     IsVisible="{Binding IsShowingSearchResults}"
                     Command="{Binding ClearSearchCommand}" />

@@ -5171,3 +5171,24 @@ bar with typing landing there.
 A note on the harness rather than the app: a synthetic Cmd+F left the Command modifier stuck down,
 after which no typing registered anywhere — briefly indistinguishable from a focus bug. A helper
 that releases every modifier explicitly now runs after any synthetic chord.
+
+### The search bar: a drawn magnifier, and text on the centre line
+
+Two small things in the same control.
+
+**The icon was an emoji.** 🔍 came from the system emoji font, so it carried that font's weight and
+its own colour — the one icon in the window that did not match the rest. It is now a `PathIcon` on
+the same 24-unit grid as the funnel, the star and the view-options icon: a ring, the same ring again
+smaller to punch the lens out of it, then the handle. It takes the surrounding foreground colour
+like every other icon, so it follows the theme.
+
+**The text sat high.** The theme's default `TextBox` padding is asymmetric top to bottom, which is
+invisible in a short field and plain in one this tall. Vertical padding is now zero with
+`VerticalContentAlignment="Center"` doing the work, so the text, the caret and the icon share one
+line. The clear button at the far end is centred the same way.
+
+Measured off the screen rather than judged by eye, on the same crop before and after: the text ran
+**1.75pt above** the box's centre line, and now sits **0.5pt below** it — within half a point of
+centred, where it had been nearly two points out.
+
+- `dotnet test` — **787/787 passing** (no new tests; this is presentation with no logic behind it).

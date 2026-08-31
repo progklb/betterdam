@@ -58,6 +58,23 @@
     </Style>
 
     <!--
+      A filter box that sits inside a panel rather than being the panel's main subject: the keyword
+      picker's, the XMP tab's. Here rather than in each view because it is one thing appearing in
+      two windows, and they should not drift apart.
+
+      Fluent sizes a TextBox for a form field, which is taller than a filter box needs and leaves a
+      band of empty space above and below a small typeface. The height comes down and the vertical
+      padding goes to zero, with VerticalContentAlignment centring the text instead — the theme's
+      default padding is asymmetric top to bottom, so text left to it sits high.
+    -->
+    <Style Selector="TextBox.filter">
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Height" Value="26" />
+      <Setter Property="Padding" Value="7,0" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <!--
       Selection colour is not styled here. It follows the accent, which AppThemes sets from the theme
       or leaves to the platform — see ApplyAccent for why overriding individual controls turned out
       to be the wrong lever.

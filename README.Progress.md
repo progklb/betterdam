@@ -5192,3 +5192,28 @@ Measured off the screen rather than judged by eye, on the same crop before and a
 centred, where it had been nearly two points out.
 
 - `dotnet test` — **787/787 passing** (no new tests; this is presentation with no logic behind it).
+
+### Filter boxes: shorter, centred, and one style instead of two
+
+The keyword picker's box and the XMP tab's box had the same two faults as the search bar: Fluent
+sizes a `TextBox` for a form field, which is taller than a filter box needs, and its default padding
+is asymmetric top to bottom, so the text sat high in the space that was left.
+
+Both now carry a shared `TextBox.filter` style in `App.axaml` rather than repeating the numbers in
+each view — it is one thing appearing in two windows, and hard-coding it twice is how two boxes
+drift apart. Height 26 (from the theme's 32), vertical padding zero, content centred. The XMP tab's
+clear button is centred against it, being a default-height Button next to a now-shorter box.
+
+Measured on screen, as with the search bar:
+
+| Box | Height | Text off centre |
+| --- | --- | --- |
+| Keyword picker | 26pt | +0.5pt |
+| XMP tag filter | 26pt | −0.25pt |
+
+**The XMP hint is gone.** "Every tag reported by ExifTool. Advanced view — read-only in this phase."
+cost two lines directly above the data and told the reader nothing they could act on: that the tab
+lists tags is evident from the tags, and "in this phase" is a note about the project rather than
+about the file. The group headers now start straight under the filter box.
+
+- `dotnet test` — **787/787 passing**.

@@ -544,20 +544,18 @@
         <!-- ============ Raw XMP / all tags ============ -->
         <TabItem Header="XMP">
           <DockPanel Margin="8,4">
-            <TextBlock DockPanel.Dock="Top" FontSize="11" Opacity="0.5" TextWrapping="Wrap"
-                       Margin="0,0,0,6"
-                       Text="Every tag reported by ExifTool. Advanced view — read-only in this phase." />
-
             <!--
               Filter box rather than a Cmd+F overlay: it is visible, so it needs no discovering,
               and it leaves Cmd+F meaning the one thing it means everywhere else in the window.
             -->
             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
-              <TextBox x:Name="RawTagFilterBox" FontSize="12" Padding="6,3"
+              <TextBox x:Name="RawTagFilterBox" Classes="filter" FontSize="12"
                        Text="{Binding RawTagFilter}"
                        Watermark="Filter tags — name or value" />
+              <!-- Centred against the box beside it, which is now shorter than a default Button. -->
               <Button Grid.Column="1" Content="✕" FontSize="11" Margin="4,0,0,0"
                       Background="Transparent" BorderThickness="0" Padding="6,3"
+                      VerticalAlignment="Center"
                       IsVisible="{Binding IsFilteringRawTags}"
                       Command="{Binding ClearRawTagFilterCommand}"
                       ToolTip.Tip="Clear the filter" />

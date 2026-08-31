@@ -374,7 +374,7 @@
                     </DockPanel>
                   </Button>
 
-                  <TextBox FontSize="11" Padding="6,3" Watermark="Find a keyword"
+                  <TextBox Classes="filter" FontSize="11" Watermark="Find a keyword"
                            Text="{Binding KeywordFilterSearch}" />
 
                   <!--

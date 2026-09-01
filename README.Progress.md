@@ -5477,3 +5477,37 @@ reported "Imported 1 new label(s) from 1 found", added Yellow in yellow, and the
 offered it as a chip. Scoped to the open workspace, like the keyword import — the catalog as a whole
 holds Red, Green and Blue too, and those were correctly left alone. The label library was restored
 to its five afterwards, so running it for real stays the user's decision.
+
+### Imports now say what they will do — and stop duplicating
+
+Three faults in one button, the middle one a real bug.
+
+**The ellipsis was a lie.** "Import from workspace…" promises that something will be asked before
+anything happens; it imported on the spot. That made it a trap for the commonest thing anyone does
+with an unfamiliar button, which is press it to find out what it does — and what it did was change a
+vocabulary that took a while to arrange. There is now a dialog listing what would be added, what is
+already known, and Cancel beside Import.
+
+**Importing twice built a flat shadow of an arranged library.** This application writes leaf names to
+files — ticking "Bush" under "Subject" writes "Bush", never "Subject|Bush" — so the catalog hands it
+back flat. `MergedWith` matched on the whole path, found nothing, and filed a second, top-level
+"Bush" beside the one already under Subject. Matching now happens on the **leaf name wherever it
+sits**: a keyword is the same keyword whatever it is filed under, which is the rule the metadata
+panel already works by, so where it sits is the user's arrangement and an import has no business
+second-guessing it. A genuinely new hierarchical keyword from another tool still keeps its path.
+
+**Deciding and applying are now separate.** `ImportPlan` says what would happen; `KeywordImport` and
+`LabelImport` produce one and apply it. That is what makes the dialog possible, and it is testable
+without a window.
+
+- `dotnet test` — **833/833 passing** (17 new). The regression test was written first and failed as
+  predicted: 4 nodes where there should have been 3.
+
+Checked against the real library, which is fully nested: the keyword import now reports "Found 35
+keyword(s) in this workspace, and your library already has every one" and offers only Cancel, where
+before it would have added 35 duplicates. The other path was checked on a workspace holding a label
+the library lacks — "Found 1 label(s)… 1 of them would be added", listing Green — and cancelled,
+which reported "Import cancelled. Nothing was changed" and left the library untouched.
+
+A dialog whose fields were all null on first run: `AvaloniaXamlLoader.Load(this)` does not assign
+`x:Name` fields. `InitializeComponent()` is the generated method that does.

@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
+using BetterDAM.Core.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -77,6 +78,13 @@ public sealed partial class KeywordLibraryEditorViewModel : ObservableObject
     /// different from dropping onto one. Picking the destination by name is unambiguous and works the
     /// same whether the target is the next row or four hundred rows away.
     /// </summary>
+    /// <summary>
+    /// Asks the user to confirm an import, given what it would do. Set by the window, which is the
+    /// only part that can show a dialog. Null means the import goes ahead unasked, which is what
+    /// happens in a test.
+    /// </summary>
+    public Func<ImportPlan, string, Task<bool>>? ConfirmImport { get; set; }
+
     public IReadOnlyList<KeywordMoveTarget> MoveTargets => GetMoveTargetsFor(Selected);
 
     /// <summary>Where <paramref name="node"/> could be filed instead.</summary>
@@ -398,16 +406,29 @@ public sealed partial class KeywordLibraryEditorViewModel : ObservableObject
                 return;
             }
 
-            var before = _library.Current.Count;
-            var merged = _library.Current.MergedWith(found.Select(keyword => keyword.Value));
+            var plan = KeywordImport.Plan(_library.Current, found.Select(keyword => keyword.Value));
+
+            if (ConfirmImport is { } confirm && !await confirm(plan, "keyword").ConfigureAwait(true))
+            {
+                StatusMessage = plan.HasAnythingToAdd
+                    ? "Import cancelled. Nothing was changed."
+                    : $"Found {plan.Considered:N0} keyword(s); all of them were already in the library.";
+                return;
+            }
+
+            if (!plan.HasAnythingToAdd)
+            {
+                StatusMessage = $"Found {plan.Considered:N0} keyword(s); all of them were already in the library.";
+                return;
+            }
+
+            var merged = KeywordImport.Apply(_library.Current, plan);
 
             await _library.SaveAsync(merged).ConfigureAwait(true);
             Load(merged);
 
-            var added = merged.Count - before;
-            StatusMessage = added == 0
-                ? $"Found {found.Count:N0} keyword(s); all of them were already in the library."
-                : $"Imported {added:N0} new keyword(s) from {found.Count:N0} found.";
+            StatusMessage =
+                $"Imported {plan.ToAdd.Length:N0} new keyword(s) from {plan.Considered:N0} found.";
         }
         catch (Exception ex)
         {

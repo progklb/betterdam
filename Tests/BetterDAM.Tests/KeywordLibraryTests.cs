@@ -803,3 +803,160 @@ public class LabelImportTests
         Assert.Equal(["Red", "Green"], merged.Labels.Select(l => l.Name));
     }
 }
+
+/// <summary>
+/// Deciding what an import would add, before it adds it.
+/// </summary>
+public class KeywordImportTests
+{
+    private static KeywordLibrary Arranged()
+        => KeywordLibrary.FromFlat(["Subject|Bush", "Subject|Sand", "Mood|Calm"]);
+
+    /// <summary>
+    /// The bug this fixes. This application writes leaf names to files — ticking "Bush" under
+    /// "Subject" writes "Bush", never "Subject|Bush" — so the catalog hands it back flat. Matching on
+    /// the whole path found nothing and filed a second, top-level "Bush" beside the one already under
+    /// Subject, so importing twice built a flat shadow of an arranged vocabulary.
+    /// </summary>
+    [Fact]
+    public void A_keyword_already_filed_under_a_group_is_not_offered_again()
+    {
+        var plan = KeywordImport.Plan(Arranged(), ["Bush"]);
+
+        Assert.Empty(plan.ToAdd);
+        Assert.Equal(["Bush"], plan.AlreadyKnown.ToArray());
+    }
+
+    [Fact]
+    public void Applying_that_plan_leaves_the_arrangement_alone()
+    {
+        var library = Arranged();
+
+        var merged = KeywordImport.Apply(library, KeywordImport.Plan(library, ["Bush", "Sand", "Calm"]));
+
+        Assert.Equal(library.Count, merged.Count);
+        Assert.DoesNotContain(merged.Roots, root => string.Equals(root.Name, "Bush", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_keyword_the_library_has_never_seen_is_offered()
+    {
+        var plan = KeywordImport.Plan(Arranged(), ["Zebra"]);
+
+        Assert.Equal(["Zebra"], plan.ToAdd.ToArray());
+        Assert.Empty(plan.AlreadyKnown);
+    }
+
+    [Fact]
+    public void Matching_ignores_case_and_surrounding_space()
+    {
+        var plan = KeywordImport.Plan(Arranged(), ["  bUSh  "]);
+
+        Assert.Empty(plan.ToAdd);
+    }
+
+    /// <summary>A group is a keyword too, so importing its name must not duplicate it.</summary>
+    [Fact]
+    public void A_group_name_counts_as_known()
+    {
+        var plan = KeywordImport.Plan(Arranged(), ["Subject"]);
+
+        Assert.Empty(plan.ToAdd);
+        Assert.Equal(["Subject"], plan.AlreadyKnown.ToArray());
+    }
+
+    /// <summary>
+    /// Matched on the leaf wherever it sits: where a keyword is filed is the user's arrangement, and
+    /// an import has no business second-guessing it.
+    /// </summary>
+    [Fact]
+    public void A_hierarchical_keyword_whose_leaf_is_known_is_not_refiled()
+    {
+        var plan = KeywordImport.Plan(Arranged(), ["Mood|Bush"]);
+
+        Assert.Empty(plan.ToAdd);
+    }
+
+    /// <summary>But a genuinely new one keeps its path, so another tool's grouping is honoured.</summary>
+    [Fact]
+    public void A_new_hierarchical_keyword_keeps_its_path()
+    {
+        var library = Arranged();
+        var plan = KeywordImport.Plan(library, ["Subject|Zebra"]);
+
+        Assert.Equal(["Subject|Zebra"], plan.ToAdd.ToArray());
+
+        var merged = KeywordImport.Apply(library, plan);
+        var subject = merged.Roots.Single(r => r.Name == "Subject");
+
+        Assert.Contains(subject.Children, child => child.Name == "Zebra");
+        Assert.DoesNotContain(merged.Roots, root => root.Name == "Zebra");
+    }
+
+    [Fact]
+    public void The_same_keyword_twice_is_offered_once()
+    {
+        var plan = KeywordImport.Plan(Arranged(), ["Zebra", "zebra"]);
+
+        Assert.Equal(["Zebra"], plan.ToAdd.ToArray());
+    }
+
+    [Fact]
+    public void Blank_keywords_are_ignored()
+    {
+        var plan = KeywordImport.Plan(Arranged(), ["", "   ", "|"]);
+
+        Assert.Empty(plan.ToAdd);
+        Assert.Empty(plan.AlreadyKnown);
+    }
+
+    [Fact]
+    public void The_plan_counts_everything_it_considered()
+    {
+        var plan = KeywordImport.Plan(Arranged(), ["Bush", "Sand", "Zebra"]);
+
+        Assert.Equal(3, plan.Considered);
+        Assert.Equal(1, plan.ToAdd.Length);
+        Assert.Equal(2, plan.AlreadyKnown.Length);
+    }
+
+    [Fact]
+    public void Applying_an_empty_plan_returns_the_same_library()
+    {
+        var library = Arranged();
+
+        Assert.Same(library, KeywordImport.Apply(library, ImportPlan.Empty));
+    }
+
+    [Theory]
+    [InlineData("Bush", "Bush")]
+    [InlineData("Subject|Bush", "Bush")]
+    [InlineData("Subject/Bush", "Bush")]
+    [InlineData("A|B|C", "C")]
+    public void The_leaf_is_the_last_segment(string keyword, string expected)
+        => Assert.Equal(expected, KeywordImport.LeafOf(keyword));
+}
+
+public class LabelImportPlanTests
+{
+    [Fact]
+    public void The_plan_separates_the_new_from_the_known()
+    {
+        var plan = LabelImport.Plan(LabelLibrary.Default, ["Select", "Yellow"]);
+
+        Assert.Equal(["Yellow"], plan.ToAdd.ToArray());
+        Assert.Equal(["Select"], plan.AlreadyKnown.ToArray());
+        Assert.Equal(2, plan.Considered);
+    }
+
+    [Fact]
+    public void Applying_the_plan_matches_merging_directly()
+    {
+        var found = (string[])["Select", "Yellow", "Portfolio"];
+
+        var viaPlan = LabelImport.Apply(LabelLibrary.Default, LabelImport.Plan(LabelLibrary.Default, found));
+        var direct = LabelImport.Merge(LabelLibrary.Default, found);
+
+        Assert.Equal(direct.Labels.Select(l => l.Name), viaPlan.Labels.Select(l => l.Name));
+    }
+}

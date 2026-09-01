@@ -621,20 +621,28 @@ public sealed partial class SettingsViewModel : ObservableObject
             }
 
             var library = _settings.Current.Labels;
-            var merged = LabelImport.Merge(library, found.Select(label => label.Value));
-            var added = merged.Labels.Length - library.Labels.Length;
+            var plan = LabelImport.Plan(library, found.Select(label => label.Value));
 
-            if (added == 0)
+            if (Keywords.ConfirmImport is { } confirm && !await confirm(plan, "label").ConfigureAwait(true))
             {
-                StatusMessage = $"Found {found.Count:N0} label(s); all of them were already in the library.";
+                StatusMessage = plan.HasAnythingToAdd
+                    ? "Import cancelled. Nothing was changed."
+                    : $"Found {plan.Considered:N0} label(s); all of them were already in the library.";
                 return;
             }
 
-            await SaveAsync(_settings.Current with { Labels = merged }).ConfigureAwait(true);
+            if (!plan.HasAnythingToAdd)
+            {
+                StatusMessage = $"Found {plan.Considered:N0} label(s); all of them were already in the library.";
+                return;
+            }
+
+            await SaveAsync(_settings.Current with { Labels = LabelImport.Apply(library, plan) })
+                .ConfigureAwait(true);
 
             BuildLabelRows();
 
-            StatusMessage = $"Imported {added:N0} new label(s) from {found.Count:N0} found.";
+            StatusMessage = $"Imported {plan.ToAdd.Length:N0} new label(s) from {plan.Considered:N0} found.";
         }
         catch (Exception ex)
         {

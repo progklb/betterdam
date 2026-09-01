@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.VisualTree;
 using Avalonia.LogicalTree;
 using Avalonia.Interactivity;
+using BetterDAM.Core.Services;
 using BetterDAM.UI.ViewModels;
 
 namespace BetterDAM.UI.Views;
@@ -20,6 +21,11 @@ public partial class SettingsWindow : Window
             if (DataContext is SettingsViewModel viewModel)
             {
                 viewModel.StorageProvider = StorageProvider;
+
+                // Shared by both imports: the label command reaches it through the keyword editor
+                // rather than holding a second copy of the same hook.
+                viewModel.Keywords.ConfirmImport = ConfirmImportAsync;
+
                 await viewModel.RefreshAsync();
             }
         };
@@ -39,6 +45,13 @@ public partial class SettingsWindow : Window
         SettingsTab.Labels => LabelsTab,
         _ => Tabs.SelectedItem
     };
+
+    /// <summary>
+    /// Shows what an import would do and waits for an answer. The ViewModels decide what would
+    /// happen; only the window can ask.
+    /// </summary>
+    private async Task<bool> ConfirmImportAsync(ImportPlan plan, string noun)
+        => await new ImportPreviewWindow(plan, noun).ShowDialog<bool>(this);
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 

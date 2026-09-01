@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using BetterDAM.Core.Models;
 
 namespace BetterDAM.Core.Services;
@@ -26,8 +27,13 @@ public static class LabelImport
     /// the commonest label the earliest free slot.</para>
     /// </summary>
     public static LabelLibrary Merge(LabelLibrary existing, IEnumerable<string> found)
+        => Apply(existing, Plan(existing, found));
+
+    /// <summary>What importing <paramref name="found"/> would add, worked out before anything changes.</summary>
+    public static ImportPlan Plan(LabelLibrary existing, IEnumerable<string> found)
     {
-        var added = new List<LabelDefinition>();
+        var toAdd = ImmutableArray.CreateBuilder<string>();
+        var already = ImmutableArray.CreateBuilder<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var raw in found)
@@ -35,18 +41,37 @@ public static class LabelImport
             var name = raw?.Trim() ?? string.Empty;
 
             // A blank label is indistinguishable from no label at all, so there is nothing to add.
-            if (name.Length == 0 || existing.Find(name) is not null || !seen.Add(name))
+            if (name.Length == 0 || !seen.Add(name))
             {
                 continue;
             }
 
-            // Coloured by the word where it names one, so a Lightroom "Yellow" arrives yellow. Grey
-            // otherwise: a starting point to change rather than an answer.
-            added.Add(new LabelDefinition(name, LabelColours.Resolve(null, name) ?? LabelColours.Unrecognised));
+            if (existing.Find(name) is not null)
+            {
+                already.Add(name);
+            }
+            else
+            {
+                toAdd.Add(name);
+            }
         }
 
-        return added.Count == 0
-            ? existing
-            : existing with { Labels = [.. existing.Labels, .. added] };
+        return new ImportPlan(toAdd.ToImmutable(), already.ToImmutable());
+    }
+
+    /// <summary>Applies a plan, appending in order.</summary>
+    public static LabelLibrary Apply(LabelLibrary existing, ImportPlan plan)
+    {
+        if (!plan.HasAnythingToAdd)
+        {
+            return existing;
+        }
+
+        // Coloured by the word where it names one, so a Lightroom "Yellow" arrives yellow. Grey
+        // otherwise: a starting point to change rather than an answer.
+        var added = plan.ToAdd.Select(name =>
+            new LabelDefinition(name, LabelColours.Resolve(null, name) ?? LabelColours.Unrecognised));
+
+        return existing with { Labels = [.. existing.Labels, .. added] };
     }
 }

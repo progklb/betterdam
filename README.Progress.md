@@ -5448,3 +5448,32 @@ seeing all of them that way. A freshly opened viewer starts in colour.
 Checked in the app on a real RAF: B and the button both toggle, the button shows an on state, the
 state carries across ← →, a new viewer opens in colour, and on a video the button is absent and B
 does nothing.
+
+### Importing labels from the workspace
+
+The Labels tab now offers the same "Import from workspace…" the Keywords tab has, and it closes the
+gap noted earlier: the filter panel's label row comes from the library while the search comes from
+the catalog, so a label written by another application could be searched for but never filtered by.
+Importing it puts it in the library, and the swatch appears.
+
+**Appended, never inserted.** A label's position in the library is its slot, and the slot is the
+number digiKam's `ColorLabel` and Photo Mechanic's `ColorClass` write. Putting an imported label
+above an existing one would silently change what those numbers mean for every file already labelled.
+Incoming order is kept, so the catalog's most-used-first order gives the commonest label the first
+free slot. A test asserts every existing label keeps the slot it had.
+
+**Coloured by the word.** Imported names have no colour — the file never stored one — so a name that
+says a colour gets it, and anything else gets the neutral grey the tiles already use. A Lightroom
+"Yellow" arrives yellow; "Portfolio" arrives grey, which is a starting point to change rather than
+an answer.
+
+The merge is `LabelImport.Merge` in Core rather than inline in the ViewModel, which has no test
+harness — the rules about slots, case and colour are the part worth pinning.
+
+- `dotnet test` — **816/816 passing** (12 new).
+
+Run against the real catalog: this workspace carries one label the library lacked, and the import
+reported "Imported 1 new label(s) from 1 found", added Yellow in yellow, and the filter panel then
+offered it as a chip. Scoped to the open workspace, like the keyword import — the catalog as a whole
+holds Red, Green and Blue too, and those were correctly left alone. The label library was restored
+to its five afterwards, so running it for real stays the user's decision.

@@ -680,3 +680,126 @@ public class KeywordFilterListTests
     public void An_empty_list_arranges_to_nothing()
         => Assert.Empty(KeywordFilterList.Arrange([], cap: 100));
 }
+
+/// <summary>
+/// Importing the labels a workspace already uses.
+///
+/// xmp:Label stores a word and not a colour, so a workspace labelled elsewhere arrives with names
+/// the library has never heard of. This is what gets them into it.
+/// </summary>
+public class LabelImportTests
+{
+    private static readonly LabelLibrary Bridge = LabelLibrary.Default;
+
+    [Fact]
+    public void A_label_the_library_does_not_have_is_added()
+    {
+        var merged = LabelImport.Merge(Bridge, ["Yellow"]);
+
+        Assert.Equal("Yellow", merged.Labels[^1].Name);
+        Assert.Equal(Bridge.Labels.Length + 1, merged.Labels.Length);
+    }
+
+    [Fact]
+    public void One_already_in_the_library_is_not_added_twice()
+    {
+        var merged = LabelImport.Merge(Bridge, ["Select"]);
+
+        Assert.Equal(Bridge.Labels.Length, merged.Labels.Length);
+    }
+
+    [Fact]
+    public void Matching_an_existing_label_ignores_case()
+    {
+        var merged = LabelImport.Merge(Bridge, ["select", "SECOND"]);
+
+        Assert.Equal(Bridge.Labels.Length, merged.Labels.Length);
+    }
+
+    [Fact]
+    public void The_same_new_label_twice_is_added_once()
+    {
+        var merged = LabelImport.Merge(Bridge, ["Yellow", "yellow", " Yellow "]);
+
+        Assert.Single(merged.Labels.Where(l => string.Equals(l.Name, "Yellow", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public void Blank_labels_are_ignored()
+    {
+        var merged = LabelImport.Merge(Bridge, ["", "   "]);
+
+        Assert.Equal(Bridge.Labels.Length, merged.Labels.Length);
+    }
+
+    [Fact]
+    public void Names_are_trimmed()
+    {
+        var merged = LabelImport.Merge(Bridge, ["  Yellow  "]);
+
+        Assert.Equal("Yellow", merged.Labels[^1].Name);
+    }
+
+    /// <summary>
+    /// A label's position is its slot, and the slot is the number digiKam and Photo Mechanic write.
+    /// Inserting above an existing label would change what those numbers mean for every file already
+    /// labelled, so imports can only ever go on the end.
+    /// </summary>
+    [Fact]
+    public void Existing_labels_keep_their_slots()
+    {
+        var merged = LabelImport.Merge(Bridge, ["Aardvark", "Yellow"]);
+
+        Assert.Equal(
+            Bridge.Labels.Select(l => l.Name),
+            merged.Labels.Take(Bridge.Labels.Length).Select(l => l.Name));
+
+        foreach (var label in Bridge.Labels)
+        {
+            Assert.Equal(Bridge.SlotOf(label.Name), merged.SlotOf(label.Name));
+        }
+    }
+
+    /// <summary>The catalog hands these over most-used first, so the commonest gets the first free slot.</summary>
+    [Fact]
+    public void Incoming_order_is_kept()
+    {
+        var merged = LabelImport.Merge(Bridge, ["Zebra", "Aardvark"]);
+
+        Assert.Equal(["Zebra", "Aardvark"], merged.Labels.Skip(Bridge.Labels.Length).Select(l => l.Name));
+    }
+
+    [Fact]
+    public void A_label_that_names_a_colour_arrives_in_that_colour()
+    {
+        var merged = LabelImport.Merge(Bridge, ["Yellow"]);
+
+        Assert.Equal(LabelColours.Resolve(null, "Yellow"), merged.Labels[^1].Colour);
+        Assert.NotEqual(LabelColours.Unrecognised, merged.Labels[^1].Colour);
+    }
+
+    [Fact]
+    public void One_that_names_no_colour_arrives_grey()
+    {
+        var merged = LabelImport.Merge(Bridge, ["Portfolio"]);
+
+        Assert.Equal(LabelColours.Unrecognised, merged.Labels[^1].Colour);
+    }
+
+    /// <summary>Nothing to add means the library is left exactly as it was.</summary>
+    [Fact]
+    public void Importing_nothing_new_changes_nothing()
+    {
+        var merged = LabelImport.Merge(Bridge, ["Select", "Approved"]);
+
+        Assert.Same(Bridge, merged);
+    }
+
+    [Fact]
+    public void An_empty_library_takes_everything()
+    {
+        var merged = LabelImport.Merge(new LabelLibrary(), ["Red", "Green"]);
+
+        Assert.Equal(["Red", "Green"], merged.Labels.Select(l => l.Name));
+    }
+}

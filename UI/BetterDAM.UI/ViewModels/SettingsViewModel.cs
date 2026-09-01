@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using Avalonia.Platform.Storage;
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
+using BetterDAM.Core.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -584,6 +585,66 @@ public sealed partial class SettingsViewModel : ObservableObject
             .ToImmutableArray();
 
         _ = SaveAsync(_settings.Current with { Labels = new LabelLibrary { Labels = labels } });
+    }
+
+    [ObservableProperty]
+    private bool _isImportingLabels;
+
+    /// <summary>
+    /// Adds the labels the photographs already carry to the library.
+    ///
+    /// The same idea as importing keywords, and the more useful of the two for compatibility: the
+    /// file stores a word, not a colour, so a workspace labelled in Lightroom arrives carrying
+    /// "Yellow" and "Green" while the library still holds Bridge's "Select" and "Second". Those
+    /// labels are shown on tiles and found by the search, but until they are in the library there is
+    /// no swatch to filter by and no way to apply one to another photograph.
+    ///
+    /// <para><b>Appended, never reordered.</b> A label's position is its slot, and the slot is what
+    /// digiKam and Photo Mechanic write as a number. Inserting an imported label above an existing
+    /// one would silently change what those numbers mean for every file already labelled.</para>
+    /// </summary>
+    [RelayCommand]
+    private async Task ImportLabelsAsync()
+    {
+        IsImportingLabels = true;
+        StatusMessage = null;
+
+        try
+        {
+            var found = await _catalog.GetLabelsAsync(WorkspacePath).ConfigureAwait(true);
+            if (found.Count == 0)
+            {
+                StatusMessage = WorkspacePath is null
+                    ? "No labels found in the catalog."
+                    : "No labels found in this workspace. Index it first, or open a workspace that has some.";
+                return;
+            }
+
+            var library = _settings.Current.Labels;
+            var merged = LabelImport.Merge(library, found.Select(label => label.Value));
+            var added = merged.Labels.Length - library.Labels.Length;
+
+            if (added == 0)
+            {
+                StatusMessage = $"Found {found.Count:N0} label(s); all of them were already in the library.";
+                return;
+            }
+
+            await SaveAsync(_settings.Current with { Labels = merged }).ConfigureAwait(true);
+
+            BuildLabelRows();
+
+            StatusMessage = $"Imported {added:N0} new label(s) from {found.Count:N0} found.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not import labels");
+            StatusMessage = $"Could not import labels: {ex.Message}";
+        }
+        finally
+        {
+            IsImportingLabels = false;
+        }
     }
 
     public static double MinRoughness => AppSettings.MinRoughness;

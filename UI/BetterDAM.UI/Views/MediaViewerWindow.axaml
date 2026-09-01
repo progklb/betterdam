@@ -8,6 +8,14 @@
         Background="Black"
         ShowInTaskbar="False">
 
+  <Window.Styles>
+    <!-- The toggle's on state. Without it the button says what it does but not what is set. -->
+    <Style Selector="Button.on /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#FFFFFF" />
+      <Setter Property="Foreground" Value="#000000" />
+    </Style>
+  </Window.Styles>
+
   <Panel>
 
     <!-- One viewer for both media types: the child differs, the interaction does not. -->
@@ -87,6 +95,15 @@
             </Flyout>
           </Button.Flyout>
         </Button>
+        <!--
+          A view aid, not an edit: it changes how the photograph is drawn while it is being judged
+          and never touches the file. Hidden for video, where greying would mean converting every
+          frame as it arrives.
+        -->
+        <Button x:Name="BlackAndWhiteButton" Content="B&amp;W" FontSize="11" Padding="8,2"
+                Click="OnBlackAndWhite" Focusable="False"
+                IsVisible="{Binding !IsVideoSelected}"
+                ToolTip.Tip="Show this photograph in black and white (B). Preview only — nothing is written to the file." />
         <Button Content="Fit" FontSize="11" Padding="8,2" Click="OnFit" Focusable="False" />
         <Button Content="100%" FontSize="11" Padding="8,2" Click="OnActualSize" Focusable="False" />
         <Button Content="✕" FontSize="11" Padding="8,2" Click="OnClose" Focusable="False" ToolTip.Tip="Close (Esc)" />

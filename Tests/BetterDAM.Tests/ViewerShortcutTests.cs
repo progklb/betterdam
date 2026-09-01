@@ -1,5 +1,6 @@
 using Avalonia.Input;
 using BetterDAM.UI.Controls;
+using BetterDAM.Core.Services;
 using Xunit;
 
 namespace BetterDAM.Tests;
@@ -111,6 +112,7 @@ public class ViewerShortcutTests
                 "0" => [Key.D0],
                 "← →" => [Key.Left, Key.Right],
                 "\\" => [Key.OemBackslash],
+                "b" => [Key.B],
                 "esc" => [Key.Escape],
                 _ => throw new InvalidOperationException($"The hint names '{hint.Key}', which this test does not know about.")
             };
@@ -118,5 +120,101 @@ public class ViewerShortcutTests
             Assert.All(keys, key =>
                 Assert.NotEqual(ViewerAction.None, ViewerShortcuts.Resolve(key, isVideo)));
         }
+    }
+
+    /// <summary>
+    /// B greys the picture on screen. A still only: greying video would mean converting every frame
+    /// as it arrives, which is a different job from converting one photograph once.
+    /// </summary>
+    [Fact]
+    public void B_toggles_black_and_white_for_a_still()
+        => Assert.Equal(
+            ViewerAction.ToggleBlackAndWhite,
+            ViewerShortcuts.Resolve(Key.B, isVideo: false));
+
+    [Fact]
+    public void B_does_nothing_on_a_video()
+        => Assert.Equal(ViewerAction.None, ViewerShortcuts.Resolve(Key.B, isVideo: true));
+
+    [Fact]
+    public void The_still_hint_offers_black_and_white()
+        => Assert.Contains(ViewerShortcuts.Hint(isVideo: false), h => h.Key == "b");
+
+    /// <summary>The hint must not promise a key that does nothing for what is on screen.</summary>
+    [Fact]
+    public void The_video_hint_does_not_offer_black_and_white()
+        => Assert.DoesNotContain(ViewerShortcuts.Hint(isVideo: true), h => h.Key == "b");
+}
+
+/// <summary>
+/// The luma weights behind the black-and-white preview.
+/// </summary>
+public class GreyscaleTests
+{
+    private static byte GreyOf(byte b, byte g, byte r)
+    {
+        var row = new byte[] { b, g, r, 255 };
+        Greyscale.GreyRowBgra(row);
+        return row[0];
+    }
+
+    [Fact]
+    public void All_three_channels_end_up_equal()
+    {
+        var row = new byte[] { 10, 200, 90, 255 };
+
+        Greyscale.GreyRowBgra(row);
+
+        Assert.Equal(row[0], row[1]);
+        Assert.Equal(row[1], row[2]);
+    }
+
+    [Fact]
+    public void Alpha_is_left_alone()
+    {
+        var row = new byte[] { 10, 200, 90, 128 };
+
+        Greyscale.GreyRowBgra(row);
+
+        Assert.Equal(128, row[3]);
+    }
+
+    [Fact]
+    public void Grey_stays_where_it_was()
+    {
+        Assert.Equal(0, GreyOf(0, 0, 0));
+        Assert.Equal(255, GreyOf(255, 255, 255));
+        Assert.Equal(128, GreyOf(128, 128, 128));
+    }
+
+    /// <summary>
+    /// Rec. 709, not a flat average. Green carries most of the brightness and blue almost none, so
+    /// a pure green reads far lighter than a pure blue — which is what stops skies coming up milky
+    /// and foliage muddy.
+    /// </summary>
+    [Fact]
+    public void Green_reads_lighter_than_red_which_reads_lighter_than_blue()
+    {
+        var green = GreyOf(0, 255, 0);
+        var red = GreyOf(0, 0, 255);
+        var blue = GreyOf(255, 0, 0);
+
+        Assert.True(green > red, $"green {green} should outweigh red {red}");
+        Assert.True(red > blue, $"red {red} should outweigh blue {blue}");
+
+        // A flat average would put all three at 85.
+        Assert.NotEqual(85, green);
+    }
+
+    [Fact]
+    public void Every_pixel_in_the_row_is_converted()
+    {
+        var row = new byte[] { 255, 0, 0, 255, 0, 255, 0, 255 };
+
+        Greyscale.GreyRowBgra(row);
+
+        Assert.Equal(row[0], row[2]);
+        Assert.Equal(row[4], row[6]);
+        Assert.True(row[4] > row[0], "the green pixel should be lighter than the blue one");
     }
 }

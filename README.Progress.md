@@ -5415,3 +5415,36 @@ fair trade for a thing edited rarely and never urgently.
 
 Checked all three paths in the app: Label → Labels tab, Keyword library → Keywords tab, and plain
 Cmd+, still opening on General rather than a remembered tab. Settings are byte-identical afterwards.
+
+### Black and white in the viewer
+
+**B**, or the B&W button on the chrome, greys the photograph on screen. A view aid only — nothing is
+written, and the tooltip says so, because a control that turns a picture monochrome next to controls
+that do edit the file needs to say which kind it is.
+
+**Why a copy rather than an effect.** Avalonia has no colour filter: its only built-in effects are
+blur and drop shadow, so there is nothing to hang a saturation matrix on without replacing the
+`Image` with a custom-drawn control and reimplementing the sizing the zoom viewer depends on. The
+bitmap is converted once per photograph and both are kept, so toggling afterwards costs nothing. The
+grey copy is disposed when the picture changes, so only one pair is held at a time.
+
+**Rec. 709, not a flat average.** Green carries most of the perceived brightness and blue almost
+none. Averaging the three channels lightens blues and darkens greens, which for these photographs
+would come out as milky skies over muddy grass — the whole picture. A test pins the ordering rather
+than the constants, so the intent survives a rewrite.
+
+**Stills only.** Greying video would mean converting every frame as it arrives, which is a different
+job from converting one photograph once. The button is hidden for video and the key resolves to
+nothing there — and a test asserts the hint strip does not offer a key that would do nothing on what
+is on screen.
+
+The setting survives moving between photographs, because judging a set in black and white means
+seeing all of them that way. A freshly opened viewer starts in colour.
+
+- `dotnet test` — **804/804 passing** (9 new). An existing test caught the change unprompted: it
+  refuses any key named in the hint strip that it does not know resolves to something, so adding
+  "b" to the strip failed the build until the key was wired up.
+
+Checked in the app on a real RAF: B and the button both toggle, the button shows an on state, the
+state carries across ← →, a new viewer opens in colour, and on a video the button is absent and B
+does nothing.

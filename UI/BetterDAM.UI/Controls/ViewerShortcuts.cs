@@ -12,7 +12,8 @@ public enum ViewerAction
     Previous,
     Next,
     ToggleRawDevelopment,
-    TogglePlayback
+    TogglePlayback,
+    ToggleBlackAndWhite
 }
 
 /// <summary>
@@ -56,6 +57,10 @@ public static class ViewerShortcuts
         // The video player's own convention, kept so the habit works here too.
         Key.K when isVideo => ViewerAction.TogglePlayback,
 
+        // Black and white, for stills only — greying video would mean converting every frame as it
+        // arrives, which is a different job from converting one photograph once.
+        Key.B when !isVideo => ViewerAction.ToggleBlackAndWhite,
+
         _ => ViewerAction.None
     };
 
@@ -83,6 +88,7 @@ public static class ViewerShortcuts
             new("space", "fit"),
             new("← →", "browse"),
             new("\\", "RAW / JPEG"),
+            new("b", "b&w"),
             new("esc", "close")
         ];
 }

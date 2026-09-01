@@ -251,9 +251,30 @@ public partial class MediaViewerWindow : Window
     /// rendering of the same one — a finished develop, or a switch between RAW and embedded JPEG —
     /// where the zoom and position are what the comparison is being made at and must survive.
     /// </param>
+    /// <summary>
+    /// Whether the still is being shown grey. A view setting, not an edit: it survives moving
+    /// between photographs, because comparing a set in black and white means seeing all of them
+    /// that way, and nothing about it reaches the file.
+    /// </summary>
+    private bool _blackAndWhite;
+
+    /// <summary>The colour bitmap on show, kept so the toggle can go back to it.</summary>
+    private Bitmap? _colourStill;
+
+    /// <summary>Its grey copy, made on demand and disposed when the picture changes.</summary>
+    private Bitmap? _greyStill;
+
     private void ShowStill(Bitmap? image, bool isNewItem)
     {
-        Still.Source = image;
+        // A different rendering means the old grey copy is of the wrong picture.
+        if (!ReferenceEquals(_colourStill, image))
+        {
+            _greyStill?.Dispose();
+            _greyStill = null;
+            _colourStill = image;
+        }
+
+        Still.Source = _blackAndWhite ? GreyFor(image) : image;
 
         if (image is null)
         {
@@ -276,6 +297,39 @@ public partial class MediaViewerWindow : Window
             Viewer.Fit();
         }
     }
+
+    /// <summary>The grey copy of the picture on show, made the first time it is asked for.</summary>
+    private Bitmap? GreyFor(Bitmap? image)
+    {
+        if (image is null)
+        {
+            return null;
+        }
+
+        _greyStill ??= GreyscaleBitmap.From(image);
+
+        // Falls back to colour rather than an empty window if the copy could not be made.
+        return _greyStill ?? image;
+    }
+
+    /// <summary>
+    /// Turns the black-and-white preview on or off. Only the still is affected; video keeps its
+    /// colour, and the key that gets here is not offered while a video is on screen.
+    /// </summary>
+    private void ToggleBlackAndWhite()
+    {
+        if (_viewModel?.IsVideoSelected != false)
+        {
+            return;
+        }
+
+        _blackAndWhite = !_blackAndWhite;
+        BlackAndWhiteButton.Classes.Set("on", _blackAndWhite);
+
+        Still.Source = _blackAndWhite ? GreyFor(_colourStill) : _colourStill;
+    }
+
+    private void OnBlackAndWhite(object? sender, RoutedEventArgs e) => ToggleBlackAndWhite();
 
     private void UpdateCounter()
     {
@@ -338,6 +392,10 @@ public partial class MediaViewerWindow : Window
 
             case ViewerAction.TogglePlayback:
                 _viewModel?.Player.TogglePlayCommand.Execute(null);
+                break;
+
+            case ViewerAction.ToggleBlackAndWhite:
+                ToggleBlackAndWhite();
                 break;
 
             default:

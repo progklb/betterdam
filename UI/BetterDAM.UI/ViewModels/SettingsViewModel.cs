@@ -591,6 +591,42 @@ public sealed partial class SettingsViewModel : ObservableObject
     private bool _isImportingLabels;
 
     /// <summary>
+    /// Removes a label from the library.
+    ///
+    /// Nothing is written to any photograph: the file stores the word, so a file labelled "Yellow"
+    /// still is, and the inspector still shows it — as a label the library does not define, which is
+    /// how a label set in another application has always been handled. What goes is the swatch to
+    /// filter by and the entry to apply.
+    ///
+    /// <para>Labels below it move up a slot, and the slot is the number digiKam and Photo Mechanic
+    /// write. That is unavoidable in a delete and is why the tooltip says so.</para>
+    /// </summary>
+    [RelayCommand]
+    private void RemoveLabel(LabelRowViewModel? row)
+    {
+        if (row is not null && LabelRows.Remove(row))
+        {
+            SaveLabels();
+        }
+    }
+
+    /// <summary>
+    /// Adds an empty label to fill in.
+    ///
+    /// Here because deleting without it is a one-way door: a label removed by mistake could
+    /// otherwise only come back by importing one off a photograph that still carries it, and if
+    /// nothing does, not at all.
+    /// </summary>
+    [RelayCommand]
+    private void AddLabel()
+    {
+        LabelRows.Add(new LabelRowViewModel(string.Empty, LabelColours.Unrecognised, SaveLabels));
+
+        // Not saved yet: a blank name is dropped on save, so the row would vanish as it appeared.
+        // It is written as soon as it is given a name.
+    }
+
+    /// <summary>
     /// Adds the labels the photographs already carry to the library.
     ///
     /// The same idea as importing keywords, and the more useful of the two for compatibility: the

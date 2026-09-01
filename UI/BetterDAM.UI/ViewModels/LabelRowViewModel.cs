@@ -1,3 +1,4 @@
+using BetterDAM.Core.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace BetterDAM.UI.ViewModels;
@@ -29,10 +30,17 @@ public sealed partial class LabelRowViewModel : ObservableObject
 
     partial void OnColourChanged(string value) => _changed();
 
-    /// <summary>The presets offered, so a colour can be chosen without typing a hex value.</summary>
+    /// <summary>
+    /// The presets offered, so a colour can be chosen without typing a hex value.
+    ///
+    /// The neutral grey is <see cref="LabelColours.Unrecognised"/> rather than a shade of its own.
+    /// A new row and an imported label both start on it, and if it were not in this list their
+    /// dropdown would open with nothing selected — the control saying it does not recognise a colour
+    /// the application had just chosen for it.
+    /// </summary>
     public static IReadOnlyList<string> Swatches { get; } =
     [
         "#E8574A", "#E8934A", "#E8C84A", "#6ABF52",
-        "#4AA3E8", "#B77BD8", "#8A8A8A", "#D8D8D8"
+        "#4AA3E8", "#B77BD8", LabelColours.Unrecognised, "#D8D8D8"
     ];
 }

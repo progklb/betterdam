@@ -67,7 +67,8 @@
       </DockPanel>
     </Border>
 
-    <TabControl x:Name="Tabs" Margin="10,8,10,0" Classes.handDrawn="{DynamicResource AppRingEnabled}">
+    <TabControl x:Name="Tabs" Margin="10,8,10,0" SelectionChanged="OnTabChanged"
+                Classes.handDrawn="{DynamicResource AppRingEnabled}">
 
       <TabItem Header="General">
         <ScrollViewer>
@@ -533,6 +534,17 @@
                         <Border DockPanel.Dock="Left" Width="16" Height="16" CornerRadius="3"
                                 Margin="0,0,8,0" VerticalAlignment="Center"
                                 Background="{Binding Colour}" />
+                        <!--
+                          Declared before the ComboBox because DockPanel fills from the outside in:
+                          the first child docked Right takes the outermost place. Remove sits past
+                          the colour, at the end of the row, where a row's own controls end.
+                        -->
+                        <Button DockPanel.Dock="Right" Content="✕" FontSize="10" Padding="6,2"
+                                Background="Transparent" BorderThickness="0"
+                                VerticalAlignment="Center" Margin="6,0,0,0"
+                                ToolTip.Tip="Remove this label. Photographs already carrying it keep it — the file stores the word, not the colour — but labels below this one move up a slot."
+                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RemoveLabelCommand}"
+                                CommandParameter="{Binding}" />
                         <ComboBox DockPanel.Dock="Right" Classes="compact" Width="86" FontSize="11"
                                   ItemsSource="{x:Static vm:LabelRowViewModel.Swatches}"
                                   SelectedItem="{Binding Colour}"
@@ -556,6 +568,8 @@
                   swatch to filter by and no way to put one on another photograph.
                 -->
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                  <Button Content="Add label" Command="{Binding AddLabelCommand}"
+                          ToolTip.Tip="Adds an empty row. It is saved once you give it a name." />
                   <Button Content="Import from workspace…" Command="{Binding ImportLabelsCommand}"
                           IsEnabled="{Binding !IsImportingLabels}"
                           ToolTip.Tip="Reads the labels already on the files in the open workspace and adds any that are missing. Existing labels keep their place, so the numbers other applications write do not change meaning." />

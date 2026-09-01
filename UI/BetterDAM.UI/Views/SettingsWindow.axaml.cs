@@ -53,6 +53,21 @@ public partial class SettingsWindow : Window
     private async Task<bool> ConfirmImportAsync(ImportPlan plan, string noun)
         => await new ImportPreviewWindow(plan, noun).ShowDialog<bool>(this);
 
+    /// <summary>
+    /// Clears the status line when the tab changes.
+    ///
+    /// It reports what just happened — "Imported 3 new label(s)", "Cleared 1.2 GB" — and that is an
+    /// answer about the tab it happened on. Carried to another tab it reads as a report about that
+    /// one instead, which is worse than saying nothing.
+    /// </summary>
+    private void OnTabChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is SettingsViewModel viewModel)
+        {
+            viewModel.StatusMessage = null;
+        }
+    }
+
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 
     /// <summary>Re-sorts a keyword's level once its name has finished being edited.</summary>

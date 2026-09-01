@@ -960,3 +960,31 @@ public class LabelImportPlanTests
         Assert.Equal(direct.Labels.Select(l => l.Name), viaPlan.Labels.Select(l => l.Name));
     }
 }
+
+public class LabelSwatchTests
+{
+    /// <summary>
+    /// A new row and an imported label both start on the neutral grey, so it has to be one of the
+    /// presets — otherwise their dropdown opens with nothing selected, the control claiming not to
+    /// recognise a colour the application chose for it a moment earlier.
+    /// </summary>
+    [Fact]
+    public void The_neutral_grey_is_one_of_the_offered_swatches()
+        => Assert.Contains(LabelColours.Unrecognised, LabelRowViewModel.Swatches);
+
+    [Fact]
+    public void An_imported_label_with_no_colour_word_lands_on_an_offered_swatch()
+    {
+        var merged = LabelImport.Merge(LabelLibrary.Default, ["Portfolio"]);
+
+        Assert.Contains(merged.Labels[^1].Colour, LabelRowViewModel.Swatches);
+    }
+
+    [Fact]
+    public void Every_swatch_is_a_hex_colour()
+        => Assert.All(LabelRowViewModel.Swatches, swatch =>
+        {
+            Assert.StartsWith("#", swatch);
+            Assert.Equal(7, swatch.Length);
+        });
+}

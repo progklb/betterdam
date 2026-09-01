@@ -5511,3 +5511,35 @@ which reported "Import cancelled. Nothing was changed" and left the library unto
 
 A dialog whose fields were all null on first run: `AvaloniaXamlLoader.Load(this)` does not assign
 `x:Name` fields. `InitializeComponent()` is the generated method that does.
+
+### Deleting labels, and a status line that knows when to stop
+
+**The status line clears on a tab change.** It reports what just happened — "Imported 3 new label(s)",
+"Cleared 1.2 GB" — which is an answer about the tab it happened on. Carried to another tab it reads
+as a report about that one instead, which is worse than saying nothing.
+
+**Labels can be removed.** A ✕ per row, matching the keyword tree. Placed past the colour dropdown at
+the end of the row, where a row's own controls end, which needed the button declared *before* the
+ComboBox: a DockPanel fills from the outside in, so the first child docked Right takes the outermost
+place.
+
+Nothing is written to any photograph. The file stores the word, so a file labelled "Yellow" still is
+and the inspector still shows it — as a label the library does not define, which is how a label set
+in another application has always been handled. What goes is the swatch to filter by and the entry to
+apply. Labels below it do move up a slot, and the tooltip says so.
+
+**Add came with it, unasked.** Delete on its own is a one-way door: a label removed by mistake could
+only come back by importing one off a photograph that still carries it, and if nothing carries it,
+not at all. A blank row is not saved until it is given a name, since a nameless label is dropped on
+save and would vanish as it appeared.
+
+**One grey, not two.** A new row and an imported label both start on the neutral grey, which was
+`LabelColours.Unrecognised` while the dropdown offered `#8A8A8A` — so their colour dropdown opened
+with nothing selected, the control claiming not to recognise a colour the application had chosen for
+it a moment earlier. The swatch list now uses the same constant, with a test that it stays a member.
+
+- `dotnet test` — **836/836 passing** (3 new).
+
+Checked in the app: added a scratch label, named it, deleted it, and `settings.json` came out
+byte-identical to the backup taken first. Status message present after an import, gone after moving
+to another tab.

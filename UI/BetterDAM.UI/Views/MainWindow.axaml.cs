@@ -596,7 +596,11 @@ public partial class MainWindow : Window
     /// Public because the macOS application menu lives on <see cref="App"/>, which has no other way
     /// to reach the window that must own the dialog.
     /// </summary>
-    public async Task OpenSettingsAsync()
+    /// <param name="showKeywords">
+    /// Opens on the Keywords tab. Set when the request came from the keyword area of the inspector,
+    /// where anything else would be a detour.
+    /// </param>
+    public async Task OpenSettingsAsync(bool showKeywords = false)
     {
         if (SettingsViewModelFactory is not { } factory)
         {
@@ -608,7 +612,14 @@ public partial class MainWindow : Window
         // So importing keywords can be scoped to what is open rather than the whole catalog.
         viewModel.WorkspacePath = (DataContext as MainWindowViewModel)?.WorkspacePath;
 
-        await new SettingsWindow { DataContext = viewModel }.ShowDialog(this);
+        var window = new SettingsWindow { DataContext = viewModel };
+
+        if (showKeywords)
+        {
+            window.ShowKeywords();
+        }
+
+        await window.ShowDialog(this);
     }
 
     // ---- Search field suggestions ----------------------------------------------------------------

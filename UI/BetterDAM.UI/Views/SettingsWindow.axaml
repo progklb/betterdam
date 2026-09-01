@@ -67,7 +67,7 @@
       </DockPanel>
     </Border>
 
-    <TabControl Margin="10,8,10,0" Classes.handDrawn="{DynamicResource AppRingEnabled}">
+    <TabControl x:Name="Tabs" Margin="10,8,10,0" Classes.handDrawn="{DynamicResource AppRingEnabled}">
 
       <TabItem Header="General">
         <ScrollViewer>
@@ -389,7 +389,7 @@
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="Keywords">
+      <TabItem x:Name="KeywordsTab" Header="Keywords">
         <DockPanel Margin="10,8">
 
           <!-- Actions stay put at the bottom, so they do not scroll away with a long vocabulary. -->

@@ -5364,3 +5364,34 @@ list offered while typing, where the most-used genuinely are the best guesses.
 
 Checked against the real catalog: Animal 28, Audio 22, Audio Only 2, Bird 2 — where it had been
 Bush 238, Calm 93, Medium 81, People 78.
+
+### Manage keywords from the inspector
+
+Right-clicking either half of the inspector's keyword area — the Keywords field or the Keyword
+library section — offers **Manage keywords…**, which opens Settings on the Keywords tab.
+
+**On the tab.** Opening Settings on General and leaving the user to find Keywords would answer a
+question they had not asked, so `OpenSettingsAsync` gained a `showKeywords` flag and `SettingsWindow`
+a `ShowKeywords()`. Selected through named parts rather than a header string, so renaming the tab
+cannot quietly break it. The existing "Set up keywords…" button now lands there too, which it always
+should have.
+
+**Why a context menu is the right shape here, but for a different reason than it first appears.**
+The stated worry — that people will not think to build a library — is already met: an empty library
+puts a visible panel in the inspector saying so, with a button. What was missing is the way *back*:
+once a library exists, nothing in the inspector led to it. Right-click is a poor way to meet
+something for the first time and a good way to return to something you already know is there, which
+is exactly the case left over. A permanent button would compete for room in a panel that is meant to
+be about the photograph, on every selection, for a thing used rarely.
+
+Both regions carry it because either is a reasonable place to go looking. The Keywords field needed
+`Background="Transparent"` to be hit-testable in the gaps — without it a right-click only lands when
+it happens to strike a word.
+
+- `dotnet test` — **795/795 passing** (no new tests: this is wiring between two views, and a test
+  asserting that a click calls a method would only restate the handler).
+
+Checked in the app from both regions, including the empty space beside the Keywords label, and
+Settings opened with Keywords already selected. The Keywords field is hidden in this workspace's
+Display settings, so testing it meant ticking it on and off again — settings.json is byte-identical
+to the backup taken first.

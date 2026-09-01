@@ -273,7 +273,16 @@
                          TextWrapping="Wrap" MinHeight="70" MaxHeight="140" />
               </StackPanel>
 
-              <StackPanel IsVisible="{Binding ShowKeywords}">
+              <!--
+                Transparent so the empty space between the pills and the input is hit-testable:
+                without it a right-click only lands when it happens to strike a word.
+              -->
+              <StackPanel IsVisible="{Binding ShowKeywords}" Background="Transparent">
+                <StackPanel.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Manage keywords…" Click="OnManageKeywords" />
+                  </ContextMenu>
+                </StackPanel.ContextMenu>
               <TextBlock Text="Keywords" Classes="label" />
               <ItemsControl ItemsSource="{Binding AppliedKeywords}" Margin="0,0,0,4">
                 <ItemsControl.ItemsPanel>
@@ -391,6 +400,13 @@
             <Expander Grid.Row="1" Margin="8,6,8,0" IsExpanded="{Binding IsKeywordLibraryOpen}"
                         IsVisible="{Binding HasKeywordLibrary}"
                         HorizontalAlignment="Stretch">
+                <!-- The same entry as on the Keywords field above: this is the other half of the
+                     keyword area, and either is a reasonable place to go looking for it. -->
+                <Expander.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Manage keywords…" Click="OnManageKeywords" />
+                  </ContextMenu>
+                </Expander.ContextMenu>
                 <Expander.Header>
                   <TextBlock Text="Keyword library" FontSize="12" />
                 </Expander.Header>

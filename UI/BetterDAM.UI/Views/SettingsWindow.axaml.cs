@@ -25,6 +25,15 @@ public partial class SettingsWindow : Window
         };
     }
 
+    /// <summary>
+    /// Opens on the Keywords tab rather than General. Used by the inspector's "Manage keywords",
+    /// which is a request to edit the vocabulary — landing on General and leaving the user to find
+    /// the tab would answer a question they did not ask.
+    ///
+    /// Named parts rather than a header string, so renaming the tab cannot quietly break this.
+    /// </summary>
+    public void ShowKeywords() => Tabs.SelectedItem = KeywordsTab;
+
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 
     /// <summary>Re-sorts a keyword's level once its name has finished being edited.</summary>

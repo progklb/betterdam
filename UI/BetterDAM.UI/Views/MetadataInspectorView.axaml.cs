@@ -83,7 +83,24 @@ public partial class MetadataInspectorView : UserControl
     {
         if (this.FindAncestorOfType<MainWindow>() is { } window)
         {
-            await window.OpenSettingsAsync();
+            await window.OpenSettingsAsync(showKeywords: true);
+        }
+    }
+
+    /// <summary>
+    /// Opens Settings on the Keywords tab from the inspector's keyword area.
+    ///
+    /// A context menu rather than a button: the panel is about the photograph in front of you, and a
+    /// permanent control for editing the vocabulary would be one more thing competing for that room
+    /// on every selection. The empty-library case keeps its visible prompt — right-click is a poor
+    /// way to meet something for the first time, but a good way to get back to something you already
+    /// know is there, which is what this is for.
+    /// </summary>
+    private async void OnManageKeywords(object? sender, RoutedEventArgs e)
+    {
+        if (this.FindAncestorOfType<MainWindow>() is { } window)
+        {
+            await window.OpenSettingsAsync(showKeywords: true);
         }
     }
 }

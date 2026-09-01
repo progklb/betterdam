@@ -5320,3 +5320,26 @@ instead of five. Picking a parent means recognising it in a list, and a list fiv
 scrolling a popup to find something that was already on the screen behind it.
 
 - `dotnet test` — **787/787 passing**.
+
+### The move list shows the parent it is already under
+
+Moving `Mood/SlowMo` offered "Top level" and then an indented Blue Hour, Chaos, Harsh with no Mood
+above them. The row was being left out as a no-op not worth listing, but leaving it out took a line
+out of the middle of an indented tree, so its children appeared beneath nothing and the list read as
+though they had lost their group.
+
+It is now listed and **not selectable** — dimmed, and clicks on it do nothing at all: the flyout
+stays open rather than closing on a choice that would change nothing. Of the two suggestions, this
+beat letting it be picked as a no-op, because a destination that can be chosen and then visibly does
+nothing looks like a bug rather than a rule.
+
+`CanMoveSelected` counts only choosable rows, so a keyword whose only listed parent is the one it
+already has is still correctly "nowhere to go", and `Move` refuses a non-choosable target as well —
+the list is not the only guard.
+
+- `dotnet test` — **790/790 passing** (3 new, 1 rewritten). The rewritten one asserted the old
+  behaviour directly, so it had to state the new rule instead.
+
+Checked in the app on a real child of Mood: Top level, then Mood dimmed, then its children indented
+beneath it; clicking Mood does nothing and the flyout stays put. The keyword library is back as it
+was — Mood(10), Shot Type(8), Subject(17).

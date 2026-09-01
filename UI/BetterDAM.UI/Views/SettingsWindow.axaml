@@ -473,6 +473,14 @@
                                          ItemsSource="{Binding MoveTargets}"
                                          SelectionChanged="OnMoveTargetChosen"
                                          PointerReleased="OnMoveTargetReleased">
+                                  <!-- The keyword's current parent: shown so the tree still reads
+                                       as a tree, dimmed and unselectable because filing it where
+                                       it already is would do nothing. -->
+                                  <ListBox.Styles>
+                                    <Style Selector="ListBoxItem" x:DataType="vm:KeywordMoveTarget">
+                                      <Setter Property="IsEnabled" Value="{Binding CanChoose}" />
+                                    </Style>
+                                  </ListBox.Styles>
                                   <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="vm:KeywordMoveTarget">
                                       <TextBlock Text="{Binding Label}" FontFamily="monospace" FontSize="12" />

@@ -13,7 +13,17 @@ namespace BetterDAM.UI.ViewModels;
 /// Somewhere a keyword can be moved to. A null <paramref name="Node"/> means the top level.
 /// </summary>
 /// <param name="Label">Indented by depth, so the shape of the tree is readable in a flat list.</param>
-public sealed record KeywordMoveTarget(string Label, KeywordNodeViewModel? Node);
+/// <summary>
+/// One destination in the "move under" list.
+/// </summary>
+/// <param name="Label">The name, indented to show where it sits in the tree.</param>
+/// <param name="Node">The group to file under, or null for the top level.</param>
+/// <param name="CanChoose">
+/// False for the parent the keyword is already under. It is listed but not selectable: leaving it
+/// out dropped a row out of the middle of an indented tree, so its children appeared beneath
+/// nothing and the list read as though they had lost their group.
+/// </param>
+public sealed record KeywordMoveTarget(string Label, KeywordNodeViewModel? Node, bool CanChoose = true);
 
 /// <summary>
 /// The Keywords tab: build and arrange the vocabulary that the metadata panel will offer.
@@ -98,16 +108,20 @@ public sealed partial class KeywordLibraryEditorViewModel : ObservableObject
             KeywordNodeViewModel moving)
         {
             // Not into itself or anything beneath it — that would detach the subtree from the roots
-            // and lose it — and not into the parent it is already under.
+            // and lose it. The whole subtree goes, so nothing is left dangling by skipping it.
             if (moving.Contains(candidate))
             {
                 return;
             }
 
-            if (!ReferenceEquals(candidate, moving.Parent))
-            {
-                into.Add(new KeywordMoveTarget(new string(' ', depth * 4) + candidate.Name, candidate));
-            }
+            // The parent it is already under is listed, but cannot be chosen. Omitting it took one
+            // row out of the middle of an indented tree and left its children sitting under nothing:
+            // moving Mood/SlowMo offered "Top level" and then an indented Blue Hour, Chaos, Harsh
+            // with no Mood above them, which reads as though those had lost their group.
+            into.Add(new KeywordMoveTarget(
+                new string(' ', depth * 4) + candidate.Name,
+                candidate,
+                CanChoose: !ReferenceEquals(candidate, moving.Parent)));
 
             foreach (var child in candidate.Children)
             {
@@ -116,7 +130,9 @@ public sealed partial class KeywordLibraryEditorViewModel : ObservableObject
         }
     }
 
-    public bool CanMoveSelected => MoveTargets.Count > 0;
+    /// <summary>Whether anything in the list could actually be picked, the shown-but-shut out
+    /// current parent not counting.</summary>
+    public bool CanMoveSelected => MoveTargets.Any(target => target.CanChoose);
 
     /// <summary>
     /// Refiles the selected keyword. The subtree travels with it, which is what the tree already
@@ -131,7 +147,8 @@ public sealed partial class KeywordLibraryEditorViewModel : ObservableObject
     /// </summary>
     public void Move(KeywordNodeViewModel? node, KeywordMoveTarget? target)
     {
-        if (node is null || target is null || (target.Node is { } into && node.Contains(into)))
+        if (node is null || target is null || !target.CanChoose ||
+            (target.Node is { } into && node.Contains(into)))
         {
             return;
         }

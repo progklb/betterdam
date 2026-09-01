@@ -276,15 +276,70 @@ public class KeywordMoveTests
         Assert.DoesNotContain("mammal", labels);
     }
 
-    /// <summary>Offering the parent it is already under would be a no-op cluttering the list.</summary>
+    /// <summary>
+    /// The parent it is already under is listed but cannot be picked.
+    ///
+    /// It used to be left out, which took a row out of the middle of an indented tree: moving
+    /// Mood/SlowMo offered "Top level" and then an indented Blue Hour, Chaos and Harsh with no Mood
+    /// above them, reading as though those had lost their group. Showing it keeps the shape of the
+    /// tree; disabling it keeps the move that would do nothing out of reach.
+    /// </summary>
     [Fact]
-    public void The_current_parent_is_not_offered()
+    public void The_current_parent_is_shown_but_cannot_be_chosen()
     {
         var editor = Editor("Shot type|wide", "Mood|warm");
         editor.Selected = Find(editor, "wide");
 
-        Assert.DoesNotContain("Shot type", editor.MoveTargets.Select(t => t.Label.Trim()));
-        Assert.Contains("Mood", editor.MoveTargets.Select(t => t.Label.Trim()));
+        var current = editor.MoveTargets.Single(t => t.Label.Trim() == "Shot type");
+
+        Assert.False(current.CanChoose);
+        Assert.True(editor.MoveTargets.Single(t => t.Label.Trim() == "Mood").CanChoose);
+        Assert.True(editor.MoveTargets.Single(t => t.Label == "Top level").CanChoose);
+    }
+
+    /// <summary>The row that made the list read wrongly: children under a parent that was missing.</summary>
+    [Fact]
+    public void A_sibling_is_still_offered_and_its_parent_sits_above_it()
+    {
+        var editor = Editor("Mood|SlowMo", "Mood|Harsh");
+        editor.Selected = Find(editor, "SlowMo");
+
+        var labels = editor.MoveTargets.Select(t => t.Label).ToList();
+
+        // Mood immediately precedes its remaining child, and is the shallower of the two.
+        var mood = labels.FindIndex(l => l.Trim() == "Mood");
+        var harsh = labels.FindIndex(l => l.Trim() == "Harsh");
+
+        Assert.True(mood >= 0 && harsh == mood + 1);
+        Assert.True(labels[harsh].Length - labels[harsh].TrimStart().Length
+                    > labels[mood].Length - labels[mood].TrimStart().Length);
+    }
+
+    /// <summary>Selecting it anyway changes nothing — the list is not the only guard.</summary>
+    [Fact]
+    public void Moving_to_the_current_parent_does_nothing()
+    {
+        var editor = Editor("Shot type|wide", "Mood|warm");
+        var node = Find(editor, "wide");
+        editor.Selected = node;
+
+        editor.MoveSelectedCommand.Execute(
+            editor.MoveTargets.Single(t => t.Label.Trim() == "Shot type"));
+
+        Assert.Equal("Shot type", node.Parent?.Name);
+        Assert.Equal(["wide"], Find(editor, "Shot type").Children.Select(c => c.Name).ToArray());
+    }
+
+    /// <summary>A parent that is only listed for reading is not somewhere to go.</summary>
+    [Fact]
+    public void A_keyword_with_only_its_own_parent_listed_cannot_be_moved()
+    {
+        var editor = Editor("Mood|warm");
+        editor.Selected = Find(editor, "warm");
+
+        // "Top level" is a real destination, so this one can move.
+        Assert.True(editor.CanMoveSelected);
+        Assert.Contains(editor.MoveTargets, t => !t.CanChoose);
     }
 
     [Fact]

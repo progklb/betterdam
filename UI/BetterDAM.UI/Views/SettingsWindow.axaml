@@ -531,31 +531,28 @@
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:LabelRowViewModel">
                       <DockPanel Margin="0,3">
-                        <Border DockPanel.Dock="Left" Width="16" Height="16" CornerRadius="3"
-                                Margin="0,0,8,0" VerticalAlignment="Center"
-                                Background="{Binding Colour}" />
                         <!--
-                          Declared before the ComboBox because DockPanel fills from the outside in:
-                          the first child docked Right takes the outermost place. Remove sits past
-                          the colour, at the end of the row, where a row's own controls end.
+                          Colour first. It is the thing a label is recognised by, and the swatch that
+                          used to sit here as well was the same colour shown twice on one row.
                         -->
-                        <Button DockPanel.Dock="Right" Content="✕" FontSize="10" Padding="6,2"
-                                Background="Transparent" BorderThickness="0"
-                                VerticalAlignment="Center" Margin="6,0,0,0"
-                                ToolTip.Tip="Remove this label. Photographs already carrying it keep it — the file stores the word, not the colour — but labels below this one move up a slot."
-                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RemoveLabelCommand}"
-                                CommandParameter="{Binding}" />
-                        <ComboBox DockPanel.Dock="Right" Classes="compact" Width="86" FontSize="11"
+                        <ComboBox DockPanel.Dock="Left" Classes="compact" Width="86" FontSize="11"
+                                  Margin="0,0,8,0"
                                   ItemsSource="{x:Static vm:LabelRowViewModel.Swatches}"
                                   SelectedItem="{Binding Colour}"
-                                  ToolTip.Tip="How this label is drawn in BetterDAM. Not stored in the file.">
+                                  ToolTip.Tip="How this label is drawn in BetterDAM. Not stored in the file. A name that says a colour picks it on its own.">
                           <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="x:String">
                               <Border Width="46" Height="12" CornerRadius="2" Background="{Binding}" />
                             </DataTemplate>
                           </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <TextBox Text="{Binding Name}" Classes="compact" FontSize="12" Margin="0,0,8,0" />
+                        <Button DockPanel.Dock="Right" Content="✕" FontSize="10" Padding="6,2"
+                                Background="Transparent" BorderThickness="0"
+                                VerticalAlignment="Center" Margin="6,0,0,0"
+                                ToolTip.Tip="Remove this label. Photographs already carrying it keep it — the file stores the word, not the colour — but labels below this one move up a slot."
+                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RemoveLabelCommand}"
+                                CommandParameter="{Binding}" />
+                        <TextBox Text="{Binding Name}" Classes="compact" FontSize="12" />
                       </DockPanel>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>

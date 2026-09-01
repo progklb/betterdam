@@ -988,3 +988,150 @@ public class LabelSwatchTests
             Assert.Equal(7, swatch.Length);
         });
 }
+
+/// <summary>
+/// The label row's colour following its name.
+///
+/// The file stores the word and never a colour, so matching Lightroom means naming labels Red,
+/// Yellow, Green, Blue, Purple — and picking each colour by hand from a list of near-identical
+/// swatches is busy work the name has already answered.
+/// </summary>
+public class LabelRowColourTests
+{
+    private static LabelRowViewModel Row(string name = "", string? colour = null, Action? changed = null)
+        => new(name, colour ?? LabelColours.Unrecognised, changed ?? (() => { }));
+
+    [Fact]
+    public void A_name_that_says_a_colour_takes_it()
+    {
+        var row = Row();
+
+        row.Name = "Yellow";
+
+        Assert.Equal(LabelColours.Resolve(null, "Yellow"), row.Colour);
+        Assert.NotEqual(LabelColours.Unrecognised, row.Colour);
+    }
+
+    [Fact]
+    public void It_matches_whatever_the_casing()
+    {
+        var row = Row();
+
+        row.Name = "pUrPlE";
+
+        Assert.Equal(LabelColours.Resolve(null, "Purple"), row.Colour);
+    }
+
+    [Fact]
+    public void Surrounding_space_does_not_stop_it()
+    {
+        var row = Row();
+
+        row.Name = "  Green  ";
+
+        Assert.Equal(LabelColours.Resolve(null, "Green"), row.Colour);
+    }
+
+    /// <summary>Most names are not colours, and those must leave the colour alone.</summary>
+    [Fact]
+    public void A_name_that_says_no_colour_leaves_the_colour_alone()
+    {
+        var row = Row(colour: "#E8574A");
+
+        row.Name = "Portfolio";
+
+        Assert.Equal("#E8574A", row.Colour);
+    }
+
+    /// <summary>
+    /// The name only speaks when it changes, so a colour picked by hand survives everything short of
+    /// renaming the label again.
+    /// </summary>
+    [Fact]
+    public void A_colour_chosen_by_hand_is_kept()
+    {
+        var row = Row();
+        row.Name = "Red";
+
+        row.Colour = "#4AA3E8";
+
+        Assert.Equal("#4AA3E8", row.Colour);
+    }
+
+    [Fact]
+    public void Renaming_again_lets_the_name_speak_again()
+    {
+        var row = Row();
+        row.Name = "Red";
+        row.Colour = "#4AA3E8";
+
+        row.Name = "Green";
+
+        Assert.Equal(LabelColours.Resolve(null, "Green"), row.Colour);
+    }
+
+    /// <summary>
+    /// One save per keystroke, not two. The colour change the name causes is part of the same edit,
+    /// and the save reads the whole row anyway.
+    /// </summary>
+    [Fact]
+    public void Setting_the_name_reports_one_change()
+    {
+        var changes = 0;
+        var row = Row(changed: () => changes++);
+
+        row.Name = "Yellow";
+
+        Assert.Equal(1, changes);
+    }
+
+    [Fact]
+    public void Choosing_a_colour_still_reports_a_change()
+    {
+        var changes = 0;
+        var row = Row(changed: () => changes++);
+
+        row.Colour = "#4AA3E8";
+
+        Assert.Equal(1, changes);
+    }
+
+    [Fact]
+    public void The_colour_a_name_picks_is_one_of_the_offered_swatches()
+    {
+        foreach (var name in (string[])["Red", "Yellow", "Green", "Blue", "Purple"])
+        {
+            var row = Row();
+            row.Name = name;
+
+            Assert.Contains(row.Colour, LabelRowViewModel.Swatches);
+        }
+    }
+}
+
+public class LabelColourWordTests
+{
+    [Theory]
+    [InlineData("Red", true)]
+    [InlineData("yellow", true)]
+    [InlineData("  Blue  ", true)]
+    [InlineData("Portfolio", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void NamesAColour_asks_only_whether_the_word_offers_one(string? label, bool expected)
+        => Assert.Equal(expected, LabelColours.NamesAColour(label));
+
+    /// <summary>
+    /// The library still outranks the word: a label named "Yellow" and coloured blue on purpose is a
+    /// deliberate choice, and asking where the colour came from must still say "the library".
+    /// </summary>
+    [Fact]
+    public void A_library_definition_still_wins_over_the_word()
+    {
+        var library = new LabelLibrary { Labels = [new LabelDefinition("Yellow", "#4AA3E8")] };
+
+        Assert.False(LabelColours.IsFromTheWord(library, "Yellow"));
+        Assert.True(LabelColours.NamesAColour("Yellow"));
+        Assert.Equal("#4AA3E8", LabelColours.Resolve(library, "Yellow"));
+    }
+}

@@ -86,7 +86,15 @@ public static class LabelColours
     /// in a tooltip, since the label is one this workspace uses but the library has never heard of.
     /// </summary>
     public static bool IsFromTheWord(LabelLibrary? library, string? label)
-        => !string.IsNullOrWhiteSpace(label)
-            && library?.Find(label.Trim()) is null
-            && ByName.ContainsKey(label.Trim());
+        => library?.Find(label?.Trim() ?? string.Empty) is null && NamesAColour(label);
+
+    /// <summary>
+    /// True when the word itself names a colour this application knows, whatever the library says.
+    ///
+    /// Separate from <see cref="IsFromTheWord"/>, which asks whether the colour on screen came from
+    /// the word; this asks only whether the word offers one. The label editor uses it to colour a
+    /// row as its name is typed.
+    /// </summary>
+    public static bool NamesAColour(string? label)
+        => !string.IsNullOrWhiteSpace(label) && ByName.ContainsKey(label.Trim());
 }

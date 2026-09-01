@@ -5543,3 +5543,31 @@ it a moment earlier. The swatch list now uses the same constant, with a test tha
 Checked in the app: added a scratch label, named it, deleted it, and `settings.json` came out
 byte-identical to the backup taken first. Status message present after an import, gone after moving
 to another tab.
+
+### One swatch, and a colour that follows the name
+
+**The colour was on the row twice** — a swatch on the left and a dropdown on the right showing the
+same thing. The swatch is gone and the dropdown moved to the front of the row, since the colour is
+what a label is recognised by and the name is what is read afterwards.
+
+**A name that says a colour takes it, as it is typed.** "Yellow" turns yellow on the "w". This is the
+interoperable case and the one worth helping with: the file stores the word and never a colour, so
+matching Lightroom means naming labels Red, Yellow, Green, Blue and Purple — and then picking each
+colour by hand from a list of near-identical swatches is busy work the name has already answered.
+
+The rule is one sentence, which is what makes it predictable: **the name speaks only when it
+changes.** A colour chosen by hand afterwards is kept, and survives everything short of renaming the
+label again. Renaming lets the name speak once more.
+
+`LabelColours.NamesAColour` is separate from `IsFromTheWord`, which asks whether the colour on screen
+came from the word and so still lets the library outrank it — a label named "Yellow" and coloured
+blue on purpose is a deliberate choice. The new one asks only whether the word offers a colour.
+
+One save per keystroke, not two: the colour change the name causes is part of the same edit, and a
+test holds that.
+
+- `dotnet test` — **852/852 passing** (16 new).
+
+Checked in the app: added a row, typed "Purple", and the dropdown turned purple as the word was
+finished, saving as `#B77BD8`. Deleted the row afterwards; `settings.json` is byte-identical to the
+backup taken first.

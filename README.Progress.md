@@ -5395,3 +5395,23 @@ Checked in the app from both regions, including the empty space beside the Keywo
 Settings opened with Keywords already selected. The Keywords field is hidden in this workspace's
 Display settings, so testing it meant ticking it on and off again — settings.json is byte-identical
 to the backup taken first.
+
+### Manage labels from the inspector
+
+The same entry for labels: right-clicking the Label field offers **Manage labels…** and opens
+Settings on the Labels tab.
+
+The `showKeywords` flag added for keywords would have become a second bool, so it is now a
+`SettingsTab` enum holding only the tabs something actually links to, and `SettingsWindow.ShowTab`
+picks the named part. Passing nothing leaves Settings where it normally starts, which is what the
+menu item and Cmd+, want.
+
+Labels have a weaker case than keywords for a visible control and a stronger one for this menu: the
+list is short, fixed, and set up once, so there is no natural moment where the panel would prompt
+about it — no equivalent of the empty-library banner. Right-click is the whole route in, which is a
+fair trade for a thing edited rarely and never urgently.
+
+- `dotnet test` — **795/795 passing**.
+
+Checked all three paths in the app: Label → Labels tab, Keyword library → Keywords tab, and plain
+Cmd+, still opening on General rather than a remembered tab. Settings are byte-identical afterwards.

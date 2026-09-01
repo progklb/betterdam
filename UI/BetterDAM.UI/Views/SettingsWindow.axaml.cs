@@ -26,13 +26,19 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Opens on the Keywords tab rather than General. Used by the inspector's "Manage keywords",
-    /// which is a request to edit the vocabulary — landing on General and leaving the user to find
-    /// the tab would answer a question they did not ask.
+    /// Opens on a particular tab rather than wherever Settings normally starts. Used by the
+    /// inspector's "Manage keywords" and "Manage labels", each of which is a request to edit one
+    /// thing — landing elsewhere and leaving the user to find the tab would answer a question they
+    /// did not ask.
     ///
-    /// Named parts rather than a header string, so renaming the tab cannot quietly break this.
+    /// Named parts rather than header strings, so renaming a tab cannot quietly break this.
     /// </summary>
-    public void ShowKeywords() => Tabs.SelectedItem = KeywordsTab;
+    public void ShowTab(SettingsTab tab) => Tabs.SelectedItem = tab switch
+    {
+        SettingsTab.Keywords => KeywordsTab,
+        SettingsTab.Labels => LabelsTab,
+        _ => Tabs.SelectedItem
+    };
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 

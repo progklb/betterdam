@@ -80,12 +80,7 @@ public partial class MetadataInspectorView : UserControl
     /// sessions. Offering the door is enough.
     /// </summary>
     private async void OnSetUpKeywords(object? sender, RoutedEventArgs e)
-    {
-        if (this.FindAncestorOfType<MainWindow>() is { } window)
-        {
-            await window.OpenSettingsAsync(showKeywords: true);
-        }
-    }
+        => await OpenSettingsAsync(SettingsTab.Keywords);
 
     /// <summary>
     /// Opens Settings on the Keywords tab from the inspector's keyword area.
@@ -97,10 +92,25 @@ public partial class MetadataInspectorView : UserControl
     /// know is there, which is what this is for.
     /// </summary>
     private async void OnManageKeywords(object? sender, RoutedEventArgs e)
+        => await OpenSettingsAsync(SettingsTab.Keywords);
+
+    /// <summary>
+    /// The same for labels, which are edited in the same place and are just as easy to forget can be
+    /// edited at all. The label list is short and fixed, so the panel offers no other way in.
+    /// </summary>
+    private async void OnManageLabels(object? sender, RoutedEventArgs e)
+        => await OpenSettingsAsync(SettingsTab.Labels);
+
+    /// <summary>
+    /// The inspector is a panel inside the window that owns the Settings dialog, so it has to find
+    /// its way up to it. Nothing happens if it is somewhere else, which only design-time previews
+    /// ever are.
+    /// </summary>
+    private async Task OpenSettingsAsync(SettingsTab tab)
     {
         if (this.FindAncestorOfType<MainWindow>() is { } window)
         {
-            await window.OpenSettingsAsync(showKeywords: true);
+            await window.OpenSettingsAsync(tab);
         }
     }
 }

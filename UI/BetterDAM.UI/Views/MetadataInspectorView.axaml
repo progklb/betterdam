@@ -432,7 +432,14 @@
 
             <StackPanel Grid.Row="2" Margin="8,0,8,4">
 
-              <StackPanel IsVisible="{Binding ShowLabel}">
+              <!-- Transparent for the same reason as the Keywords field: without it a right-click
+                   in the gaps lands on nothing. -->
+              <StackPanel IsVisible="{Binding ShowLabel}" Background="Transparent">
+                <StackPanel.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Manage labels…" Click="OnManageLabels" />
+                  </ContextMenu>
+                </StackPanel.ContextMenu>
                 <TextBlock Text="Label" Classes="label" />
                 <!--
                   From the library, like keywords. A label the file already carries that the library

@@ -596,11 +596,12 @@ public partial class MainWindow : Window
     /// Public because the macOS application menu lives on <see cref="App"/>, which has no other way
     /// to reach the window that must own the dialog.
     /// </summary>
-    /// <param name="showKeywords">
-    /// Opens on the Keywords tab. Set when the request came from the keyword area of the inspector,
-    /// where anything else would be a detour.
+    /// <param name="tab">
+    /// The tab to open on, when the request came from somewhere that asked for one thing in
+    /// particular — the inspector's keyword and label areas. Null leaves Settings where it normally
+    /// starts, which is what the menu item and the shortcut want.
     /// </param>
-    public async Task OpenSettingsAsync(bool showKeywords = false)
+    public async Task OpenSettingsAsync(SettingsTab? tab = null)
     {
         if (SettingsViewModelFactory is not { } factory)
         {
@@ -614,9 +615,9 @@ public partial class MainWindow : Window
 
         var window = new SettingsWindow { DataContext = viewModel };
 
-        if (showKeywords)
+        if (tab is { } wanted)
         {
-            window.ShowKeywords();
+            window.ShowTab(wanted);
         }
 
         await window.ShowDialog(this);

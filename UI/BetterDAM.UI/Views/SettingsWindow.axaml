@@ -516,7 +516,7 @@
         </DockPanel>
       </TabItem>
 
-      <TabItem Header="Labels">
+      <TabItem x:Name="LabelsTab" Header="Labels">
         <ScrollViewer>
           <StackPanel Margin="4,10" Spacing="12">
 

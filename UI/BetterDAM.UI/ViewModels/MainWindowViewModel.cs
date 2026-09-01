@@ -716,8 +716,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
             KeywordChips.Add(new KeywordFilterChip(name, count, true, ToggleKeywordFilter));
         }
 
-        foreach (var keyword in _keywordsInScope.Where(k => Matches(k.Value) && !_selectedKeywords.Contains(k.Value))
-                                                .Take(MaxKeywordChips))
+        // Alphabetical for reading, capped by usage — see KeywordFilterList.Arrange for why that
+        // order matters.
+        foreach (var keyword in KeywordFilterList.Arrange(
+                     _keywordsInScope.Where(k => Matches(k.Value) && !_selectedKeywords.Contains(k.Value)),
+                     MaxKeywordChips))
         {
             KeywordChips.Add(new KeywordFilterChip(keyword.Value, keyword.Count, false, ToggleKeywordFilter));
         }

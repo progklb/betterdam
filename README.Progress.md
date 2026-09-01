@@ -5343,3 +5343,24 @@ the list is not the only guard.
 Checked in the app on a real child of Mood: Top level, then Mood dimmed, then its children indented
 beneath it; clicking Mood does nothing and the flyout stays put. The keyword library is back as it
 was — Mood(10), Shot Type(8), Subject(17).
+
+### The filter keyword list reads alphabetically
+
+The checklist came straight out of the catalog, which returns keywords most-used first. That order
+answers "what do I tag most", but nobody opens this list to ask that — they open it to find one
+particular word, and its popularity says nothing about where to look for it. The counts are still
+shown beside each name; they simply no longer decide the order.
+
+The one subtlety is where the 200-item cap goes, so the rule lives in `KeywordFilterList.Arrange`
+rather than inline: the cap is applied **first**, while the list is still most-used first, so it
+keeps the 200 worth showing. Sorting before capping would have made it mean "the first 200
+alphabetically" and quietly dropped the end of the alphabet — a keyword on nine hundred files would
+never appear because its name began with Z.
+
+Left alone: the search bar's own suggestion dropdown, which stays in count order. That is a short
+list offered while typing, where the most-used genuinely are the best guesses.
+
+- `dotnet test` — **795/795 passing** (5 new).
+
+Checked against the real catalog: Animal 28, Audio 22, Audio Only 2, Bird 2 — where it had been
+Bush 238, Calm 93, Medium 81, People 78.

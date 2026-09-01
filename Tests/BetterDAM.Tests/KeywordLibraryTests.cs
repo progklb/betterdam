@@ -1,5 +1,6 @@
 using BetterDAM.Core.Interfaces;
 using BetterDAM.Core.Models;
+using BetterDAM.Core.Services;
 using BetterDAM.UI.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -620,4 +621,62 @@ public class MetadataFieldVisibilityTests
         Assert.Equal(before.DevelopRawFiles, after.DevelopRawFiles);
         Assert.Equal(before.RenderCacheEnabled, after.RenderCacheEnabled);
     }
+}
+
+/// <summary>
+/// The order of the filter panel's keyword checklist.
+///
+/// Alphabetical, not by count: at this list you are hunting for a particular word, and how many
+/// files carry it says nothing about where to look for it.
+/// </summary>
+public class KeywordFilterListTests
+{
+    private static KeywordUsage[] ByUsage(params (string Value, int Count)[] keywords)
+        => keywords.Select(k => new KeywordUsage(k.Value, k.Count)).ToArray();
+
+    [Fact]
+    public void Keywords_are_arranged_alphabetically_not_by_count()
+    {
+        var arranged = KeywordFilterList.Arrange(
+            ByUsage(("Bush", 238), ("Calm", 93), ("Animal", 4)), cap: 100);
+
+        Assert.Equal(["Animal", "Bush", "Calm"], arranged.Select(k => k.Value).ToArray());
+    }
+
+    [Fact]
+    public void The_counts_travel_with_the_keywords()
+    {
+        var arranged = KeywordFilterList.Arrange(ByUsage(("Bush", 238), ("Animal", 4)), cap: 100);
+
+        Assert.Equal(4, arranged[0].Count);
+        Assert.Equal(238, arranged[1].Count);
+    }
+
+    [Fact]
+    public void Sorting_ignores_case()
+    {
+        var arranged = KeywordFilterList.Arrange(
+            ByUsage(("bush", 1), ("Animal", 1), ("calm", 1)), cap: 100);
+
+        Assert.Equal(["Animal", "bush", "calm"], arranged.Select(k => k.Value).ToArray());
+    }
+
+    /// <summary>
+    /// The cap runs first, while the input is still most-used first, so it keeps the ones worth
+    /// showing. Sorted first, it would have meant "the first N alphabetically" and dropped the end
+    /// of the alphabet — a Zebra on a thousand files would simply never appear.
+    /// </summary>
+    [Fact]
+    public void The_cap_keeps_the_most_used_not_the_alphabetically_first()
+    {
+        var arranged = KeywordFilterList.Arrange(
+            ByUsage(("Zebra", 900), ("Yak", 800), ("Ant", 1)), cap: 2);
+
+        Assert.Equal(["Yak", "Zebra"], arranged.Select(k => k.Value).ToArray());
+        Assert.DoesNotContain("Ant", arranged.Select(k => k.Value));
+    }
+
+    [Fact]
+    public void An_empty_list_arranges_to_nothing()
+        => Assert.Empty(KeywordFilterList.Arrange([], cap: 100));
 }

@@ -413,13 +413,24 @@
             <TextBlock Text="{Binding CountSummary}" Classes="hint" />
           </StackPanel>
 
-          <StackPanel Spacing="8" DataContext="{Binding Keywords}">
-            <TextBlock Classes="hint"
+          <!--
+            A DockPanel, not a StackPanel, and the tree given no height of its own.
+
+            A StackPanel hands every child the height it asks for and has nothing left to give away,
+            so the list kept its fixed 330 whatever the window did and simply drew over the actions
+            below once there was no longer room for it. Docking the two lines of explanation to the
+            top leaves the list as the fill, which is the one thing here that should absorb a resize:
+            the wording above it and the buttons below it need the same room at any size.
+          -->
+          <DockPanel DataContext="{Binding Keywords}">
+            <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="0,0,0,8"
                        Text="Your own vocabulary, arranged however you think about your work — Shot type, Subject, Mood. It becomes a tick list on the metadata panel." />
-            <TextBlock Classes="hint"
+            <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="0,0,0,8"
                        Text="The grouping is only for your own sanity. Each keyword is written to your files on its own — ticking “wide” under “Shot type” writes “wide”, never “Shot type|wide” — so what you tag stays readable by any other tool." />
 
-            <Border Classes="card" Padding="0" Height="330">
+            <!-- A floor, so the list stays usable rather than collapsing to a sliver. The window's
+                 own MinHeight keeps the whole tab above that. -->
+            <Border Classes="card" Padding="0" MinHeight="120">
               <Panel>
                 <TextBlock Text="Nothing here yet. Add a group, or import from the workspace."
                            Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -458,7 +469,7 @@
                                 <TextBlock Text="Move under" FontSize="11" Opacity="0.6" />
                                 <!-- Bound through the node, not $parent[TreeView]: this content lives
                                      in a popup root, which such a binding cannot walk out of. -->
-                                <ListBox MaxHeight="260" FontSize="12"
+                                <ListBox MaxHeight="420" FontSize="12"
                                          ItemsSource="{Binding MoveTargets}"
                                          SelectionChanged="OnMoveTargetChosen"
                                          PointerReleased="OnMoveTargetReleased">
@@ -493,7 +504,7 @@
                 </TreeView>
               </Panel>
             </Border>
-          </StackPanel>
+          </DockPanel>
         </DockPanel>
       </TabItem>
 

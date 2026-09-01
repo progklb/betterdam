@@ -5301,3 +5301,22 @@ flyout closes and the keyword moves once the click that chose it has finished.
 
 Verified by measurement on both sides: before, the wheel logged nothing after a move and the list
 was pixel-identical after scrolling; after, the wheel arrives and the list scrolls with no click.
+
+### The keyword list now takes the room it is given
+
+The list had a fixed `Height="330"` inside a `StackPanel`. A StackPanel hands every child the height
+it asks for and has nothing left to distribute, so the list kept its 330 whatever the window did and
+simply drew over the checkbox, the buttons and the count once there was no longer room for it.
+
+The two lines of explanation are now docked to the top of a `DockPanel` and the list is the fill, so
+it is the one thing that absorbs a resize — which is right, since the wording above it and the
+actions below it need the same room at any size. The fixed height is gone, replaced by a `MinHeight`
+of 120 so it stays usable rather than collapsing to a sliver.
+
+Checked at the window's minimum, 560 × 520: no overlap, and the list keeps about 245pt of height.
+
+**The "move under" list is taller too** — `MaxHeight` 260 → 420, which shows thirteen destinations
+instead of five. Picking a parent means recognising it in a list, and a list five rows tall meant
+scrolling a popup to find something that was already on the screen behind it.
+
+- `dotnet test` — **787/787 passing**.

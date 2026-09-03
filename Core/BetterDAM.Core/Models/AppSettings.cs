@@ -73,6 +73,29 @@ public sealed record AppSettings
     public double ClampedRoughness => Math.Clamp(HandDrawnRoughness, MinRoughness, MaxRoughness);
 
     /// <summary>
+    /// How brightly the interface is drawn, 1.0 being the theme as designed.
+    ///
+    /// A darkroom is dim so the eye adapts to the print rather than to the room. This dims the
+    /// application the same way — and only the application: a photograph is never touched, because
+    /// judging one against a dimmed copy of itself would be judging the wrong picture.
+    /// </summary>
+    public double InterfaceBrightness { get; init; } = 1.0;
+
+    /// <summary>
+    /// Dim, not dark.
+    ///
+    /// The floor is set by the label chips rather than by ordinary text. Most of this interface is
+    /// pale ink on near-black, which only gains contrast as it dims; the chips are ink on a fixed
+    /// pale swatch, so they lose it. At a third they were no longer readable, which is a worse
+    /// problem than a bright interface.
+    /// </summary>
+    public const double MinBrightness = 0.45;
+
+    public const double MaxBrightness = 1.0;
+
+    public double ClampedBrightness => Math.Clamp(InterfaceBrightness, MinBrightness, MaxBrightness);
+
+    /// <summary>
     /// Whether the ring draws itself on when a folder is chosen, rather than simply appearing. The
     /// drawing motion is most of the effect; without it the ring is only a wobbly oval.
     /// </summary>

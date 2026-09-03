@@ -134,6 +134,15 @@
                   </Border>
                 </StackPanel>
 
+                <TextBlock Text="Interface brightness" FontSize="12" Margin="0,2,0,0" />
+
+                <Slider Minimum="{x:Static vm:SettingsViewModel.MinBrightness}"
+                        Maximum="{x:Static vm:SettingsViewModel.MaxBrightness}"
+                        Value="{Binding InterfaceBrightness}"
+                        ToolTip.Tip="Dims the application so the eye settles on the photograph. Nothing about the photograph itself changes." />
+
+                <TextBlock Text="{Binding BrightnessSummary}" Classes="hint" Margin="0,0,0,6" />
+
                 <TextBlock Text="Interface font" FontSize="12" Margin="0,2,0,0" />
 
                 <ComboBox ItemsSource="{Binding Fonts}" SelectedItem="{Binding SelectedFont}"

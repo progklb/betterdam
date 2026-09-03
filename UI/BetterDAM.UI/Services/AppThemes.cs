@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
+using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Styling;
 using BetterDAM.Core.Models;
@@ -113,9 +115,31 @@ public static class AppThemes
     public static void Apply(Application application, AppSettings settings)
     {
         var palette = For(settings.Theme);
+        var brightness = settings.ClampedBrightness;
 
-        application.Resources[SurfaceKey] = new SolidColorBrush(palette.Surface);
-        application.Resources[PanelKey] = new SolidColorBrush(palette.Panel);
+        application.Resources[SurfaceKey] = new SolidColorBrush(Dim(palette.Surface, brightness));
+        application.Resources[PanelKey] = new SolidColorBrush(Dim(palette.Panel, brightness));
+
+        // Text as well as surfaces, and this is the half that does the work. The surfaces are
+        // already almost black, so scaling them moves little — under Darkroom, whose surface is
+        // black, it moves nothing at all. What is actually bright in this application is the ink:
+        // white text, and the translucent whites laid over the surfaces. Dimming the inherited
+        // foreground takes the glare off without touching a photograph.
+        var ink = new SolidColorBrush(Dim(Colors.White, brightness));
+        application.Resources[ForegroundKey] = ink;
+        application.Resources[FluentInkKey] = ink;
+
+        // A ToggleButton is the one control a style cannot reach. Its template hands the content
+        // presenter a colour from the theme's own resources, which arrives as a local value — and a
+        // local value outranks every style, so neither setting it on the control nor on the
+        // presenter nor on the text moved "RAW", "Keep" or "Unflagged" off full white. Found by
+        // probing: these four keys are what it reads, and nothing else did anything.
+        foreach (var key in ToggleButtonInkKeys)
+        {
+            application.Resources[key] = ink;
+        }
+
+        ApplyDimming(application, ink, brightness);
 
         // The accent is applied first and hands back the colour that ended up in force, so the ring
         // can be tinted to match it. Returned rather than read back out of the resources: reading
@@ -126,6 +150,94 @@ public static class AppThemes
 
         ApplySelectionStyle(application, settings, accent);
         ApplyFont(application, settings);
+    }
+
+    public const string ForegroundKey = "AppForegroundBrush";
+
+    /// <summary>
+    /// The key Fluent's control themes read their text colour from. Overridden alongside our own so
+    /// controls dim with everything else.
+    /// </summary>
+    private const string FluentInkKey = "ThemeForegroundBrush";
+
+    /// <summary>
+    /// The keys a ToggleButton draws its content with. Its template passes the colour to the content
+    /// presenter from within the template, where it becomes a local value that no style can outrank,
+    /// so the resource is the only way in.
+    /// </summary>
+    private static readonly string[] ToggleButtonInkKeys =
+    [
+        "ToggleButtonForeground",
+        "ToggleButtonForegroundChecked",
+        "ToggleButtonForegroundPointerOver",
+        "ToggleButtonForegroundCheckedPointerOver"
+    ];
+
+    /// <summary>The dimming styles currently in force, so they can be replaced or taken away.</summary>
+    private static Styles? _dimming;
+
+    /// <summary>
+    /// Dims the ink by styling it directly rather than by handing a colour down the tree.
+    ///
+    /// Inheritance was not enough, and the measurements said so: at 35% the status bar dimmed by 65%
+    /// while the folder tree and the thumbnail filenames did not move at all. Text inside an item
+    /// template sits in a ListBoxItem or a TreeViewItem whose own control theme sets a foreground,
+    /// and a control that sets one does not inherit one. A style outranks a control theme, so this
+    /// reaches them; a colour written in the markup outranks a style, so the badges that are
+    /// deliberately blue or amber keep their colour.
+    ///
+    /// <para>Added and removed rather than always present. At full brightness there is no style at
+    /// all, so nothing changes for anyone who leaves the slider alone — which matters, because this
+    /// would otherwise flatten the greys a control theme uses for disabled and selected text.</para>
+    /// </summary>
+    private static void ApplyDimming(Application application, IBrush ink, double brightness)
+    {
+        if (_dimming is not null)
+        {
+            application.Styles.Remove(_dimming);
+            _dimming = null;
+        }
+
+        if (brightness >= 1.0)
+        {
+            return;
+        }
+
+        var text = new Style(x => x.OfType<TextBlock>());
+        text.Setters.Add(new Setter(TextBlock.ForegroundProperty, ink));
+
+        // Every templated control as well, which is a wider net than it first looks and is needed.
+        // A CheckBox draws its label through a ContentPresenter, and that hands the text a
+        // foreground as a local value — which outranks a style, so the TextBlock rule above never
+        // reached it and "Include subfolders" stayed at full white while everything around it dimmed.
+        // Setting it on the control is upstream of that. It also covers the drawn icons, since a
+        // PathIcon is one of these too.
+        var controls = new Style(x => x.Is<TemplatedControl>());
+        controls.Setters.Add(new Setter(TemplatedControl.ForegroundProperty, ink));
+
+        // And the presenters, which is where a CheckBox's label actually gets its colour: Fluent
+        // hands its ContentPresenter a per-state brush of its own rather than passing the control's
+        // Foreground down, so setting it on the CheckBox never reached the words beside the tick.
+        var presenters = new Style(x => x.OfType<ContentPresenter>());
+        presenters.Setters.Add(new Setter(ContentPresenter.ForegroundProperty, ink));
+
+        _dimming = [controls, presenters, text];
+        application.Styles.Add(_dimming);
+    }
+
+    /// <summary>
+    /// Scales a colour towards black, keeping its hue.
+    ///
+    /// Multiplied per channel rather than blended towards black, which comes to the same thing for
+    /// an opaque colour and says more plainly what it is: at 0.5 every channel is half as bright.
+    /// </summary>
+    internal static Color Dim(Color colour, double brightness)
+    {
+        static byte Scale(byte channel, double by) => (byte)Math.Clamp(Math.Round(channel * by), 0, 255);
+
+        return brightness >= 1.0
+            ? colour
+            : Color.FromArgb(colour.A, Scale(colour.R, brightness), Scale(colour.G, brightness), Scale(colour.B, brightness));
     }
 
     public const string FontKey = "AppFontFamily";

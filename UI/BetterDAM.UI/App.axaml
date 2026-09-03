@@ -55,6 +55,11 @@
     <Style Selector="Window">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
       <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+      <!--
+        Foreground is inherited, so one setter here reaches every piece of text that does not name
+        its own colour. That is what the brightness setting dims: the ink, not the photographs.
+      -->
+      <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
     </Style>
 
     <!--

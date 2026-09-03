@@ -100,6 +100,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             ? NearestChoice(current.CacheSizeLimitBytes)
             : DefaultChoiceIndex;
 
+        _interfaceBrightness = current.ClampedBrightness;
         _restrictKeywordsToLibrary = current.RestrictKeywordsToLibrary;
         BuildFieldToggles();
         BuildLabelRows();
@@ -530,6 +531,32 @@ public sealed partial class SettingsViewModel : ObservableObject
             _ = SaveAsync(_settings.Current with { HandDrawnRoughness = value });
         }
     }
+
+    /// <summary>
+    /// How brightly the interface is drawn. Applied as it is dragged, like the theme — the point of
+    /// the control is to find the level that suits the room you are in, and that cannot be judged
+    /// from a number.
+    /// </summary>
+    [ObservableProperty]
+    private double _interfaceBrightness = 1.0;
+
+    partial void OnInterfaceBrightnessChanged(double value)
+    {
+        OnPropertyChanged(nameof(BrightnessSummary));
+
+        if (Math.Abs(_settings.Current.InterfaceBrightness - value) > 0.001)
+        {
+            _ = SaveAsync(_settings.Current with { InterfaceBrightness = value });
+        }
+    }
+
+    public string BrightnessSummary => InterfaceBrightness >= AppSettings.MaxBrightness - 0.001
+        ? "Full brightness — the theme as designed."
+        : $"Dimmed to {InterfaceBrightness:P0}. Photographs are never dimmed; only the application around them.";
+
+    public static double MinBrightness => AppSettings.MinBrightness;
+
+    public static double MaxBrightness => AppSettings.MaxBrightness;
 
     [ObservableProperty]
     private bool _handDrawnAnimates;

@@ -5571,3 +5571,121 @@ test holds that.
 Checked in the app: added a row, typed "Purple", and the dropdown turned purple as the word was
 finished, saving as `#B77BD8`. Deleted the row afterwards; `settings.json` is byte-identical to the
 backup taken first.
+
+### Interface brightness (experimental)
+
+A slider in the Experimental card dims the application. A darkroom is dim so the eye adapts to the
+print rather than to the room, and this does the same thing — **to the application only**. A
+photograph is never touched, because judging one against a dimmed copy of itself is judging the
+wrong picture. The summary line under the slider says so, since a brightness control sitting in a
+photo application has to be clear about what it does not do.
+
+**Dimming the surfaces was not enough, and the theming comment says why.** Almost every colour here
+is a translucent white laid *over* one of two surfaces, and under Darkroom the surface is pure black
+— so scaling the surfaces moves little and, on that theme, nothing at all. What is actually bright is
+the ink. Dimming the inherited foreground is the half that does the work.
+
+**Then half the interface dimmed and half did not.** Buttons, dropdowns and text boxes take their
+colour from Fluent's control themes rather than inheriting one, so labels dimmed while the controls
+beside them stayed at full white — which reads as a fault, not a setting. Overriding Fluent's own
+`ThemeForegroundBrush` alongside ours brings them with it. At full brightness the override is the
+colour it replaces, so nothing changes for anyone who leaves the slider alone.
+
+Applied as it is dragged, through the existing theme-changed path — the point of the control is to
+find the level that suits the room, and that cannot be judged from a number. Floored at 35%: below
+about a third the text stops being readable at a glance, which is a worse problem than a bright
+interface.
+
+- `dotnet test` — **860/860 passing** (8 new).
+
+Measured on screen rather than judged by eye, at a 61% setting:
+
+| Region | Change |
+| --- | --- |
+| Preview photograph | **0.0%** |
+| Thumbnail photograph | −0.1% |
+| Status bar text | −41.2% |
+
+−41% against a predicted −39% for text at 61%, and the photographs do not move. The user's setting
+was restored to full afterwards.
+
+### Brightness now reaches the whole interface
+
+The first attempt dimmed by handing a colour down the tree, and it only half worked. Measured at 35%:
+the status bar dimmed by 65% while the folder tree and the thumbnail filenames **did not move at
+all** — 0.0%. Text inside an item template sits in a `ListBoxItem` or `TreeViewItem` whose control
+theme sets a foreground, and a control that sets one does not inherit one.
+
+Dimming is now applied as **styles added to the application**, which outrank a control theme. Three
+rules, and each of the last two was added because a measurement said the one before it was not
+enough:
+
+| Rule | What it was for |
+| --- | --- |
+| `TextBlock` | Ordinary text, including inside item templates |
+| `TemplatedControl` | Buttons, dropdowns, boxes — and the drawn icons, which are these too |
+| `ContentPresenter` | A CheckBox's label: Fluent hands its presenter a per-state brush of its own, so setting it on the CheckBox never reached the words beside the tick |
+
+A colour written in the markup still outranks a style, so the badges that are deliberately blue or
+amber keep their colour. The styles are **added and removed** rather than always present: at full
+brightness there is no style at all, so nothing changes for anyone who leaves the slider alone —
+which matters, since this would otherwise flatten the greys a control theme uses for disabled and
+selected text.
+
+Measured at 45%, across everything the report named:
+
+| Region | Change |
+| --- | --- |
+| Folder tree | −65.1% |
+| Thumbnail filename | −65.1% |
+| Inspector title | −65.1% |
+| Inspector dropdown | −67.0% |
+| "Include subfolders" | −65.2% |
+| Keep / Reject buttons | −65.1% |
+| Status bar | −65.1% |
+| **Preview photograph** | **0.0%** |
+| **Thumbnail photograph** | **0.0%** |
+
+**The floor moved to 45%.** Not for ordinary text, which is pale ink on near-black and only gains
+contrast as it dims, but for the label chips in the filter panel: those are ink on a fixed pale
+swatch, so they lose it. At a third they were no longer readable.
+
+- `dotnet test` — **860/860 passing**.
+
+### Brightness: the parts the styles could not reach
+
+A second report of bright patches, and each one had a different cause. Found by probing rather than
+reasoning: the dimmed ink was temporarily set to **magenta**, so a screenshot said exactly which
+rules reached which controls.
+
+**`OfType` matched nothing.** The rule meant to catch every templated control was
+`x.OfType<TemplatedControl>()`, and `OfType` matches that type *exactly* — no control is exactly a
+`TemplatedControl`, so the rule had never applied to anything. `Is<TemplatedControl>()` matches
+derived types, and with that the RadioButtons dimmed.
+
+**One control a style cannot reach at all.** A `ToggleButton` — the RAW/JPEG/Video and
+Keep/Reject/Unflagged filters — stayed at full white against every rule tried: on the control, on
+its template's content presenter, and on the text itself. Its template hands the presenter a colour
+from the theme's own resources, and that arrives as a **local value**, which outranks every style.
+The resource is the only way in. Four keys, found by setting candidates to the probe colour and
+bisecting: `ToggleButtonForeground`, `…Checked`, `…PointerOver`, `…CheckedPointerOver`. The
+`ButtonForeground` family did nothing, so the narrower set is what ships.
+
+**And one false alarm.** "Where to search" reads bright next to the panel's small labels, but the
+probe showed it magenta: it is dimming, and looks brighter only because it is bold and larger. Worth
+recording, because it would otherwise have been chased.
+
+Measured on the filter panel, at 45%:
+
+| Region | Change |
+| --- | --- |
+| RAW / JPEG / Video | −55.3% |
+| Keep / Reject | −54.9% |
+| Where to search | −55.6% |
+| Radio label | −55.6% |
+| Filters heading | −54.9% |
+| **Thumbnail photograph** | **0.0%** |
+
+Uniform, which is the point — a half-dimmed interface reads as a fault rather than a setting.
+
+- `dotnet test` — **860/860 passing**.

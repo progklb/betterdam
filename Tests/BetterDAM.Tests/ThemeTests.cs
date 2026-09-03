@@ -392,3 +392,73 @@ public class ThemeTests
         });
     }
 }
+
+/// <summary>
+/// The interface brightness setting: a darkroom is dim so the eye adapts to the print rather than
+/// to the room.
+/// </summary>
+public class InterfaceBrightnessTests
+{
+    [Fact]
+    public void Full_brightness_leaves_a_colour_exactly_as_it_was()
+    {
+        var colour = Color.FromRgb(0x18, 0x05, 0x05);
+
+        Assert.Equal(colour, AppThemes.Dim(colour, 1.0));
+    }
+
+    [Fact]
+    public void Half_brightness_halves_every_channel()
+    {
+        var dimmed = AppThemes.Dim(Color.FromRgb(200, 100, 50), 0.5);
+
+        Assert.Equal(100, dimmed.R);
+        Assert.Equal(50, dimmed.G);
+        Assert.Equal(25, dimmed.B);
+    }
+
+    /// <summary>Scaled, not blended, so a red theme stays red rather than drifting grey.</summary>
+    [Fact]
+    public void Dimming_keeps_the_hue()
+    {
+        var dimmed = AppThemes.Dim(Color.FromRgb(0x18, 0x05, 0x05), 0.5);
+
+        Assert.True(dimmed.R > dimmed.G);
+        Assert.Equal(dimmed.G, dimmed.B);
+    }
+
+    [Fact]
+    public void Alpha_is_untouched()
+        => Assert.Equal(128, AppThemes.Dim(Color.FromArgb(128, 200, 200, 200), 0.5).A);
+
+    [Fact]
+    public void Black_has_nothing_left_to_dim()
+        => Assert.Equal(Colors.Black, AppThemes.Dim(Colors.Black, 0.4));
+
+    /// <summary>
+    /// The floor is set by the label chips, which are ink on a fixed pale swatch and so lose
+    /// contrast as they dim, where the rest of the interface gains it.
+    /// </summary>
+    [Fact]
+    public void The_setting_is_clamped_to_something_still_readable()
+    {
+        Assert.Equal(AppSettings.MinBrightness, (AppSettings.Default with { InterfaceBrightness = 0.01 }).ClampedBrightness);
+        Assert.Equal(AppSettings.MaxBrightness, (AppSettings.Default with { InterfaceBrightness = 9.0 }).ClampedBrightness);
+    }
+
+    [Fact]
+    public void It_starts_at_full_brightness()
+        => Assert.Equal(1.0, AppSettings.Default.ClampedBrightness);
+
+    [Fact]
+    public void BrightnessSurvivesARoundTrip()
+    {
+        var settings = AppSettings.Default with { InterfaceBrightness = 0.6 };
+
+        var json = JsonSerializer.Serialize(settings);
+        var back = JsonSerializer.Deserialize<AppSettings>(json);
+
+        Assert.NotNull(back);
+        Assert.Equal(0.6, back!.ClampedBrightness);
+    }
+}

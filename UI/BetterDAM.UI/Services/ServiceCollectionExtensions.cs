@@ -88,6 +88,7 @@ internal static class ServiceCollectionExtensions
         services.AddTransient<VideoPlayerViewModel>();
         services.AddTransient<BatchEditViewModel>();
         services.AddTransient<SyncViewModel>();
+        services.AddTransient<ChangesViewModel>();
         services.AddTransient<PrepareWorkspaceViewModel>();
         services.AddTransient<KeywordLibraryEditorViewModel>();
         services.AddTransient<MainWindowViewModel>();

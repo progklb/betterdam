@@ -65,7 +65,8 @@ public partial class App : Application
                 DataContext = viewModel,
                 SettingsViewModelFactory = services.GetRequiredService<SettingsViewModel>,
                 PrepareWorkspaceViewModelFactory = services.GetRequiredService<PrepareWorkspaceViewModel>,
-                SyncViewModelFactory = services.GetRequiredService<SyncViewModel>
+                SyncViewModelFactory = services.GetRequiredService<SyncViewModel>,
+                ChangesViewModelFactory = services.GetRequiredService<ChangesViewModel>
             };
 
             // A folder on the command line wins over the remembered one; otherwise reopen the last
@@ -75,7 +76,12 @@ public partial class App : Application
                 _ = viewModel.OpenPathAsync(folder);
             }
 
-            desktop.ShutdownRequested += (_, _) => services.Dispose();
+            // Torn down on Exit rather than ShutdownRequested, and asynchronously. ShutdownRequested
+            // fires before any window is asked whether it may close, so disposing there both ran
+            // ahead of the main window's close guard and — because the ExifTool host is async-only
+            // to dispose — threw, which is what "terminated unexpectedly" on every quit was.
+            // Exit fires once the windows have gone and there is nothing left to cancel.
+            desktop.Exit += (_, _) => services.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
 
         base.OnFrameworkInitializationCompleted();

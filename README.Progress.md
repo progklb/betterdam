@@ -5744,3 +5744,49 @@ byte-identical afterwards.
 
 - `dotnet test` — **878/878 passing** (18 new: the setting's default and round trip, the cross's
   geometry, the badge's truth table, the perforation layout, the splitter width).
+
+### The Changes review
+
+The status bar said how many files had pending changes and offered three all-or-nothing buttons.
+The pending store holds both sides of every edit, so a review needed no new data — only a place to
+see it. Clicking the count now opens one.
+
+**What it shows.** Every pending file, sorted by path with its folder relative to the workspace, a
+thumbnail, and a one-line summary of what changed — `rating · label · +2 keywords` — so the list
+is scanned rather than opened. The file in view gets its diff: only the fields that differ, as
+*was → now*, with "—" for not present because null is a value in this model; keywords as `+` and
+`−` rows rather than two lists to compare by eye. `MetadataDiff` in Core does the reading and is
+tested on its own.
+
+**Per-file actions.** Discard and Write sidecars act on the multi-selection, or on the file in
+view when nothing else is selected. That is the staging: write the twenty you are sure of, leave
+the two you are not. A failure part way leaves exactly the unwritten files pending. Discarding
+existed already (`_pending.Discard`) but had no home outside the inspector.
+
+**Conflicts.** A second tab for the other two-readings-of-one-file case, which until now surfaced
+only as a tile badge and inside the inspector one file at a time. An explicit check over the files
+on screen, with progress and a cancel — on the 4,921-file workspace it is about 100 seconds of
+ExifTool, and a hundred seconds nobody asked for is a hang. Settling one records the choice as a
+pending change, exactly as the inspector does, and the file moves to the Changes tab. The check
+found **16 real conflicts** in the workspace, every one `Rating 0` in the file against `5` in the
+sidecar: Fuji RAFs appear to carry an explicit zero, so every sidecar-rated file reads as a
+conflict. That is the detector's existing rule, left as is and worth a decision.
+
+**The close guard.** The store is in memory, and quitting lost everything in it silently. Closing
+with pending edits now opens the review with a banner and a *Quit without saving* button, rather
+than a yes/no the user could not answer without seeing which files it was about.
+
+**And a crash that turned out to be everyone's.** Cmd+Q ended every session with
+`FTL BetterDAM terminated unexpectedly`: the container was disposed on `ShutdownRequested`, and
+the ExifTool host is async-only to dispose, so `ServiceProvider.Dispose()` threw. Present since
+August. It also ran *before* Avalonia asks any window whether it may close, so the guard above
+could never have fired. Disposal moved to `Exit`, asynchronously.
+
+Verified in the application: a rating set in memory, the review opened from the count with the
+diff `Unrated → 3 stars`, Discard emptying it live, the conflict check with progress, Cmd+Q held
+by the guard and honoured by *Quit without saving*, and a clean exit. Writing was not exercised
+against the workspace — it would have put a sidecar next to a real file — and is covered by the
+ViewModel tests instead. Settings restored byte-identical.
+
+- `dotnet test` — **901/901 passing** (23 new: the diff, the review's list, targets, partial
+  writes and failures, the conflict check and resolution).

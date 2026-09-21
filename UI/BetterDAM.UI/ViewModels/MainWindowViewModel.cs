@@ -1784,6 +1784,31 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// After the Changes review closes: the grid's badges follow the store, and any sidecars the
+    /// review wrote are re-indexed so a search run straight afterwards agrees with the disk.
+    /// </summary>
+    public async Task RefreshAfterReviewAsync(IReadOnlyList<MediaFile> written)
+    {
+        RefreshAfterSync();
+
+        if (written.Count == 0)
+        {
+            return;
+        }
+
+        var paths = written.Select(f => f.FullPath).ToHashSet(StringComparer.Ordinal);
+        foreach (var item in MediaItems)
+        {
+            if (paths.Contains(item.File.FullPath))
+            {
+                item.HasSidecar = true;
+            }
+        }
+
+        await RunIndexAsync(written, CancellationToken.None);
+    }
+
     [RelayCommand]
     private void DiscardAllPendingChanges()
     {

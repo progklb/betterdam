@@ -24,6 +24,9 @@ public partial class MainWindow : Window
     /// <summary>And for Prepare Workspace, which re-counts the workspace each time it is opened.</summary>
     public Func<PrepareWorkspaceViewModel>? PrepareWorkspaceViewModelFactory { get; set; }
 
+    /// <summary>And for the Changes review, which reads the pending store afresh each time.</summary>
+    public Func<ChangesViewModel>? ChangesViewModelFactory { get; set; }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -110,6 +113,70 @@ public partial class MainWindow : Window
         {
             viewModel.RefreshAfterSync();
         }
+    }
+
+    private void OnOpenChanges(object? sender, RoutedEventArgs e) => _ = ReviewChangesAsync(quitting: false);
+
+    /// <summary>
+    /// Opens the review of pending changes and, when it closes, brings the grid up to date with
+    /// whatever was written or discarded there.
+    ///
+    /// Returns true only when the review was opened because the window was closing and the user
+    /// chose to quit regardless — the one answer <see cref="OnClosing"/> needs.
+    /// </summary>
+    private async Task<bool> ReviewChangesAsync(bool quitting)
+    {
+        if (ChangesViewModelFactory is not { } factory || DataContext is not MainWindowViewModel viewModel)
+        {
+            return false;
+        }
+
+        var review = factory();
+        review.WorkspacePath = viewModel.WorkspacePath;
+        review.Scope = viewModel.MediaItems.Select(item => item.File).ToList();
+        review.IsQuitPrompt = quitting;
+
+        var quitAnyway = await new ChangesWindow { DataContext = review }.ShowDialog<bool>(this);
+
+        // Nothing to bring up to date on the way out: the refresh re-reads the inspected file, and
+        // doing that while the application is tearing down only logs a read against a disposed
+        // ExifTool session.
+        if (!quitAnyway)
+        {
+            await viewModel.RefreshAfterReviewAsync(review.Written);
+        }
+
+        return quitAnyway;
+    }
+
+    /// <summary>Set once the user has seen what would be lost and chosen to lose it.</summary>
+    private bool _quitConfirmed;
+
+    /// <summary>
+    /// The pending store is held in memory. Closing with edits in it would lose them silently, so
+    /// the close is held and the review opened instead — a yes/no here would be a question the
+    /// user cannot answer without seeing which files it is about. Quitting from the review closes
+    /// the window for real; closing the review returns to the application.
+    /// </summary>
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        base.OnClosing(e);
+
+        if (_quitConfirmed || e.Cancel || DataContext is not MainWindowViewModel { HasPendingChanges: true })
+        {
+            return;
+        }
+
+        e.Cancel = true;
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (await ReviewChangesAsync(quitting: true))
+            {
+                _quitConfirmed = true;
+                Close();
+            }
+        });
     }
 
     private void OnRecentChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildRecentMenu();

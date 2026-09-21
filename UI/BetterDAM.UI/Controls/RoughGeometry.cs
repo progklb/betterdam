@@ -121,45 +121,82 @@ internal static class RoughGeometry
 
         for (var edge = 0; edge < 4; edge++)
         {
-            var random = new Random(seed + (edge * 131));
-            var from = corners[edge];
-            var to = corners[(edge + 1) % 4];
-
-            var dx = to.X - from.X;
-            var dy = to.Y - from.Y;
-            var length = Math.Sqrt((dx * dx) + (dy * dy));
-
-            if (length <= 0)
+            if (Stroke(corners[edge], corners[(edge + 1) % 4], seed + (edge * 131), amplitude, overshoot, steps)
+                is { } points)
             {
-                continue;
+                edges.Add(points);
             }
-
-            // Unit vector along the edge, and its normal — the wobble only ever goes sideways.
-            var ux = dx / length;
-            var uy = dy / length;
-            var nx = -uy;
-            var ny = ux;
-
-            var points = new Point[steps + 1];
-
-            for (var i = 0; i <= steps; i++)
-            {
-                var t = i / (double)steps;
-
-                // Runs from just before the first corner to just past the second.
-                var along = -overshoot + (t * (length + (overshoot * 2)));
-                var taper = Math.Sin(Math.PI * t);
-                var offset = (random.NextDouble() - 0.5) * 2 * amplitude * taper;
-
-                points[i] = new Point(
-                    from.X + (ux * along) + (nx * offset),
-                    from.Y + (uy * along) + (ny * offset));
-            }
-
-            edges.Add(points);
         }
 
         return edges;
+    }
+
+    /// <summary>
+    /// A chinagraph cross through a frame: two strokes, corner to corner, the way a contact sheet
+    /// is marked up. Returned as two strokes rather than one path because they are drawn as two —
+    /// the hand lifts between them.
+    ///
+    /// Heavier-handed than a border. This is a judgement written across a picture, not an edge
+    /// following a window, so it may wander more and it runs well past the corners: a grease
+    /// pencil is pressed hard and does not stop where the frame does.
+    /// </summary>
+    public static (Point[] First, Point[] Second) Cross(Rect area, int seed, double roughness)
+    {
+        var amplitude = Math.Clamp(roughness * 2.6, 0, 7);
+
+        // In proportion to the frame rather than fixed: a tile can be anything from a postage stamp
+        // to a quarter of the screen, and an overshoot right for one is invisible or absurd on the
+        // other.
+        var overshoot = Math.Min(area.Width, area.Height) * 0.06;
+
+        const int steps = 12;
+
+        var first = Stroke(area.TopLeft, area.BottomRight, seed, amplitude, overshoot, steps);
+        var second = Stroke(area.TopRight, area.BottomLeft, seed + 71, amplitude, overshoot, steps);
+
+        return (first ?? [], second ?? []);
+    }
+
+    /// <summary>
+    /// One stroke between two points, wobbling only sideways and tapering to nothing at both ends
+    /// so it lands where it was aimed. The one pencil that every straight mark is drawn with.
+    /// </summary>
+    private static Point[]? Stroke(Point from, Point to, int seed, double amplitude, double overshoot, int steps)
+    {
+        var random = new Random(seed);
+
+        var dx = to.X - from.X;
+        var dy = to.Y - from.Y;
+        var length = Math.Sqrt((dx * dx) + (dy * dy));
+
+        if (length <= 0)
+        {
+            return null;
+        }
+
+        // Unit vector along the stroke, and its normal — the wobble only ever goes sideways.
+        var ux = dx / length;
+        var uy = dy / length;
+        var nx = -uy;
+        var ny = ux;
+
+        var points = new Point[steps + 1];
+
+        for (var i = 0; i <= steps; i++)
+        {
+            var t = i / (double)steps;
+
+            // Runs from just before the first point to just past the second.
+            var along = -overshoot + (t * (length + (overshoot * 2)));
+            var taper = Math.Sin(Math.PI * t);
+            var offset = (random.NextDouble() - 0.5) * 2 * amplitude * taper;
+
+            points[i] = new Point(
+                from.X + (ux * along) + (nx * offset),
+                from.Y + (uy * along) + (ny * offset));
+        }
+
+        return points;
     }
 
     /// <summary>

@@ -94,6 +94,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _handDrawnSelection = current.SelectionStyle == SelectionStyle.HandDrawn;
         _handDrawnRoughness = current.ClampedRoughness;
         _handDrawnAnimates = current.HandDrawnAnimates;
+        _contactSheet = current.ContactSheet;
 
         _isCacheLimited = current.IsCacheLimited;
         _selectedLimitIndex = current.IsCacheLimited
@@ -566,6 +567,22 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (_settings.Current.HandDrawnAnimates != value)
         {
             _ = SaveAsync(_settings.Current with { HandDrawnAnimates = value });
+        }
+    }
+
+    /// <summary>
+    /// The contact sheet: grease-pencil verdicts, a rebate over each frame, film edges between the
+    /// panes. Its own switch rather than a second mode of the hand-drawn selection, because the
+    /// two are separately wanted — and it takes effect as it is ticked, like everything here.
+    /// </summary>
+    [ObservableProperty]
+    private bool _contactSheet;
+
+    partial void OnContactSheetChanged(bool value)
+    {
+        if (_settings.Current.ContactSheet != value)
+        {
+            _ = SaveAsync(_settings.Current with { ContactSheet = value });
         }
     }
 

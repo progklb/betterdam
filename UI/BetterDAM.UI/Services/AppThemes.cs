@@ -149,7 +149,55 @@ public static class AppThemes
         var accent = ApplyAccent(application, settings);
 
         ApplySelectionStyle(application, settings, accent);
+        ApplyContactSheet(application, settings, brightness);
         ApplyFont(application, settings);
+    }
+
+    public const string ContactSheetKey = "AppContactSheet";
+
+    /// <summary>
+    /// Whether a tile's corner badge still carries the flag. The inverse of the experiment,
+    /// published separately because the badge binds to it and a binding cannot negate a resource.
+    /// </summary>
+    public const string VerdictInBadgeKey = "AppVerdictInBadge";
+
+    public const string ChinagraphInkKey = "AppChinagraphInk";
+    public const string EdgePrintInkKey = "AppEdgePrintInk";
+    public const string SplitterWidthKey = "AppSplitterWidth";
+
+    /// <summary>
+    /// Grease pencil. Waxy red, well short of pure: a chinagraph is a dull, dense colour, and a
+    /// saturated one would sit on top of a photograph rather than on it.
+    /// </summary>
+    private static readonly Color Chinagraph = Color.FromRgb(0xC4, 0x36, 0x2B);
+
+    /// <summary>
+    /// The amber that film edge print is exposed in. The same value the Orange label uses, which
+    /// is not a coincidence worth breaking — it means the rebate and a label never clash.
+    /// </summary>
+    private static readonly Color EdgePrint = Color.FromRgb(0xE8, 0x94, 0x4A);
+
+    /// <summary>The bar between panes. Four points is a line; twelve is room for a perforation.</summary>
+    public static double SplitterWidthFor(bool contactSheet) => contactSheet ? 12 : 4;
+
+    /// <summary>
+    /// Publishes the contact sheet's settings. The class that switches the splitters is set on
+    /// the window from <see cref="ContactSheetKey"/>, for the reason
+    /// <see cref="ApplySelectionStyle"/> gives.
+    ///
+    /// The chinagraph is not dimmed with the interface. It is drawn on the photograph, in the same
+    /// place as the label bar, and like the label bar it is part of what is being judged about the
+    /// picture rather than of the room the picture is in. The edge print is chrome, and dims.
+    /// </summary>
+    private static void ApplyContactSheet(Application application, AppSettings settings, double brightness)
+    {
+        var on = settings.ContactSheet;
+
+        application.Resources[ContactSheetKey] = on;
+        application.Resources[VerdictInBadgeKey] = !on;
+        application.Resources[ChinagraphInkKey] = new SolidColorBrush(Chinagraph);
+        application.Resources[EdgePrintInkKey] = new SolidColorBrush(Dim(EdgePrint, brightness));
+        application.Resources[SplitterWidthKey] = new GridLength(SplitterWidthFor(on));
     }
 
     public const string ForegroundKey = "AppForegroundBrush";

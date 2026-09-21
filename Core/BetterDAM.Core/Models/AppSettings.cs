@@ -102,6 +102,17 @@ public sealed record AppSettings
     public bool HandDrawnAnimates { get; init; } = true;
 
     /// <summary>
+    /// Whether the grid is dressed as a contact sheet: a film rebate above each frame, verdicts
+    /// written across the picture in grease pencil rather than tucked into a corner badge, film
+    /// edges for the splitters, and a first thumbnail that comes up like a print in the tray.
+    ///
+    /// Off by default like the other experiments, and independent of the hand-drawn selection —
+    /// the two share a pencil and a roughness, but wanting one is no reason to be given the other.
+    /// Nothing under it touches a photograph: the marks are drawn over the picture, never into it.
+    /// </summary>
+    public bool ContactSheet { get; init; }
+
+    /// <summary>
     /// The typeface the interface is set in. Separate from the hand-drawn marks, which some will
     /// want without the font and the other way round.
     /// </summary>

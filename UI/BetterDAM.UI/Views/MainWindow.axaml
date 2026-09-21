@@ -13,7 +13,8 @@
         Title="{Binding WindowTitle}"
         Width="1400" Height="900"
         MinWidth="900" MinHeight="600"
-        Classes.handDrawn="{DynamicResource AppRingEnabled}">
+        Classes.handDrawn="{DynamicResource AppRingEnabled}"
+        Classes.contactSheet="{DynamicResource AppContactSheet}">
 
   <Window.KeyBindings>
     <KeyBinding Gesture="{x:Static svc:MenuConventions.ToggleFolderPanel}"
@@ -640,9 +641,10 @@
     <Grid>
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="{Binding FolderColumnWidth}" />
-        <ColumnDefinition Width="4" />
+        <!-- Wide enough for a line, or for a film edge: see AppThemes.SplitterWidthFor. -->
+        <ColumnDefinition Width="{DynamicResource AppSplitterWidth}" />
         <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="4" />
+        <ColumnDefinition Width="{DynamicResource AppSplitterWidth}" />
         <ColumnDefinition Width="360" />
       </Grid.ColumnDefinitions>
 
@@ -697,7 +699,13 @@
                     IsVisible="{Binding IsFolderPanelVisible}" />
 
       <!-- Thumbnail grid over preview -->
-      <Grid Grid.Column="2" RowDefinitions="Auto,*,4,280">
+      <Grid Grid.Column="2">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="{DynamicResource AppSplitterWidth}" />
+          <RowDefinition Height="280" />
+        </Grid.RowDefinitions>
 
         <!--
           Non-modal by design: indexing a large workspace is offered, not demanded, and browsing
@@ -785,6 +793,24 @@
                               Click="OnRevealInFileManager" />
                   </ContextMenu>
                 </StackPanel.ContextMenu>
+                <!--
+                  The rebate: the strip of film above the frame where the edge print sits. The
+                  frame's number on the sheet, and the format where film would name its stock.
+                  Only under the contact sheet — it is the one part of the experiment that adds
+                  height to a tile, and a tile should not pay for a look nobody asked for.
+                -->
+                <DockPanel Height="11" Margin="2,0"
+                           IsVisible="{DynamicResource AppContactSheet}">
+                  <TextBlock DockPanel.Dock="Right" Text="{Binding Stock}"
+                             FontSize="9" LetterSpacing="1.2" Opacity="0.55"
+                             Foreground="{DynamicResource AppEdgePrintInk}"
+                             VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding FrameNumber}"
+                             FontSize="9" LetterSpacing="1.2" Opacity="0.85"
+                             Foreground="{DynamicResource AppEdgePrintInk}"
+                             VerticalAlignment="Center" />
+                </DockPanel>
+
                 <Border Height="{Binding $parent[StackPanel].Width}"
                         Background="#18FFFFFF" CornerRadius="3">
                   <Panel>
@@ -845,17 +871,39 @@
 
                     <Border Background="#99000000" CornerRadius="2"
                             Padding="5,2" Margin="4"
-                            HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                            IsVisible="{Binding HasMarks}">
+                            HorizontalAlignment="Left" VerticalAlignment="Bottom">
+                      <Border.IsVisible>
+                        <MultiBinding Converter="{StaticResource TileBadge}">
+                          <Binding Path="HasRating" />
+                          <Binding Path="HasFlag" />
+                          <DynamicResource ResourceKey="AppVerdictInBadge" />
+                        </MultiBinding>
+                      </Border.IsVisible>
                       <StackPanel Orientation="Horizontal" Spacing="4">
+                        <!--
+                          The flag glyphs step aside under the contact sheet, where the verdict
+                          is written across the picture instead; the stars stay either way.
+                        -->
                         <TextBlock Text="✓" FontSize="10" Foreground="White"
                                    VerticalAlignment="Center"
-                                   ToolTip.Tip="Keep"
-                                   IsVisible="{Binding IsAccepted}" />
+                                   ToolTip.Tip="Keep">
+                          <TextBlock.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                              <Binding Path="IsAccepted" />
+                              <DynamicResource ResourceKey="AppVerdictInBadge" />
+                            </MultiBinding>
+                          </TextBlock.IsVisible>
+                        </TextBlock>
                         <TextBlock Text="✕" FontSize="10" Foreground="White"
                                    VerticalAlignment="Center"
-                                   ToolTip.Tip="Rejected"
-                                   IsVisible="{Binding IsRejected}" />
+                                   ToolTip.Tip="Rejected">
+                          <TextBlock.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                              <Binding Path="IsRejected" />
+                              <DynamicResource ResourceKey="AppVerdictInBadge" />
+                            </MultiBinding>
+                          </TextBlock.IsVisible>
+                        </TextBlock>
                         <!--
                           Only the stars earned. Drawn rather than typed: the ★ character comes from
                           a fallback font that measures narrower than it paints, and a run of five
@@ -878,6 +926,21 @@
                         </ItemsControl>
                       </StackPanel>
                     </Border>
+
+                    <!--
+                      The verdict, in grease pencil, over everything: a cross through a reject, a
+                      box round a keeper — the way a contact sheet was marked up before it was
+                      handed back. Each is a separate mark rather than one with a switched kind,
+                      so the two never share a cached geometry and a file that changes its mind
+                      gets a fresh line.
+
+                      The cross sits well inside the frame because it runs past its own bounds,
+                      and should end near the corners of the picture rather than the tile.
+                    -->
+                    <controls:RoughMark Classes="verdict" Kind="Cross" Margin="16"
+                                        IsSelected="{Binding IsRejected}" />
+                    <controls:RoughMark Classes="verdict" Kind="Box" Margin="9"
+                                        IsSelected="{Binding IsAccepted}" />
                   </Panel>
                 </Border>
                 <TextBlock Text="{Binding FileName}" FontSize="11"

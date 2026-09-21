@@ -32,6 +32,21 @@ public sealed partial class MediaItemViewModel : ObservableObject
 
     public string SizeDisplay => ByteSize.Format(File.SizeBytes);
 
+    /// <summary>
+    /// This file's place on the sheet, printed in the rebate above it under the contact sheet
+    /// experiment. Assigned when the item is added to the grid rather than derived from the
+    /// collection, because a virtualised tile has no cheap way to ask where it is.
+    /// </summary>
+    [ObservableProperty]
+    private int _frameNumber;
+
+    /// <summary>
+    /// What the rebate prints beside the frame number, where film would name its stock: the
+    /// format, as its extension in capitals. "RAF", "ARW", "MOV" — the nearest thing a digital
+    /// file has to a stock, and useful in a grid that mixes them.
+    /// </summary>
+    public string Stock => Path.GetExtension(File.FileName).TrimStart('.').ToUpperInvariant();
+
     public string ModifiedDisplay => File.ModifiedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
     [ObservableProperty]

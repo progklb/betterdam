@@ -175,8 +175,15 @@
 
                 <TextBlock Text="{Binding HandDrawnSummary}" Classes="hint" />
 
-                <TextBlock Classes="hint"
+                <TextBlock Classes="hint" Margin="0,0,0,6"
                            Text="Suits short folder names; a long one becomes a wide, thin oval. Whether that reads as charm or as a stretched shape is a matter of taste, which is why it is a setting rather than a decision." />
+
+                <CheckBox Content="Contact sheet"
+                          IsChecked="{Binding ContactSheet}"
+                          ToolTip.Tip="Dresses the grid as a contact sheet: verdicts in grease pencil, a film rebate above each frame, film edges between the panes" />
+
+                <TextBlock Classes="hint"
+                           Text="Rejects get a cross through the frame and keepers a box round it, drawn with the same pencil as the folder ring. Each frame is numbered in the rebate above it, the splitters become film edges, and a thumbnail comes up like a print in the tray the first time it is decoded. Photographs are never touched — the pencil is drawn over them." />
               </StackPanel>
             </Border>
           </StackPanel>

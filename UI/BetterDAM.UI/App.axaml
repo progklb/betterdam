@@ -38,6 +38,17 @@
     <conv:VolumeGlyphConverter x:Key="VolumeGlyph" />
     <conv:SourceBadgeBrushConverter x:Key="SourceBadgeBrush" />
     <conv:KeywordHeadingConverter x:Key="KeywordHeading" />
+    <conv:TileBadgeConverter x:Key="TileBadge" />
+
+    <!--
+      The contact sheet experiment's defaults, replaced by AppThemes.Apply like the rest. Declared
+      so a lookup before the first Apply finds something rather than nothing.
+    -->
+    <x:Boolean x:Key="AppContactSheet">False</x:Boolean>
+    <x:Boolean x:Key="AppVerdictInBadge">True</x:Boolean>
+    <SolidColorBrush x:Key="AppChinagraphInk" Color="#C4362B" />
+    <SolidColorBrush x:Key="AppEdgePrintInk" Color="#E8944A" />
+    <GridLength x:Key="AppSplitterWidth">4</GridLength>
   </Application.Resources>
 
   <Application.Styles>
@@ -158,6 +169,54 @@
       <Setter Property="Roughness" Value="{DynamicResource AppRingRoughness}" />
       <Setter Property="Animates" Value="{DynamicResource AppRingAnimates}" />
       <Setter Property="Stroke" Value="{DynamicResource AppRingInk}" />
+    </Style>
+
+    <!--
+      The contact sheet.
+
+      A verdict mark belongs to that experiment rather than to the hand-drawn selection, so it is
+      shown by the sheet's own switch and takes the grease pencil rather than the selection's ink.
+      The roughness is shared: one hand holds every pencil in the application.
+
+      It does not draw itself on. The selection ring animates because a selection is a gesture the
+      user just made; a verdict is a fact about the file, and a virtualised grid re-binds every
+      tile it recycles — animated, a scroll through a folder of rejects would be a grid of crosses
+      drawing themselves, over and over.
+    -->
+    <Style Selector="controls|RoughMark.verdict">
+      <Setter Property="IsVisible" Value="{DynamicResource AppContactSheet}" />
+      <Setter Property="Stroke" Value="{DynamicResource AppChinagraphInk}" />
+      <Setter Property="StrokeThickness" Value="3" />
+      <Setter Property="HoverKind" Value="None" />
+      <Setter Property="Animates" Value="False" />
+    </Style>
+
+    <Style Selector="controls|LazyThumbnail">
+      <Setter Property="Develops" Value="{DynamicResource AppContactSheet}" />
+    </Style>
+
+    <!--
+      Film edges. The strip is the window's own surface — the darker of the two tones — and what
+      shows through a hole is the panel beside it, a shade lighter, with the cut edge picked out
+      in the same 13% white the plain splitter is made of.
+    -->
+    <Style Selector="controls|FilmEdge">
+      <Setter Property="Fill" Value="{DynamicResource AppSurfaceBrush}" />
+      <Setter Property="HoleFill" Value="{DynamicResource AppPanelBrush}" />
+      <Setter Property="HoleStroke" Value="#22FFFFFF" />
+    </Style>
+
+    <!--
+      Under the experiment every splitter in the main window is a strip of film. The template is
+      swapped by a class on the window, for the reason the selection style gives; the column it
+      sits in widens through a resource, since a template cannot change the width of its column.
+    -->
+    <Style Selector="Window.contactSheet GridSplitter">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <controls:FilmEdge />
+        </ControlTemplate>
+      </Setter>
     </Style>
   </Application.Styles>
 

@@ -5689,3 +5689,58 @@ Measured on the filter panel, at 45%:
 Uniform, which is the point — a half-dimmed interface reads as a fault rather than a setting.
 
 - `dotnet test` — **860/860 passing**.
+
+### The contact sheet (experimental)
+
+An analog treatment for the grid, behind its own switch in the Experimental card. It grew out of
+the observation that the grid already *is* a contact sheet — a sheet of frames judged with a loupe
+and marked up in grease pencil — and that the application was most of the way there already:
+themes named Darkroom and Safelight, a brightness slider pitched as a darkroom, a loupe, and a
+pencil in `RoughGeometry`. This finishes the thought rather than starting a new one.
+
+**Verdicts in chinagraph.** A rejected frame gets a cross through the picture; a keeper gets a box
+round it. Both are `RoughMark`s — a new `RoughMarkKind.Cross`, and the existing `Box` in a
+different ink — drawn with the same pencil and the same roughness as the folder ring, so one hand
+holds every pencil in the application. The ✓/✕ glyphs step out of the corner badge while the
+experiment is on; the stars stay. That needed a small `TileBadgeConverter`, because a badge that
+still showed for a flag alone would be an empty dark pill beside every cross.
+
+The cross is built from the per-edge stroke that `BorderEdges` already used, extracted into a
+private `Stroke` so the two cannot drift. Proven identical rather than assumed: `BorderEdges` was
+dumped for three fixtures before the change, the geometry refactored, and the dump diffed against
+the original — byte for byte the same.
+
+The verdict marks **do not draw themselves on**. The selection ring animates because a selection
+is a gesture the user just made; a verdict is a fact about the file, and a virtualised grid
+re-binds every tile it recycles. Animated, a scroll through a folder of rejects would be a grid
+of crosses drawing themselves, over and over.
+
+**The rebate.** A strip above each frame with the frame's number on the sheet and, where film
+would name its stock, the format — `RAF`, `ARW`, `MOV`. The number is assigned as an item joins
+the grid rather than derived from the collection, since a virtualised tile has no cheap way to
+ask where it is. The rebate is the one part of the experiment that adds height to a tile, so it
+is only present when the experiment is.
+
+**Film edges, only where a strip already exists.** Sprockets on every tile were the first idea
+and the wrong one — four hundred bright rectangles arguing with the photographs. The three
+splitters in the main window are already strips, so under the experiment each is a `FilmEdge`
+with perforations in 35mm proportions, and the columns they sit in widen from 4 to 12 through a
+`GridLength` resource, because a template cannot change the width of its own column.
+
+**The develop wipe.** A thumbnail's first decode comes up over 560ms like a print in the tray —
+opacity only, since Avalonia has no colour matrix for the contrast. Only a first decode: the
+picture arriving where there was none. A recycled container swapping one finished thumbnail for
+another is a scroll, not a decode, and a grid that faded on every scroll would shimmer.
+
+**Left out on purpose.** The mockup's print mat in the viewer, and the viewer filmstrip. The
+viewer is pure black regardless of theme, and a black carrier edge on black is invisible — the
+mockup only read because its ground was lighter. The filmstrip needs a neighbours row that does
+not yet exist. Both wait for a reason to build the thing they would sit on.
+
+Verified in the real application with the experiment on: rebate, numbers and formats on every
+tile; film edges on all three splitters; a search for `f:rejected` showing a cross through each
+rejected frame with the corner ✕ gone and no empty badge behind it. Settings restored
+byte-identical afterwards.
+
+- `dotnet test` — **878/878 passing** (18 new: the setting's default and round trip, the cross's
+  geometry, the badge's truth table, the perforation layout, the splitter width).

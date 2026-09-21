@@ -21,7 +21,13 @@ public enum RoughMarkKind
     Box,
 
     /// <summary>A single stroke beneath. The lighter mark, for hover and for a chosen tab.</summary>
-    Underline
+    Underline,
+
+    /// <summary>
+    /// Two strokes corner to corner: a rejected frame on a contact sheet. The one mark that is a
+    /// judgement rather than a highlight, and the only one drawn across a picture on purpose.
+    /// </summary>
+    Cross
 }
 
 /// <summary>
@@ -246,6 +252,15 @@ public sealed class RoughMark : Control
             return;
         }
 
+        if (kind == RoughMarkKind.Cross)
+        {
+            // Two separate strokes, and the second waits for the first: a hand lifts between them.
+            // Overlapping them, as the rings below do, would read as a machine drawing an X.
+            DrawPass(context, pen, _first!, Window(progress, 0.0, 0.48));
+            DrawPass(context, pen, _second!, Window(progress, 0.52, 1.0));
+            return;
+        }
+
         // The second pass sets off before the first has finished, the way a hand comes back round
         // without pausing at the top.
         DrawPass(context, pen, _first!, Window(progress, 0.0, 0.72));
@@ -279,6 +294,10 @@ public sealed class RoughMark : Control
         {
             _first = RoughGeometry.Underline(box, seed, Roughness);
             _second = null;
+        }
+        else if (kind == RoughMarkKind.Cross)
+        {
+            (_first, _second) = RoughGeometry.Cross(box, seed, Roughness);
         }
         else
         {

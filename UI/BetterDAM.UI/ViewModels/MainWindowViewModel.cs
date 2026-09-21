@@ -1910,7 +1910,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
             {
                 MediaItems.Add(new MediaItemViewModel(hit.ToMediaFile(), _thumbnails)
                 {
-                    HasPendingChanges = _pending.HasChanges(hit.FullPath)
+                    HasPendingChanges = _pending.HasChanges(hit.FullPath),
+                    FrameNumber = MediaItems.Count + 1
                 });
             }
 
@@ -2384,6 +2385,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             foreach (var item in pending)
             {
+                item.FrameNumber = MediaItems.Count + 1;
                 MediaItems.Add(item);
             }
 

@@ -127,7 +127,12 @@ public sealed class CatalogIndexer : ICatalogIndexer
     /// Version 2 records each picture's dimensions, so orientation can be searched. Every existing
     /// row was written without them and has to be read again, which is what this number is for.
     /// </summary>
-    public const int CurrentVersion = 2;
+    /// <summary>
+    /// Version 3 reads Lightroom's cull flag. A folder culled in Lightroom and indexed before this
+    /// was recorded as unflagged, with the sidecar's timestamp already noted as seen — so nothing
+    /// short of this number would have made the catalog look at it again.
+    /// </summary>
+    public const int CurrentVersion = 3;
 
     /// <summary>
     /// Whether a file has to be read again.

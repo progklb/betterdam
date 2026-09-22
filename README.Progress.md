@@ -5790,3 +5790,28 @@ ViewModel tests instead. Settings restored byte-identical.
 
 - `dotnet test` — **901/901 passing** (23 new: the diff, the review's list, targets, partial
   writes and failures, the conflict check and resolution).
+
+### Lightroom's flags were invisible
+
+A folder culled in Lightroom showed no picks or rejects at all. The sidecars said why: Lightroom 9
+writes its flag as `xmpDM:good="True"` for a pick and `"False"` for a reject — in the Dynamic
+Media namespace, of all places — and leaves `xmp:Rating="0"` beside it. None of the three
+conventions the reader knew (digiKam's `PickLabel`, Photo Mechanic's `Tagged`, Adobe's
+`Rating=-1`) was present, so there was nothing to fall back on. It also embeds the same property
+straight into a JPG that has no sidecar.
+
+Read now, as a fourth convention alongside `Tagged` — the same boolean, the same words — and
+written too, so a flag set here is one Lightroom will read back. ExifTool takes it as an element
+where Lightroom writes an attribute; in RDF they are the same statement.
+
+The catalog needed a nudge as well. That folder had been indexed after Lightroom wrote it, by a
+reader that understood none of it, and the sidecar timestamps were already recorded as seen — so
+nothing short of the indexer's version number would have made it look again. Bumped to 3; every
+row is re-read once.
+
+Verified on the workspace: after the re-index the folder carries 161 rejects and 10 picks
+(CR2 and JPG counted separately), and a search for `f:rejected` shows them crossed out.
+
+- `dotnet test` — **906/906 passing** (5 new, against a real ExifTool: a Lightroom reject and
+  pick are read, a flag set here is written in Lightroom's convention, and clearing it clears
+  that too).

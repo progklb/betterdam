@@ -292,12 +292,13 @@ public sealed class ExifToolSidecarWriter : IMetadataWriter
     /// <summary>
     /// Writes the cull flag in every convention there is one for, and the rating alongside it.
     ///
-    /// No single property is read by everything, so rather than pick a winner this writes all three
+    /// No single property is read by everything, so rather than pick a winner this writes all four
     /// and lets each application find the one it knows:
     ///
     /// <list type="bullet">
     /// <item><c>XMP-digiKam:PickLabel</c> — carries accepted and rejected; digiKam.</item>
     /// <item><c>XMP-photomech:Tagged</c> — carries picked; Photo Mechanic.</item>
+    /// <item><c>XMP-xmpDM:Good</c> — carries both as a boolean; Lightroom.</item>
     /// <item><c>xmp:Rating = -1</c> — carries rejected; Bridge and Camera Raw.</item>
     /// </list>
     ///
@@ -336,6 +337,9 @@ public sealed class ExifToolSidecarWriter : IMetadataWriter
         };
 
         AddValue(arguments, "XMP-photomech:Tagged#", tagged, temporaryValueFiles);
+
+        // The same two words carry Lightroom's flag, which takes them without the suffix.
+        AddValue(arguments, "XMP-xmpDM:Good", tagged, temporaryValueFiles);
     }
 
     private static void AddValue(List<string> arguments, string tag, string? value, List<string> temporaryValueFiles)

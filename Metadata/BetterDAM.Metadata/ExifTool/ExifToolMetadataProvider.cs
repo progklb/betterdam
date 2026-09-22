@@ -233,10 +233,15 @@ public sealed class ExifToolMetadataProvider : IMetadataProvider
     /// <summary>
     /// The cull flag, read from whichever application last wrote one.
     ///
-    /// Three conventions are checked in turn, because no single property is understood everywhere:
-    /// digiKam's PickLabel carries both states, Photo Mechanic's Tagged carries "picked", and
-    /// Adobe's rating of -1 carries "rejected". Whichever is present wins, most specific first, so a
-    /// workspace that has been through another application still reads correctly here.
+    /// Four conventions are checked in turn, because no single property is understood everywhere:
+    /// digiKam's PickLabel carries both states, Photo Mechanic's Tagged and Lightroom's
+    /// <c>xmpDM:good</c> each carry both as a boolean, and Adobe's rating of -1 carries "rejected".
+    /// Whichever is present wins, most specific first, so a workspace that has been through another
+    /// application still reads correctly here.
+    ///
+    /// Lightroom's is the one that was missing, and it was found the hard way: a folder culled in
+    /// Lightroom 9 showed no flags at all. Lightroom writes nothing in the other three — its rating
+    /// stays 0 for a reject — so there was nothing to fall back on.
     /// </summary>
     private static MediaFlag? ReadFlag(Dictionary<string, JsonElement> document)
     {
@@ -262,6 +267,23 @@ public sealed class ExifToolMetadataProvider : IMetadataProvider
 
             if (tagged.Equals("No", StringComparison.OrdinalIgnoreCase) ||
                 tagged.Equals("False", StringComparison.OrdinalIgnoreCase))
+            {
+                return MediaFlag.Rejected;
+            }
+        }
+
+        // Lightroom's, in the Dynamic Media namespace of all places. A boolean, like Tagged, and
+        // read the same way: ExifTool hands it over as true/false in JSON and Yes/No elsewhere.
+        if (First(document, "XMP:Good", "XMP-xmpDM:Good") is { } good)
+        {
+            if (good.Equals("True", StringComparison.OrdinalIgnoreCase) ||
+                good.Equals("Yes", StringComparison.OrdinalIgnoreCase))
+            {
+                return MediaFlag.Accepted;
+            }
+
+            if (good.Equals("False", StringComparison.OrdinalIgnoreCase) ||
+                good.Equals("No", StringComparison.OrdinalIgnoreCase))
             {
                 return MediaFlag.Rejected;
             }

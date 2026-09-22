@@ -150,4 +150,109 @@ public class MediaFlagTests : IAsyncDisposable
         Assert.Equal(MediaFlag.Rejected, read.Effective.Flag);
         Assert.Null(read.Effective.Rating);
     }
+
+    /// <summary>
+    /// Writes a sidecar the way Lightroom 9 does: the pick flag as <c>xmpDM:good</c>, True for a
+    /// pick and False for a reject, and a rating of 0 beside it — so none of the older conventions
+    /// is present to fall back on.
+    /// </summary>
+    private async Task<MediaMetadata> ReadLightroomSidecar(string name, string good)
+    {
+        var file = CreateJpeg(name);
+        var sidecar = Path.Combine(_temp.Path, Path.ChangeExtension(name, ".xmp"));
+
+        using (var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = RealExifTool.Path!,
+            ArgumentList = { "-o", sidecar, $"-XMP-xmpDM:Good={good}", "-XMP:Rating=0", file.FullPath },
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        })!)
+        {
+            await process.WaitForExitAsync();
+        }
+
+        Assert.True(File.Exists(sidecar));
+
+        var read = await _reader.ReadAsync(file);
+        Assert.NotNull(read);
+        return read;
+    }
+
+    /// <summary>
+    /// The reported fault: a folder culled in Lightroom showed no flags at all. Lightroom writes
+    /// its flag as <c>xmpDM:good</c> and a rating of 0, which none of the three conventions read
+    /// until now recognised.
+    /// </summary>
+    [Fact]
+    public async Task A_rejection_made_in_Lightroom_is_understood()
+    {
+        if (!RealExifTool.IsAvailable)
+        {
+            return;
+        }
+
+        var read = await ReadLightroomSidecar("lr-reject.jpg", "False");
+
+        Assert.Equal(MediaFlag.Rejected, read.Effective.Flag);
+    }
+
+    [Fact]
+    public async Task A_pick_made_in_Lightroom_is_understood()
+    {
+        if (!RealExifTool.IsAvailable)
+        {
+            return;
+        }
+
+        var read = await ReadLightroomSidecar("lr-pick.jpg", "True");
+
+        Assert.Equal(MediaFlag.Accepted, read.Effective.Flag);
+    }
+
+    /// <summary>
+    /// The other direction: a flag set here has to be one Lightroom will read back, so the sidecar
+    /// carries its convention alongside the others. Checked in the file itself, because the reader
+    /// would find the digiKam property first and prove nothing about this one.
+    /// </summary>
+    [Theory]
+    [InlineData(MediaFlag.Accepted, "True")]
+    [InlineData(MediaFlag.Rejected, "False")]
+    public async Task A_flag_set_here_is_written_in_Lightrooms_convention_too(MediaFlag flag, string expected)
+    {
+        if (!RealExifTool.IsAvailable)
+        {
+            return;
+        }
+
+        var file = CreateJpeg($"to-lr-{flag}.jpg");
+        var result = await _writer.WriteSidecarAsync(file, new EditableMetadata { Flag = flag }, new SidecarWriteOptions());
+        Assert.True(result.Success, result.Error);
+
+        var xml = await File.ReadAllTextAsync(result.SidecarPath!);
+
+        // Lightroom writes the property as an attribute and ExifTool as an element; in RDF they are
+        // the same statement, and Lightroom reads both.
+        Assert.Matches($"xmpDM:good(=\"{expected}\"|>{expected}<)", xml);
+    }
+
+    [Fact]
+    public async Task Clearing_a_flag_clears_Lightrooms_convention_too()
+    {
+        if (!RealExifTool.IsAvailable)
+        {
+            return;
+        }
+
+        var file = CreateJpeg("clear-lr.jpg");
+        var first = await _writer.WriteSidecarAsync(file, new EditableMetadata { Flag = MediaFlag.Accepted }, new SidecarWriteOptions());
+        Assert.True(first.Success, first.Error);
+
+        var second = await _writer.WriteSidecarAsync(file, new EditableMetadata { Rating = 2 }, new SidecarWriteOptions());
+        Assert.True(second.Success, second.Error);
+
+        var xml = await File.ReadAllTextAsync(second.SidecarPath!);
+
+        Assert.DoesNotContain("xmpDM:good", xml);
+    }
 }

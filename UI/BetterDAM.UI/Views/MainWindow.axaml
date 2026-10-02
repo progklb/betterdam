@@ -190,6 +190,27 @@
 
                 <Separator Margin="0,4" />
 
+                <CheckBox Content="Stack RAW + JPEG pairs" FontSize="11"
+                          IsChecked="{Binding StackPairs}"
+                          ToolTip.Tip="Files with the same name in the same folder are one photograph, and are drawn as one tile" />
+
+                <StackPanel Spacing="2" Margin="24,0,0,0" IsVisible="{Binding StackPairs}">
+                  <RadioButton GroupName="StackShows" FontSize="11"
+                               Content="Show the RAW"
+                               IsChecked="{Binding ShowsRaw}"
+                               ToolTip.Tip="The negative — the file your edits belong to" />
+                  <RadioButton GroupName="StackShows" FontSize="11"
+                               Content="Show the JPEG"
+                               IsChecked="{Binding !ShowsRaw}"
+                               ToolTip.Tip="The camera's own rendering — quicker to draw, and often quicker to judge" />
+                </StackPanel>
+
+                <TextBlock Classes="hint" FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                           IsVisible="{Binding StackPairs}"
+                           Text="Only what is drawn changes. Both files are still found by search, still written to, and still counted." />
+
+                <Separator Margin="0,4" />
+
                 <TextBlock Text="Open viewer as" FontSize="11" />
                 <StackPanel Spacing="2">
                   <RadioButton GroupName="ViewerMode" FontSize="11"
@@ -634,6 +655,16 @@
                   Command="{Binding CancelScanCommand}" />
           <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
 
+          <!--
+            The footnote to that count, and only when there is one to make: it counts files, and
+            the grid is of photographs. Reading "205 match(es)" over a hundred-odd tiles is a
+            discrepancy the user would otherwise have to work out for themselves.
+          -->
+          <TextBlock VerticalAlignment="Center" FontSize="11" Opacity="0.55"
+                     IsVisible="{Binding HasStackedAway}"
+                     Text="{Binding StackedAwayCount, StringFormat='◫ {0} stacked'}"
+                     ToolTip.Tip="Files drawn behind another because they are the same photograph. They are still searched, still written to, and still counted." />
+
           <!-- Indexing runs behind browsing, so it reports quietly rather than blocking. -->
           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                       IsVisible="{Binding IsIndexing}">
@@ -768,7 +799,7 @@
 
         <ListBox Background="Transparent"
                  Classes.handDrawn="{DynamicResource AppRingEnabled}"
-                 ItemsSource="{Binding MediaItems}"
+                 ItemsSource="{Binding VisibleItems}"
                  SelectedItem="{Binding SelectedItem}"
                  SelectionMode="Multiple"
                  SelectionChanged="OnGridSelectionChanged"
@@ -829,8 +860,18 @@
                              VerticalAlignment="Center" />
                 </DockPanel>
 
-                <Border Height="{Binding $parent[StackPanel].Width}"
-                        Background="#18FFFFFF" CornerRadius="3">
+                <Panel Height="{Binding $parent[StackPanel].Width}">
+                  <!--
+                    The stack, drawn as the edge of a second card behind the first. Inset at the
+                    top and left and overhanging at the bottom and right, so it reads as a sheet
+                    underneath rather than as a border around — a border is what a selection is,
+                    and the two must not be mistaken for each other.
+                  -->
+                  <Border Margin="5,5,-3,-3" CornerRadius="3"
+                          Background="#10FFFFFF" BorderBrush="#26FFFFFF" BorderThickness="1"
+                          IsVisible="{Binding IsStacked}" />
+
+                <Border Background="#18FFFFFF" CornerRadius="3">
                   <Panel>
                     <controls:LazyThumbnail Source="{Binding Thumbnail}"
                                             Stretch="Uniform"
@@ -844,6 +885,23 @@
                             HorizontalAlignment="Left" VerticalAlignment="Top"
                             IsVisible="{Binding IsVideo}">
                       <TextBlock Text="VIDEO" FontSize="9" />
+                    </Border>
+
+                    <!--
+                      What is underneath. Top-left, which is the VIDEO badge's corner — and it can
+                      never be wanted for both, because video does not stack.
+                    -->
+                    <Border Background="#99000000" CornerRadius="2"
+                            Padding="4,1" Margin="4"
+                            HorizontalAlignment="Left" VerticalAlignment="Top"
+                            IsVisible="{Binding IsStacked}"
+                            ToolTip.Tip="{Binding StackTip}">
+                      <StackPanel Orientation="Horizontal" Spacing="3">
+                        <!-- Two offset sheets: the same idea as the card behind the tile. -->
+                        <PathIcon Width="8" Height="8" Foreground="White" VerticalAlignment="Center"
+                                  Data="M4 2h11v11h-2V4H4V2zM2 6h11v13H2V6z" />
+                        <TextBlock Text="{Binding StackBadge}" FontSize="9" VerticalAlignment="Center" />
+                      </StackPanel>
                     </Border>
                     <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top"
                                 Margin="4" Spacing="2">
@@ -961,6 +1019,7 @@
                                         IsSelected="{Binding IsAccepted}" />
                   </Panel>
                 </Border>
+                </Panel>
                 <TextBlock Text="{Binding FileName}" FontSize="11"
                            TextTrimming="CharacterEllipsis" TextAlignment="Center" />
               </StackPanel>

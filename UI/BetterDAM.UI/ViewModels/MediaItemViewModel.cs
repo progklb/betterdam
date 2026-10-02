@@ -123,6 +123,39 @@ public sealed partial class MediaItemViewModel : ObservableObject
     /// <summary>The label's name, for the tooltip — the colour alone cannot say "Yellow".</summary>
     public string? LabelName => Marks.Label;
 
+    // ---- Stacking -------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The other files of this photograph, hidden behind this one. Empty unless the grid is
+    /// collapsing pairs and this tile is the face of one.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsStacked))]
+    [NotifyPropertyChangedFor(nameof(StackBadge))]
+    [NotifyPropertyChangedFor(nameof(StackTip))]
+    private IReadOnlyList<MediaFile> _stacked = [];
+
+    public bool IsStacked => Stacked.Count > 0;
+
+    /// <summary>
+    /// What is underneath, in as little room as a tile has: the one companion's format, or how
+    /// many there are when naming them would not fit.
+    ///
+    /// The format rather than a bare count, because the question a photographer asks of a stacked
+    /// tile is "is the RAW there?", and "+CR2" answers it where "+1" does not.
+    /// </summary>
+    public string StackBadge => Stacked.Count switch
+    {
+        0 => string.Empty,
+        1 => "+" + Path.GetExtension(Stacked[0].FileName).TrimStart('.').ToUpperInvariant(),
+        var n => $"+{n}"
+    };
+
+    /// <summary>The names themselves, for the tooltip, where there is room to be exact.</summary>
+    public string StackTip => Stacked.Count == 0
+        ? string.Empty
+        : "Also here: " + string.Join(", ", Stacked.Select(f => f.FileName));
+
     /// <summary>
     /// Requests the thumbnail once. Called when the item's container is realized, so opening a
     /// folder of 50,000 files only decodes the handful of tiles actually on screen.

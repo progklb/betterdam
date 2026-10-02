@@ -5815,3 +5815,53 @@ Verified on the workspace: after the re-index the folder carries 161 rejects and
 - `dotnet test` — **906/906 passing** (5 new, against a real ExifTool: a Lightroom reject and
   pick are read, a flag set here is written in Lightroom's convention, and clearing it clears
   that too).
+
+### Stacking RAW + JPEG pairs
+
+A camera set to RAW+JPEG writes two files per frame with one name between them, and a folder of
+them reads as twice as many photographs as were taken. Every judgement then has to be made twice,
+or made once and silently not apply to the other half. The view options panel can now collapse
+them: one tile per photograph, showing whichever half you ask for.
+
+**What counts as the same photograph** is the name, not the kind: same folder, same name before
+the extension. That is what a camera guarantees about a pair and what a photographer means by "the
+same shot", and it also covers what a rule about RAW and JPEG would miss — a DNG beside the CR2 it
+was converted from is the same frame too. Video is left out entirely: a clip sharing a name with a
+still is not the same recording, and hiding one behind the other would be a guess.
+
+**Position comes from the first file seen, not from the face.** Switching between showing the RAW
+and the JPEG changes which picture is drawn and not where it sits — verified on screen, where the
+tiles keep their frame numbers through the switch. A grid that reshuffled itself when that was
+toggled would be unreadable.
+
+**MediaItems stays the whole list.** That is the safety property of the whole change: indexing,
+marks, pending changes and the Changes review all walk it, and every one of them would be wrong to
+skip the half of a pair that happens to be hidden. A second collection, `VisibleItems`, is what the
+grid draws and what the selection moves through. The status bar footnotes the difference — "205
+match(es) in Content ◫ 100 stacked" — because the count beside it is of files and the grid is of
+photographs.
+
+**Built a file at a time**, because that is how a scan arrives: a batch at a time, with a pair's
+two halves often landing in different batches. Arranging the whole list again on every flush would
+be quadratic and a grid that resets itself twice a second while it fills. `MediaStacking.Arrange`
+states the same rule as one pass over a finished list, and a test walks a shuffled folder of 120
+files through both the incremental path and `Arrange` and asserts they land in the same place.
+
+**On the tile**: the edge of a second card behind the first — inset at the top and left,
+overhanging at the bottom and right, so it reads as a sheet underneath rather than as a border
+around, which is what a selection is. Plus a badge naming what is underneath: `+JPG`, or `+2` when
+naming them would not fit. The format rather than a bare count, because the question a
+photographer asks of a stacked tile is whether the RAW is there. It takes the top-left corner,
+which the VIDEO badge owns — and can never be wanted for both, because video does not stack.
+
+Verified on the Wolkberg D2 folder, which is exactly this case: a search returning 205 files drew
+105 tiles, each CR2 badged `+JPG`, and switching to the JPEG redrew the same tiles in place badged
+`+CR2`. The setting survived a restart.
+
+One thing noticed while switching and not chased: for these frames the developed CR2 draws
+landscape where the camera's JPEG draws portrait, so the RAW path looks not to be applying the
+orientation tag. Nothing to do with stacking — it was simply visible for the first time with the
+two side by side.
+
+- `dotnet test` — **919/919 passing** (13 new: what groups, what does not, order held across the
+  switch, the incremental rule agreeing with `Arrange`, and the badge).

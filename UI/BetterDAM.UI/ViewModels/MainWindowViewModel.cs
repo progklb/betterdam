@@ -1,5 +1,6 @@
 using Avalonia;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Globalization;
 using Avalonia.Controls;
@@ -97,10 +98,35 @@ public sealed partial class MainWindowViewModel : ObservableObject
             RedrawMarksFor(e.FilePath);
         };
 
-        // Driven off the collection itself rather than the four places that mutate it, so the
-        // prompt cannot drift out of step with what is actually on screen.
-        MediaItems.CollectionChanged += (_, _) => UpdateEmptyState();
+        // Driven off the collection itself rather than the four places that mutate it, so neither
+        // the prompt nor the stacks can drift out of step with what is actually on screen. The
+        // grid only ever appends to this collection or clears it, which is the whole of what this
+        // has to understand.
+        MediaItems.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Reset)
+            {
+                VisibleItems.Clear();
+                _groups.Clear();
+                _faces.Clear();
+            }
+            else if (e.NewItems is not null)
+            {
+                foreach (MediaItemViewModel added in e.NewItems)
+                {
+                    Show(added);
+                }
+            }
+
+            UpdateEmptyState();
+            OnPropertyChanged(nameof(StackedAwayCount));
+            OnPropertyChanged(nameof(HasStackedAway));
+        };
+
         UpdateEmptyState();
+
+        _stackPairs = _settings.Current.StackPairs;
+        _stackShows = _settings.Current.StackShows;
 
         RecentWorkspaces = new ObservableCollection<string>(_settings.Current.RecentWorkspaces);
         _viewerOpensFullscreen = _settings.Current.ViewerOpensFullscreen;
@@ -139,7 +165,170 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<FolderNodeViewModel> FolderRoots { get; } = [];
 
+    /// <summary>
+    /// Every file the grid is showing, stacked or not.
+    ///
+    /// Stays the whole list on purpose. Indexing, marks, pending changes and the Changes review
+    /// all walk this, and every one of them would be wrong to skip the half of a pair that happens
+    /// to be hidden — a rating written to the RAW is no less real for the JPEG being on top.
+    /// </summary>
     public ObservableCollection<MediaItemViewModel> MediaItems { get; } = [];
+
+    /// <summary>
+    /// What the grid draws: one tile per photograph when pairs are collapsed, otherwise the lot.
+    ///
+    /// A second collection rather than a filter over the first, because the two answer different
+    /// questions and the difference matters. This one is the picture on screen — the selection
+    /// moves through it and the frame numbers count it.
+    /// </summary>
+    public ObservableCollection<MediaItemViewModel> VisibleItems { get; } = [];
+
+    /// <summary>Every tile of a photograph, by what makes them the same one.</summary>
+    private readonly Dictionary<string, List<MediaItemViewModel>> _groups = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Where each group's tile sits in <see cref="VisibleItems"/>.</summary>
+    private readonly Dictionary<string, int> _faces = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Places one newly-arrived file in the grid.
+    ///
+    /// Written to take one file at a time because that is how a scan arrives — a batch at a time,
+    /// with a pair's two halves often landing in different batches. Arranging the whole list again
+    /// on every flush would be both quadratic and a grid that resets itself twice a second while
+    /// it fills. <see cref="MediaStacking.Arrange"/> is the same rule stated as one pass over a
+    /// finished list, and a test walks a shuffled folder through both to prove they agree.
+    /// </summary>
+    private void Show(MediaItemViewModel item)
+    {
+        if (!StackPairs || MediaStacking.KeyOf(item.File) is not { } key)
+        {
+            item.FrameNumber = VisibleItems.Count + 1;
+            VisibleItems.Add(item);
+            return;
+        }
+
+        if (!_groups.TryGetValue(key, out var group))
+        {
+            group = [];
+            _groups[key] = group;
+        }
+
+        group.Add(item);
+
+        if (!_faces.TryGetValue(key, out var slot))
+        {
+            _faces[key] = VisibleItems.Count;
+            item.FrameNumber = VisibleItems.Count + 1;
+            VisibleItems.Add(item);
+        }
+        else if (MediaStacking.IsBetterFace(item.File, VisibleItems[slot].File, StackShows))
+        {
+            // The better half of the pair arrived second. It takes the tile where it stands, so
+            // nothing moves — only the picture in it changes.
+            var replaced = VisibleItems[slot];
+            item.FrameNumber = replaced.FrameNumber;
+            replaced.Stacked = [];
+            VisibleItems[slot] = item;
+
+            if (ReferenceEquals(SelectedItem, replaced))
+            {
+                SelectedItem = item;
+            }
+        }
+
+        var face = VisibleItems[_faces[key]];
+        face.Stacked = group
+            .Where(m => !ReferenceEquals(m, face))
+            .Select(m => m.File)
+            .OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Lays the grid out again, for when the answer to "which files are one tile" has changed.
+    ///
+    /// Everything goes back through <see cref="Show"/> rather than through a second arrangement of
+    /// its own, so there is one rule about what the grid looks like and no way for a rebuild to
+    /// disagree with a scan.
+    /// </summary>
+    private void RebuildVisible()
+    {
+        var chosen = SelectedItem;
+
+        VisibleItems.Clear();
+        _groups.Clear();
+        _faces.Clear();
+
+        foreach (var item in MediaItems)
+        {
+            item.Stacked = [];
+        }
+
+        foreach (var item in MediaItems)
+        {
+            Show(item);
+        }
+
+        // The file that was selected may now be underneath another. Following it to whatever is
+        // drawn in its place keeps the inspector on the photograph the user was looking at.
+        if (chosen is not null && !VisibleItems.Contains(chosen))
+        {
+            SelectedItem = MediaStacking.KeyOf(chosen.File) is { } key && _faces.TryGetValue(key, out var slot)
+                ? VisibleItems[slot]
+                : null;
+        }
+    }
+
+    /// <summary>
+    /// Whether files that are the same photograph are drawn as one tile. A camera set to RAW+JPEG
+    /// writes two files per frame, and a folder of them otherwise reads as twice as many
+    /// photographs as were taken.
+    /// </summary>
+    [ObservableProperty]
+    private bool _stackPairs;
+
+    partial void OnStackPairsChanged(bool value)
+    {
+        RebuildVisible();
+        OnPropertyChanged(nameof(StackedAwayCount));
+        OnPropertyChanged(nameof(HasStackedAway));
+
+        if (_settings.Current.StackPairs != value)
+        {
+            _ = _settings.SaveAsync(_settings.Current with { StackPairs = value });
+        }
+    }
+
+    /// <summary>Which half of a collapsed pair is drawn.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsRaw))]
+    private StackShows _stackShows;
+
+    partial void OnStackShowsChanged(StackShows value)
+    {
+        RebuildVisible();
+
+        if (_settings.Current.StackShows != value)
+        {
+            _ = _settings.SaveAsync(_settings.Current with { StackShows = value });
+        }
+    }
+
+    /// <summary>
+    /// How many files are behind another. Shown in the status bar, because the count beside it is
+    /// of files and the grid is of photographs: a search reporting 205 matches over a hundred-odd
+    /// tiles is a discrepancy the user would otherwise have to work out for themselves.
+    /// </summary>
+    public int StackedAwayCount => MediaItems.Count - VisibleItems.Count;
+
+    public bool HasStackedAway => StackedAwayCount > 0;
+
+    /// <summary>The radio buttons bind to this pair rather than to the enum.</summary>
+    public bool ShowsRaw
+    {
+        get => StackShows == StackShows.Raw;
+        set => StackShows = value ? StackShows.Raw : StackShows.Jpeg;
+    }
 
     /// <summary>
     /// Storage provider from the active window, supplied by the view. The ViewModel deliberately
@@ -1404,17 +1593,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private void MoveSelection(int delta)
     {
-        if (MediaItems.Count == 0)
+        if (VisibleItems.Count == 0)
         {
             return;
         }
 
-        var index = SelectedItem is null ? -1 : MediaItems.IndexOf(SelectedItem);
-        var target = Math.Clamp(index + delta, 0, MediaItems.Count - 1);
+        var index = SelectedItem is null ? -1 : VisibleItems.IndexOf(SelectedItem);
+        var target = Math.Clamp(index + delta, 0, VisibleItems.Count - 1);
 
         if (target != index)
         {
-            SelectedItem = MediaItems[target];
+            SelectedItem = VisibleItems[target];
         }
     }
 
@@ -1485,7 +1674,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         // Scanning has its own progress indicator, and flashing "no media here" for the moment
         // before the first results arrive would be wrong as often as it is right.
-        ShowEmptyState = MediaItems.Count == 0 && !IsScanning;
+        ShowEmptyState = VisibleItems.Count == 0 && !IsScanning;
         if (!ShowEmptyState)
         {
             return;
@@ -1935,8 +2124,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             {
                 MediaItems.Add(new MediaItemViewModel(hit.ToMediaFile(), _thumbnails)
                 {
-                    HasPendingChanges = _pending.HasChanges(hit.FullPath),
-                    FrameNumber = MediaItems.Count + 1
+                    HasPendingChanges = _pending.HasChanges(hit.FullPath)
                 });
             }
 
@@ -2410,7 +2598,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             foreach (var item in pending)
             {
-                item.FrameNumber = MediaItems.Count + 1;
                 MediaItems.Add(item);
             }
 

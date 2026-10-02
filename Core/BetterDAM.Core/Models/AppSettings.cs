@@ -127,6 +127,21 @@ public sealed record AppSettings
     public bool ViewerOpensFullscreen { get; init; }
 
     /// <summary>
+    /// Whether files that are the same photograph are drawn as one tile.
+    ///
+    /// A camera set to RAW+JPEG writes two files per frame, and a folder of them reads as twice as
+    /// many photographs as were taken. Off by default: it hides files, and an application that
+    /// hides files without being asked is one you cannot trust to be showing you the folder.
+    /// </summary>
+    public bool StackPairs { get; init; }
+
+    /// <summary>
+    /// Which half of a collapsed pair is drawn. RAW by default — it is the negative, and the file
+    /// a photographer means when they say the photograph.
+    /// </summary>
+    public StackShows StackShows { get; init; } = StackShows.Raw;
+
+    /// <summary>
     /// Whether RAW files are developed for viewing, or shown from the JPEG the camera embedded.
     ///
     /// Developing demosaics the sensor data: more pixels than the preview and no in-camera
